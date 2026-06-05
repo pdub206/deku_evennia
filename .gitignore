@@ -1,1 +1,4 @@
 *.md
+*.pyc
+game/*
+.venv/*
