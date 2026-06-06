@@ -77,7 +77,7 @@ HELP_ENTRY_DICTS = [
     },
     {
         "key": "character sheet",
-        "aliases": ["stats", "score", "sheet", "attributes"],
+        "aliases": ["score", "sheet"],
         "category": "Character",
         "text": """
             Your character sheet tracks all the key numbers that define your
