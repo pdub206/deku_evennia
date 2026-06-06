@@ -22,10 +22,12 @@ several more options for customizing the Guest account system.
 
 """
 
-from evennia.accounts.accounts import DefaultAccount, DefaultGuest
+from evennia.accounts.accounts import DefaultGuest
+from evennia.contrib.rpg.character_creator.character_creator import \
+    ContribChargenAccount
 
 
-class Account(DefaultAccount):
+class Account(ContribChargenAccount):
     """
     An Account is the actual OOC player entity. It doesn't exist in the game,
     but puppets characters.

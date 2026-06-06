@@ -30,7 +30,18 @@ class Command(BaseCommand):
     #     - at_post_cmd(): Extra actions, often things done after
     #         every command, like prompts.
     #
-    pass
+
+    # Commands that should still work while sleeping.
+    _sleep_allowed = {"wake"}
+
+    def at_pre_cmd(self):
+        if self.key in self._sleep_allowed:
+            return False
+        char = self.caller
+        if getattr(char, "db", None) and (char.db.position or "standing") == "sleeping":
+            char.msg("You are asleep and cannot do that. Type |wwake|n to wake up.")
+            return True  # Abort execution.
+        return False
 
 
 # -------------------------------------------------------------

@@ -26,6 +26,214 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "charcreate",
+        "aliases": ["character creation", "chargen"],
+        "category": "Character",
+        "text": """
+            The |wcharcreate|n command opens the character-creation wizard.
+
+            Usage:
+              charcreate
+
+            You must be logged in (Out-of-Character) to use this command.  If you
+            already have a character in progress, |wcharcreate|n resumes where you
+            left off — you can exit at any time and come back later.
+
+            # subtopics
+
+            ## Steps
+
+            Character creation follows five steps from the SRD 5.2.1:
+
+            1. |yChoose a Class|n — Your class defines your vocation, talents, and
+               fighting style.  Available classes: Barbarian, Bard, Cleric, Druid,
+               Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard.
+
+            2. |yChoose Your Origin|n — Your origin has two parts:
+               - Background: represents your pre-adventuring occupation and gives
+                 skill proficiencies, a tool proficiency, a feat, and starting gear.
+               - Species: your ancestral heritage, determining size and speed.
+               - Languages: your character automatically knows Common plus 2 more.
+
+            3. |yDetermine Ability Scores|n — Six scores power your character:
+               Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma.
+               Choose Standard Array (15/14/13/12/10/8), Point Buy (27 pts), or
+               Random Roll (4d6 drop lowest, six times).  Your background then
+               adds +2/+1 or +1/+1/+1 to three abilities.
+
+            4. |yChoose Alignment|n — A shorthand for your character's ethical
+               outlook: one of nine combinations of Lawful/Neutral/Chaotic and
+               Good/Neutral/Evil.
+
+            5. |yChoose a Name|n — Pick a unique name for your character.  Once
+               confirmed, your character is created and you enter the world.
+
+            ## Resuming
+
+            If you quit chargen mid-way (type |wq|n or |wquit|n inside the menu),
+            your progress is saved.  Type |wcharcreate|n again to continue.
+
+        """,
+    },
+    {
+        "key": "character sheet",
+        "aliases": ["score", "sheet"],
+        "category": "Character",
+        "text": """
+            Your character sheet tracks all the key numbers that define your
+            adventurer in the game world.
+
+            # subtopics
+
+            ## Ability Scores
+
+            Six core abilities describe your character's natural talents:
+
+              |wStrength (STR)|n     — Physical power; melee attacks, lifting, climbing.
+              |wDexterity (DEX)|n    — Agility; ranged attacks, AC, Stealth, Initiative.
+              |wConstitution (CON)|n — Endurance; Hit Points, concentration.
+              |wIntelligence (INT)|n — Memory and reasoning; Arcana, History, Investigation.
+              |wWisdom (WIS)|n       — Perception and intuition; Insight, Perception, Medicine.
+              |wCharisma (CHA)|n     — Force of personality; Deception, Persuasion, Performance.
+
+            Each score has a modifier: (score − 10) / 2, rounded down.
+
+            ## Combat Stats
+
+              |wHit Points (HP)|n     — Determined at level 1 by class hit die + CON modifier.
+              |wArmor Class (AC)|n    — 10 + DEX modifier (base, no armor).
+              |wInitiative|n          — DEX modifier; used to order combat turns.
+              |wProficiency Bonus|n   — +2 at level 1; increases as you gain levels.
+              |wPassive Perception|n  — 10 + WIS (Perception) modifier.
+
+            ## Identity
+
+              |wClass|n, |wBackground|n, |wSpecies|n, |wAlignment|n, |wLanguages|n
+
+              Level 1 characters start with 0 XP and advance by earning Experience Points.
+
+        """,
+    },
+    {
+        "key": "skills",
+        "aliases": ["skill"],
+        "category": "Character",
+        "text": """
+            The |wskills|n command displays all 18 skills and your current bonus for each.
+
+            Usage:
+              skills
+
+            # subtopics
+
+            ## Skill Bonuses
+
+            Your bonus for a skill equals:
+              |wAbility modifier|n + |wproficiency bonus|n (if proficient)
+
+            If you are |wnot|n proficient, you only add the ability modifier.
+            The proficiency bonus at level 1 is +2.
+
+            ## Skill List
+
+            |wAcrobatics|n (DEX)
+              Your ability to stay on your feet and perform athletic feats of
+              agility — tumbling, balancing, and diving out of harm's way.
+
+            |wAnimal Handling|n (WIS)
+              Calming domesticated animals, keeping a mount under control,
+              and intuiting an animal's intentions.
+
+            |wArcana|n (INT)
+              Recalling lore about spells, magic items, eldritch symbols,
+              magical traditions, and the planes of existence.
+
+            |wAthletics|n (STR)
+              Feats of physical exertion: climbing, jumping, swimming, and
+              grappling foes.
+
+            |wDeception|n (CHA)
+              Convincingly hiding the truth, whether through misdirection,
+              bluffing, or outright lying.
+
+            |wHistory|n (INT)
+              Recalling lore about historical events, legendary people, ancient
+              kingdoms, past disputes, and recent wars.
+
+            |wInsight|n (WIS)
+              Determining the true intentions of a creature — reading body
+              language, speech habits, and changes in mannerisms.
+
+            |wIntimidation|n (CHA)
+              Influencing someone through overt threats, hostile actions, and
+              physical violence.
+
+            |wInvestigation|n (INT)
+              Looking for clues and deducing from evidence — noticing details
+              others overlook and piecing together how something was done.
+
+            |wMedicine|n (WIS)
+              Stabilising a dying companion or diagnosing an illness.
+
+            |wNature|n (INT)
+              Recalling lore about terrain, plants and animals, the weather,
+              and natural cycles.
+
+            |wPerception|n (WIS)
+              Spotting, hearing, or otherwise detecting the presence of
+              something — the primary sense check for noticing hidden threats.
+
+            |wPerformance|n (CHA)
+              How well you entertain an audience with music, dance, acting,
+              storytelling, or some other form of entertainment.
+
+            |wPersuasion|n (CHA)
+              Influencing someone or a group of people through tact, social
+              graces, or good-natured requests.
+
+            |wReligion|n (INT)
+              Recalling lore about deities, rites, prayers, religious
+              hierarchies, holy symbols, and the practices of secret cults.
+
+            |wSleight of Hand|n (DEX)
+              Legerdemain and manual trickery — pickpocketing, concealing an
+              object, and other acts of manual deception.
+
+            |wStealth|n (DEX)
+              Concealing yourself from enemies, slipping past guards, and
+              generally moving without being seen or heard.
+
+            |wSurvival|n (WIS)
+              Following tracks, hunting game, guiding the party through
+              wilderness, predicting weather, and avoiding natural hazards.
+
+        """,
+    },
+    {
+        "key": "change language",
+        "aliases": ["change"],
+        "category": "Character",
+        "text": """
+            Switch the language your character speaks aloud.
+
+            Usage:
+              change language <language>
+
+            Examples:
+              change language common
+              change language draconic
+
+            Your character can only speak languages they know.  Attempting to
+            switch to an unknown language will fail with a reminder.  Use
+            |wchange language|n with no argument to see your current language and
+            the full list of languages you know.
+
+            Your active language is used by the |wsay|n command.  Other
+            characters who know the same language will understand you normally;
+            those who do not will hear only unintelligible speech.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

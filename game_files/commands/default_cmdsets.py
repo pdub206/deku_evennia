@@ -15,6 +15,15 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 """
 
 from evennia import default_cmds
+from evennia.contrib.rpg.character_creator.character_creator import \
+    ContribChargenCmdSet
+
+from commands.change import CmdChange
+from commands.communication import CmdSay
+from commands.generic import CmdLook, CmdPose
+from commands.position import CmdSit, CmdRest, CmdSleep, CmdStand, CmdWake
+from commands.sheet import CmdSheet
+from commands.skills import CmdSkills
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -31,9 +40,19 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
-        #
-        # any commands you add below will overload the default ones.
-        #
+        # Position system — overrides Evennia's look/say/pose with sleep-aware versions.
+        self.add(CmdLook)
+        self.add(CmdSay)
+        self.add(CmdPose)
+        self.add(CmdSit)
+        self.add(CmdRest)
+        self.add(CmdSleep)
+        self.add(CmdStand)
+        self.add(CmdWake)
+        # Character sheet commands.
+        self.add(CmdSheet)
+        self.add(CmdSkills)
+        self.add(CmdChange)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
@@ -51,9 +70,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
-        #
-        # any commands you add below will overload the default ones.
-        #
+        # Replace default charcreate/ic with the EvMenu-driven versions.
+        self.add(ContribChargenCmdSet)
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):
