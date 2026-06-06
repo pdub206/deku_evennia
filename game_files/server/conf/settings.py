@@ -34,6 +34,13 @@ from evennia.settings_default import *
 # This is the name of your game. Make it catchy!
 SERVERNAME = "game"
 
+# Character creation: new accounts go to OOC screen; charcreate runs the EvMenu wizard.
+# Account #1 (superuser) still gets a character via initial_setup.py regardless of this flag.
+AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
+AUTO_PUPPET_ON_LOGIN = False
+MAX_NR_CHARACTERS = 5
+CHARGEN_MENU = "world.chargen_menu"
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.
