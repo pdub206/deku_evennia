@@ -758,6 +758,22 @@ MIN_AGE: int = 18
 MAX_AGE: int = max(data["max_age"] for data in SPECIES.values())
 
 # ---------------------------------------------------------------------------
+# Carrying Capacity  (SRD p.178)
+# ---------------------------------------------------------------------------
+
+# Carry capacity = STR score × multiplier (lb.).
+# All playable species are Small or Medium; the table is kept complete so
+# future large creature types can use it without code changes.
+CARRY_CAPACITY_MULTIPLIER: dict[str, float] = {
+    "Tiny": 7.5,
+    "Small": 15.0,
+    "Medium": 15.0,
+    "Large": 30.0,
+    "Huge": 60.0,
+    "Gargantuan": 120.0,
+}
+
+# ---------------------------------------------------------------------------
 # Languages  (SRD p.20)
 # ---------------------------------------------------------------------------
 

@@ -5,7 +5,12 @@ Character sheet command — displays identity, ability scores, and combat stats.
 import time
 
 from commands.command import Command
-from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT, ability_modifier
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    CARRY_CAPACITY_MULTIPLIER,
+    ability_modifier,
+)
 
 _GENDER_LABELS = {
     "male": "Male",
@@ -101,6 +106,10 @@ class CmdSheet(Command):
 
         languages = char.db.languages or ["Common"]
 
+        # --- Carry capacity (SRD p.178): STR × multiplier based on size ---
+        carry_mult = CARRY_CAPACITY_MULTIPLIER.get(size, 15.0)
+        carry_capacity = int(scores["Strength"] * carry_mult)
+
         # --- Render ---
         out = _SEP + "\n"
 
@@ -132,7 +141,8 @@ class CmdSheet(Command):
             right = combat_lines[i] if i < len(combat_lines) else ""
             out += f"{left:<28}  {right}\n"
 
-        out += f"  |yLanguages:|n  {', '.join(languages)}\n"
+        out += f"  |yCarry Capacity:|n  {carry_capacity} lb.\n"
+        out += f"  |yLanguages:|n      {', '.join(languages)}\n"
         out += _SEP
 
         self.caller.msg(out)
