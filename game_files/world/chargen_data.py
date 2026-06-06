@@ -772,6 +772,32 @@ RARE_LANGUAGES: list[str] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Skills  (SRD p.9)
+# ---------------------------------------------------------------------------
+
+# Maps each skill name to its governing ability score.
+SKILLS: dict[str, str] = {
+    "Acrobatics": "Dexterity",
+    "Animal Handling": "Wisdom",
+    "Arcana": "Intelligence",
+    "Athletics": "Strength",
+    "Deception": "Charisma",
+    "History": "Intelligence",
+    "Insight": "Wisdom",
+    "Intimidation": "Charisma",
+    "Investigation": "Intelligence",
+    "Medicine": "Wisdom",
+    "Nature": "Intelligence",
+    "Perception": "Wisdom",
+    "Performance": "Charisma",
+    "Persuasion": "Charisma",
+    "Religion": "Intelligence",
+    "Sleight of Hand": "Dexterity",
+    "Stealth": "Dexterity",
+    "Survival": "Wisdom",
+}
+
+# ---------------------------------------------------------------------------
 # Alignments  (SRD p.21-22)
 # ---------------------------------------------------------------------------
 

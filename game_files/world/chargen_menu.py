@@ -27,6 +27,7 @@ from world.chargen_data import (
     POINT_BUY_MAX,
     POINT_BUY_MIN,
     POINT_BUY_TOTAL,
+    SKILLS,
     SPECIES,
     STANDARD_ARRAY,
     STANDARD_ARRAY_BY_CLASS,
@@ -90,7 +91,7 @@ def menunode_welcome(caller: Any, **kwargs):
           |w1.|n Choose your |yName|n
           |w2.|n Choose your |yGender|n
           |w3.|n Choose a |yClass|n
-          |w4.|n Choose your |yOrigin|n (background & species)
+          |w4.|n Choose your |yOrigin|n (background, skills & species)
           |w5.|n Choose your |yAge|n
           |w6.|n Choose |yLanguages|n
           |w7.|n Determine |yAbility Scores|n
@@ -180,9 +181,11 @@ def _set_class(caller: Any, raw_string: str = "", selected_class: str = "", **kw
         return "menunode_choose_class"
     char = _char(caller)
     char.db.chargen_class = selected_class
+    # Clear any previously chosen class skills; the pool may have changed.
+    char.attributes.remove("chargen_skill_proficiencies")
     if char.db.chargen_from_review:
-        char.db.chargen_from_review = False
-        return "menunode_review"
+        # Don't clear from_review — skills step needs it to route back to review.
+        return "menunode_choose_skills"
     return "menunode_choose_background"
 
 
@@ -266,7 +269,7 @@ def _set_background(caller: Any, raw_string: str = "", selected_bg: str = "", **
     if char.db.chargen_from_review:
         char.db.chargen_from_review = False
         return "menunode_review"
-    return "menunode_choose_species"
+    return "menunode_choose_skills"
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +356,134 @@ def _set_species(
 
 
 # ---------------------------------------------------------------------------
-# Step 2c: Languages
+# Step 2c: Skills
+# ---------------------------------------------------------------------------
+
+
+def menunode_choose_skills(caller: Any, raw_string: str = "", **kwargs):
+    char = _char(caller)
+    char.db.chargen_step = "menunode_choose_skills"
+
+    cls_name = char.db.chargen_class or ""
+    bg_name = char.db.chargen_background or ""
+    cls_data = CLASSES.get(cls_name, {})
+    num_picks: int = cls_data.get("skill_choices", 2)
+    available: list[str] = cls_data.get("skills_available", [])
+    bg_skills: list[str] = BACKGROUNDS.get(bg_name, {}).get("skill_proficiencies", [])
+
+    # Class skills the player has already chosen this session.
+    class_selected: list[str] = (
+        kwargs.get("class_selected") or list(char.db.chargen_skill_proficiencies or [])
+    )
+    # Filter available pool to exclude skills already granted by background.
+    pickable = [s for s in available if s not in bg_skills]
+
+    if len(class_selected) == num_picks:
+        # Confirmation screen.
+        all_profs = sorted(set(bg_skills + class_selected))
+        text = dedent(f"""\
+            |wStep 4 — Choose Skills|n
+
+            Your skill proficiencies:
+              |yBackground ({bg_name}):|n  {', '.join(bg_skills) or 'none'}
+              |yClass ({cls_name}):|n       {', '.join(sorted(class_selected))}
+
+            All proficient skills: {', '.join(all_profs)}
+
+            Confirm these skills?
+        """)
+        options = [
+            {
+                "key": ("Yes", "y"),
+                "desc": "Confirm and continue",
+                "goto": (_confirm_skills, {"class_selected": list(class_selected)}),
+            },
+            {
+                "key": ("No", "n"),
+                "desc": "Clear class skill choices and reselect",
+                "goto": (_reset_skills, {}),
+            },
+        ]
+        return text, options
+
+    text = dedent(f"""\
+        |wStep 4 — Choose Skills|n
+
+        Your background (|w{bg_name}|n) grants: |w{', '.join(bg_skills) or 'none'}|n
+
+        Choose |w{num_picks}|n skill{'' if num_picks == 1 else 's'} from your \
+|w{cls_name}|n class.
+        Selecting a skill again deselects it.
+
+        Currently selected ({len(class_selected)}/{num_picks}): \
+{', '.join(class_selected) if class_selected else '(none)'}
+    """)
+
+    options = []
+    for skill in pickable:
+        ability = SKILLS.get(skill, "")
+        abbr = ABILITY_SHORT.get(ability, ability[:3].upper())
+        marker = " |g[✓]|n" if skill in class_selected else ""
+        options.append(
+            {
+                "desc": f"{skill} ({abbr}){marker}",
+                "goto": (
+                    _toggle_skill,
+                    {"class_selected": list(class_selected), "skill": skill,
+                     "num_picks": num_picks},
+                ),
+            }
+        )
+    options.append(
+        {
+            "key": ("Back", "back", "b"),
+            "desc": "Go back to background selection",
+            "goto": "menunode_choose_background",
+        }
+    )
+    return text, options
+
+
+def _toggle_skill(
+    caller: Any,
+    raw_string: str = "",
+    class_selected: list | None = None,
+    skill: str = "",
+    num_picks: int = 2,
+    **kwargs,
+):
+    if class_selected is None:
+        class_selected = []
+    if skill in class_selected:
+        class_selected.remove(skill)
+    elif len(class_selected) < num_picks:
+        class_selected.append(skill)
+    _char(caller).db.chargen_skill_proficiencies = list(class_selected)
+    return ("menunode_choose_skills", {"class_selected": list(class_selected)})
+
+
+def _confirm_skills(
+    caller: Any,
+    raw_string: str = "",
+    class_selected: list | None = None,
+    **kwargs,
+):
+    char = _char(caller)
+    if class_selected is not None:
+        char.db.chargen_skill_proficiencies = list(class_selected)
+    if char.db.chargen_from_review:
+        char.db.chargen_from_review = False
+        return "menunode_review"
+    return "menunode_choose_species"
+
+
+def _reset_skills(caller: Any, raw_string: str = "", **kwargs):
+    _char(caller).db.chargen_skill_proficiencies = []
+    return ("menunode_choose_skills", {"class_selected": []})
+
+
+# ---------------------------------------------------------------------------
+# Step 2d: Languages
 # ---------------------------------------------------------------------------
 
 
@@ -1250,6 +1380,12 @@ def menunode_review(caller: Any, **kwargs):
     }.get(char.db.gender or "", char.db.gender or "|xunset|n")
     age_display = str(char.db.age) if char.db.age else "|xunset|n"
 
+    # Skill proficiencies for review.
+    bg_skills: list[str] = BACKGROUNDS.get(bg, {}).get("skill_proficiencies", [])
+    class_skills: list[str] = list(char.db.chargen_skill_proficiencies or [])
+    all_skills = sorted(set(bg_skills + class_skills))
+    skills_display = ", ".join(all_skills) if all_skills else "|xunset|n"
+
     text = "|wCharacter Review|n\n\n"
     text += f"  |yName:|n       {char.key}\n"
     text += f"  |yGender:|n     {gender_display}\n"
@@ -1257,6 +1393,7 @@ def menunode_review(caller: Any, **kwargs):
     text += f"  |yClass:|n      {cls_name}\n"
     text += f"  |yBackground:|n {bg}\n"
     text += f"  |ySpecies:|n    {species}\n"
+    text += f"  |ySkills:|n     {skills_display}\n"
     text += (
         f"  |yLanguages:|n  Common, {', '.join(langs)}\n"
         if langs
@@ -1326,6 +1463,11 @@ def menunode_review(caller: Any, **kwargs):
             "goto": (_edit_from_review, {"goto_node": "menunode_choose_alignment"}),
         },
         {
+            "key": "11",
+            "desc": "Edit Class Skills",
+            "goto": (_edit_from_review, {"goto_node": "menunode_choose_skills"}),
+        },
+        {
             "key": ("R", "restart"),
             "desc": "Start over — go back to class selection",
             "goto": _restart_chargen,
@@ -1339,6 +1481,7 @@ def _restart_chargen(caller: Any, raw_string: str = "", **kwargs):
     for attr in [
         "chargen_class",
         "chargen_background",
+        "chargen_skill_proficiencies",
         "chargen_species",
         "chargen_languages",
         "chargen_scores_assigned",
@@ -1404,10 +1547,17 @@ def menunode_end(caller: Any, **kwargs):
     char.db.alignment = alignment
     char.db.languages = ["Common"] + list(langs)
 
+    # Skill proficiencies: background grants fixed skills; class grants chosen skills.
+    bg_data = BACKGROUNDS.get(bg, {})
+    bg_skill_profs: list[str] = bg_data.get("skill_proficiencies", [])
+    class_skill_profs: list[str] = list(char.db.chargen_skill_proficiencies or [])
+    char.db.skill_proficiencies = sorted(set(bg_skill_profs + class_skill_profs))
+
     # Clean up all temporary chargen attributes.
     for attr in [
         "chargen_class",
         "chargen_background",
+        "chargen_skill_proficiencies",
         "chargen_species",
         "chargen_languages",
         "chargen_scores_assigned",

@@ -19,6 +19,7 @@ from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenCmdSet
 
 from commands.sheet import CmdSheet
+from commands.skills import CmdSkills
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -36,6 +37,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         """
         super().at_cmdset_creation()
         self.add(CmdSheet)
+        self.add(CmdSkills)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

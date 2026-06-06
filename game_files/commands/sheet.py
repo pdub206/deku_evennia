@@ -101,12 +101,12 @@ class CmdSheet(Command):
         languages = char.db.languages or ["Common"]
 
         # --- Render ---
-        out = "\n" + _SEP + "\n"
+        out = _SEP + "\n"
 
         out += f"  |yName:|n       {name:<18}  |ySpecies:|n    {species}\n"
         out += f"  |yGender:|n     {gender:<18}  |yClass:|n      {char_class}\n"
         out += f"  |yAge:|n        {age:<18}  |yBackground:|n {background}\n"
-        out += f"  |yAlignment:|n  {alignment}\n\n"
+        out += f"  |yAlignment:|n  {alignment}\n"
         out += (
             f"  |yLevel:|n  {level}    |yXP:|n  {xp}"
             f"    |yProficiency Bonus:|n  +{prof_bonus}\n"
@@ -131,7 +131,7 @@ class CmdSheet(Command):
             right = combat_lines[i] if i < len(combat_lines) else ""
             out += f"{left:<28}  {right}\n"
 
-        out += f"\n  |yLanguages:|n  {', '.join(languages)}\n"
-        out += _SEP + "\n"
+        out += f"  |yLanguages:|n  {', '.join(languages)}\n"
+        out += _SEP
 
         self.caller.msg(out)

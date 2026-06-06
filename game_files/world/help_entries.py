@@ -115,6 +115,101 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "skills",
+        "aliases": ["skill"],
+        "category": "Character",
+        "text": """
+            The |wskills|n command displays all 18 skills and your current bonus for each.
+
+            Usage:
+              skills
+
+            # subtopics
+
+            ## Skill Bonuses
+
+            Your bonus for a skill equals:
+              |wAbility modifier|n + |wproficiency bonus|n (if proficient)
+
+            If you are |wnot|n proficient, you only add the ability modifier.
+            The proficiency bonus at level 1 is +2.
+
+            ## Skill List
+
+            |wAcrobatics|n (DEX)
+              Your ability to stay on your feet and perform athletic feats of
+              agility — tumbling, balancing, and diving out of harm's way.
+
+            |wAnimal Handling|n (WIS)
+              Calming domesticated animals, keeping a mount under control,
+              and intuiting an animal's intentions.
+
+            |wArcana|n (INT)
+              Recalling lore about spells, magic items, eldritch symbols,
+              magical traditions, and the planes of existence.
+
+            |wAthletics|n (STR)
+              Feats of physical exertion: climbing, jumping, swimming, and
+              grappling foes.
+
+            |wDeception|n (CHA)
+              Convincingly hiding the truth, whether through misdirection,
+              bluffing, or outright lying.
+
+            |wHistory|n (INT)
+              Recalling lore about historical events, legendary people, ancient
+              kingdoms, past disputes, and recent wars.
+
+            |wInsight|n (WIS)
+              Determining the true intentions of a creature — reading body
+              language, speech habits, and changes in mannerisms.
+
+            |wIntimidation|n (CHA)
+              Influencing someone through overt threats, hostile actions, and
+              physical violence.
+
+            |wInvestigation|n (INT)
+              Looking for clues and deducing from evidence — noticing details
+              others overlook and piecing together how something was done.
+
+            |wMedicine|n (WIS)
+              Stabilising a dying companion or diagnosing an illness.
+
+            |wNature|n (INT)
+              Recalling lore about terrain, plants and animals, the weather,
+              and natural cycles.
+
+            |wPerception|n (WIS)
+              Spotting, hearing, or otherwise detecting the presence of
+              something — the primary sense check for noticing hidden threats.
+
+            |wPerformance|n (CHA)
+              How well you entertain an audience with music, dance, acting,
+              storytelling, or some other form of entertainment.
+
+            |wPersuasion|n (CHA)
+              Influencing someone or a group of people through tact, social
+              graces, or good-natured requests.
+
+            |wReligion|n (INT)
+              Recalling lore about deities, rites, prayers, religious
+              hierarchies, holy symbols, and the practices of secret cults.
+
+            |wSleight of Hand|n (DEX)
+              Legerdemain and manual trickery — pickpocketing, concealing an
+              object, and other acts of manual deception.
+
+            |wStealth|n (DEX)
+              Concealing yourself from enemies, slipping past guards, and
+              generally moving without being seen or heard.
+
+            |wSurvival|n (WIS)
+              Following tracks, hunting game, guiding the party through
+              wilderness, predicting weather, and avoiding natural hazards.
+
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",
