@@ -9,19 +9,15 @@ Characters always have one of four positions:
 
 When sleeping, characters cannot look, speak, move, or use game commands.
 They must type |wwake|n to return to a sitting position before acting.
-"""
 
-from evennia.commands.default.general import CmdLook as _BaseLook
-from evennia.commands.default.general import CmdPose as _BasePose
-from evennia.commands.default.general import CmdSay as _BaseSay
+The helpers _position, _is_sleeping, and _ASLEEP_MSG are also imported by
+look.py and say.py, which need to check sleeping state without depending on
+each other.
+"""
 
 from commands.command import Command
 
 _ASLEEP_MSG = "You are asleep and cannot do that. Type |wwake|n to wake up."
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _position(char) -> str:
@@ -30,11 +26,6 @@ def _position(char) -> str:
 
 def _is_sleeping(char) -> bool:
     return _position(char) == "sleeping"
-
-
-# ---------------------------------------------------------------------------
-# Position commands
-# ---------------------------------------------------------------------------
 
 
 class CmdSit(Command):
@@ -182,38 +173,3 @@ class CmdWake(Command):
             char.location.msg_contents(
                 f"{char.key} wakes up.", exclude=[char], from_obj=char
             )
-
-
-# ---------------------------------------------------------------------------
-# Sleep-aware overrides for built-in Evennia commands
-# ---------------------------------------------------------------------------
-
-
-class CmdLook(_BaseLook):
-    """Look at the room or an object. Blocked while sleeping."""
-
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
-
-
-class CmdSay(_BaseSay):
-    """Say something aloud. Blocked while sleeping."""
-
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
-
-
-class CmdPose(_BasePose):
-    """Pose / emote. Blocked while sleeping."""
-
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()

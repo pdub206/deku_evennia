@@ -1615,6 +1615,7 @@ def menunode_end(caller: Any, **kwargs):
     char.db.size = size
     char.db.alignment = alignment
     char.db.languages = ["Common"] + list(langs)
+    char.db.active_language = char.db.languages[0]
 
     # Skill proficiencies: background grants fixed skills; class grants chosen skills.
     bg_data = BACKGROUNDS.get(bg, {})

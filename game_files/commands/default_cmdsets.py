@@ -19,16 +19,9 @@ from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenCmdSet
 
 from commands.change import CmdChange
-from commands.position import (
-    CmdLook,
-    CmdPose,
-    CmdSay,
-    CmdSit,
-    CmdRest,
-    CmdSleep,
-    CmdStand,
-    CmdWake,
-)
+from commands.communication import CmdSay
+from commands.generic import CmdLook, CmdPose
+from commands.position import CmdSit, CmdRest, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 
