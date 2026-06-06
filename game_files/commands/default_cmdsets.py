@@ -18,6 +18,16 @@ from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenCmdSet
 
+from commands.position import (
+    CmdLook,
+    CmdPose,
+    CmdSay,
+    CmdSit,
+    CmdRest,
+    CmdSleep,
+    CmdStand,
+    CmdWake,
+)
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 
@@ -36,6 +46,16 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
+        # Position system — overrides Evennia's look/say/pose with sleep-aware versions.
+        self.add(CmdLook)
+        self.add(CmdSay)
+        self.add(CmdPose)
+        self.add(CmdSit)
+        self.add(CmdRest)
+        self.add(CmdSleep)
+        self.add(CmdStand)
+        self.add(CmdWake)
+        # Character sheet commands.
         self.add(CmdSheet)
         self.add(CmdSkills)
 

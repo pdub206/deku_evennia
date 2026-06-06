@@ -21,4 +21,16 @@ class Room(ObjectParent, DefaultRoom):
     properties and methods available on all Objects.
     """
 
-    pass
+    def get_display_characters(self, looker, **kwargs) -> str:
+        """List characters in the room with their positional state."""
+        characters = self.filter_visible(
+            self.contents_get(content_type="character"), looker, **kwargs
+        )
+        lines = []
+        for char in characters:
+            if char is looker:
+                continue
+            position = char.db.position or "standing"
+            name = char.get_display_name(looker, **kwargs)
+            lines.append(f"{name} is {position} here.")
+        return "\n".join(lines)

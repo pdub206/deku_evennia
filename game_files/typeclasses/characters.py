@@ -25,6 +25,26 @@ class Character(ObjectParent, DefaultCharacter):
 
     """
 
+    def at_object_creation(self) -> None:
+        super().at_object_creation()
+        self.db.position = "standing"
+
+    def at_msg_receive(self, text=None, from_obj=None, **kwargs) -> bool:
+        # Sleeping characters cannot perceive messages from other objects.
+        if (
+            (self.db.position or "standing") == "sleeping"
+            and from_obj is not None
+            and from_obj is not self
+        ):
+            return False
+        return True
+
+    def at_pre_move(self, destination, **kwargs) -> bool:
+        if (self.db.position or "standing") == "sleeping":
+            self.msg("You are asleep and cannot move. Type |wwake|n to wake up.")
+            return False
+        return True
+
     def at_post_puppet(self, **kwargs) -> None:
         super().at_post_puppet(**kwargs)
         # Record the moment this session began so we can accumulate IC time.
