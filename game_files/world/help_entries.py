@@ -210,6 +210,30 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "change language",
+        "aliases": ["change"],
+        "category": "Character",
+        "text": """
+            Switch the language your character speaks aloud.
+
+            Usage:
+              change language <language>
+
+            Examples:
+              change language common
+              change language draconic
+
+            Your character can only speak languages they know.  Attempting to
+            switch to an unknown language will fail with a reminder.  Use
+            |wchange language|n with no argument to see your current language and
+            the full list of languages you know.
+
+            Your active language is used by the |wsay|n command.  Other
+            characters who know the same language will understand you normally;
+            those who do not will hear only unintelligible speech.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

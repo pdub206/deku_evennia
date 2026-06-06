@@ -18,6 +18,7 @@ from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenCmdSet
 
+from commands.change import CmdChange
 from commands.position import (
     CmdLook,
     CmdPose,
@@ -58,6 +59,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # Character sheet commands.
         self.add(CmdSheet)
         self.add(CmdSkills)
+        self.add(CmdChange)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
