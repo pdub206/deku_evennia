@@ -57,6 +57,7 @@ class CmdSheet(Command):
         gender = _GENDER_LABELS.get(char.db.gender or "", char.db.gender or "Unknown")
         age = str(char.db.age) if char.db.age else "Unknown"
         species = char.db.species or "Unknown"
+        size = char.db.size or "Medium"
         char_class = char.db.char_class or "Unknown"
         background = char.db.background or "Unknown"
         alignment = char.db.alignment or "Unknown"
@@ -106,7 +107,7 @@ class CmdSheet(Command):
         out += f"  |yName:|n       {name:<18}  |ySpecies:|n    {species}\n"
         out += f"  |yGender:|n     {gender:<18}  |yClass:|n      {char_class}\n"
         out += f"  |yAge:|n        {age:<18}  |yBackground:|n {background}\n"
-        out += f"  |yAlignment:|n  {alignment}\n"
+        out += f"  |yAlignment:|n  {alignment:<18}  |ySize:|n       {size}\n"
         out += (
             f"  |yLevel:|n  {level}    |yXP:|n  {xp}"
             f"    |yProficiency Bonus:|n  +{prof_bonus}\n"

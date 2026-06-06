@@ -294,7 +294,7 @@ def menunode_choose_species(caller: Any, **kwargs):
         data = SPECIES[name]
         options.append(
             {
-                "desc": f"{name} ({data['size']}, Speed {data['speed']})",
+                "desc": f"{name} ({data['size']}, Speed {data['speed']} ft.)",
                 "goto": ("menunode_species_detail", {"selected_species": name}),
             }
         )
@@ -316,12 +316,22 @@ def menunode_species_detail(
 
     data = SPECIES[selected_species]
     traits_str = ", ".join(data["traits"])
+
+    if data.get("size_choice"):
+        size_line = (
+            f"|ySize:|n   Medium or Small (chosen at creation)\n"
+            f"         Medium: {data['height_medium']}\n"
+            f"         Small:  {data['height_small']}"
+        )
+    else:
+        size_line = f"|ySize:|n   {data['size']} ({data['height']})"
+
     text = dedent(f"""\
         |w{selected_species}|n
 
         {data['description']}
 
-        |ySize:|n   {data['size']}
+        {size_line}
         |ySpeed:|n  {data['speed']} ft.
         |yTraits:|n {traits_str}
 
@@ -349,6 +359,50 @@ def _set_species(
         return "menunode_choose_species"
     char = _char(caller)
     char.db.chargen_species = selected_species
+    # Species with a size choice require an extra step before continuing.
+    # chargen_from_review is preserved so _set_size can handle the redirect.
+    if SPECIES.get(selected_species, {}).get("size_choice"):
+        return "menunode_choose_size"
+    if char.db.chargen_from_review:
+        char.db.chargen_from_review = False
+        return "menunode_review"
+    return "menunode_choose_age"
+
+
+def menunode_choose_size(caller: Any, **kwargs):
+    """Prompt the player to pick Medium or Small for species that allow it."""
+    char = _char(caller)
+    species = char.db.chargen_species or "Human"
+    data = SPECIES.get(species, {})
+    text = dedent(f"""\
+        |wChoose Your Size — {species}|n
+
+        As a {species}, you may be Medium or Small.
+
+        |yMedium:|n  {data.get('height_medium', 'standard humanoid height')}
+        |ySmall:|n   {data.get('height_small', 'shorter than most humanoids')}
+
+        Size has no mechanical effect at this time, but affects how your
+        character is described in the world.
+    """)
+    options = [
+        {
+            "key": ("Medium", "m"),
+            "desc": "Medium",
+            "goto": (_set_size, {"size": "Medium"}),
+        },
+        {
+            "key": ("Small", "s"),
+            "desc": "Small",
+            "goto": (_set_size, {"size": "Small"}),
+        },
+    ]
+    return text, options
+
+
+def _set_size(caller: Any, raw_string: str = "", size: str = "Medium", **kwargs):
+    char = _char(caller)
+    char.db.chargen_size = size
     if char.db.chargen_from_review:
         char.db.chargen_from_review = False
         return "menunode_review"
@@ -1356,6 +1410,12 @@ def menunode_review(caller: Any, **kwargs):
     cls_name = char.db.chargen_class or "|runset|n"
     bg = char.db.chargen_background or "|runset|n"
     species = char.db.chargen_species or "|runset|n"
+    # Resolve displayed size: fixed from species data, or player's choice.
+    species_data = SPECIES.get(species, {})
+    if species_data.get("size_choice"):
+        size_display = char.db.chargen_size or "|runset|n"
+    else:
+        size_display = species_data.get("size", "Medium")
     langs = char.db.chargen_languages or []
     alignment = char.db.chargen_alignment or "|runset|n"
     scores: dict[str, int] = char.db.chargen_scores_assigned or {}
@@ -1392,7 +1452,7 @@ def menunode_review(caller: Any, **kwargs):
     text += f"  |yAge:|n        {age_display}\n"
     text += f"  |yClass:|n      {cls_name}\n"
     text += f"  |yBackground:|n {bg}\n"
-    text += f"  |ySpecies:|n    {species}\n"
+    text += f"  |ySpecies:|n    {species} ({size_display})\n"
     text += f"  |ySkills:|n     {skills_display}\n"
     text += (
         f"  |yLanguages:|n  Common, {', '.join(langs)}\n"
@@ -1483,6 +1543,7 @@ def _restart_chargen(caller: Any, raw_string: str = "", **kwargs):
         "chargen_background",
         "chargen_skill_proficiencies",
         "chargen_species",
+        "chargen_size",
         "chargen_languages",
         "chargen_scores_assigned",
         "chargen_rolled_scores",
@@ -1503,6 +1564,13 @@ def menunode_end(caller: Any, **kwargs):
     cls_name: str = char.db.chargen_class or "Fighter"
     bg: str = char.db.chargen_background or ""
     species: str = char.db.chargen_species or "Human"
+    species_data = SPECIES.get(species, {})
+    # For species with a player-chosen size (Human, Tiefling), use the stored
+    # choice; for all others, derive it directly from the species data.
+    if species_data.get("size_choice"):
+        size: str = char.db.chargen_size or "Medium"
+    else:
+        size = species_data.get("size", "Medium")
     langs: list[str] = char.db.chargen_languages or []
     alignment: str = char.db.chargen_alignment or "Neutral"
     scores: dict[str, int] = char.db.chargen_scores_assigned or {
@@ -1544,6 +1612,7 @@ def menunode_end(caller: Any, **kwargs):
     char.db.char_class = cls_name
     char.db.background = bg
     char.db.species = species
+    char.db.size = size
     char.db.alignment = alignment
     char.db.languages = ["Common"] + list(langs)
 
@@ -1559,6 +1628,7 @@ def menunode_end(caller: Any, **kwargs):
         "chargen_background",
         "chargen_skill_proficiencies",
         "chargen_species",
+        "chargen_size",
         "chargen_languages",
         "chargen_scores_assigned",
         "chargen_rolled_scores",

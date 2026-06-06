@@ -659,6 +659,7 @@ SPECIES: dict[str, dict] = {
     "Dragonborn": {
         "description": "Born of dragons, dragonborn walk proudly through a world that greets them with fearful incomprehension.",
         "size": "Medium",
+        "height": "about 5–7 feet tall",
         "speed": 30,
         "max_age": 80,
         "traits": ["Draconic Ancestry", "Breath Weapon", "Damage Resistance"],
@@ -666,6 +667,7 @@ SPECIES: dict[str, dict] = {
     "Dwarf": {
         "description": "Bold and hardy, dwarves are known as skilled warriors, miners, and workers of stone and metal.",
         "size": "Medium",
+        "height": "about 4–5 feet tall",
         "speed": 30,
         "max_age": 350,
         "traits": [
@@ -678,6 +680,7 @@ SPECIES: dict[str, dict] = {
     "Elf": {
         "description": "Elves are a magical people of otherworldly grace, living in the world but not entirely part of it.",
         "size": "Medium",
+        "height": "about 5–6 feet tall",
         "speed": 30,
         "max_age": 750,
         "traits": [
@@ -691,6 +694,7 @@ SPECIES: dict[str, dict] = {
     "Gnome": {
         "description": "A gnome's energy and enthusiasm for living shines through every inch of their tiny bodies.",
         "size": "Small",
+        "height": "about 3–4 feet tall",
         "speed": 30,
         "max_age": 500,
         "traits": ["Darkvision", "Gnomish Cunning", "Gnomish Lineage"],
@@ -698,6 +702,7 @@ SPECIES: dict[str, dict] = {
     "Goliath": {
         "description": "Goliaths are massive, distantly related to giants, and feel most at home amid the highest mountain peaks.",
         "size": "Medium",
+        "height": "about 7–8 feet tall",
         "speed": 35,
         "max_age": 95,
         "traits": ["Giant Ancestry", "Large Form", "Powerful Build"],
@@ -705,13 +710,18 @@ SPECIES: dict[str, dict] = {
     "Halfling": {
         "description": "The comforts of home are the goals of most halflings' lives: a place to settle in peace and quiet.",
         "size": "Small",
+        "height": "about 2–3 feet tall",
         "speed": 30,
         "max_age": 250,
         "traits": ["Brave", "Halfling Nimbleness", "Luck", "Naturally Stealthy"],
     },
     "Human": {
         "description": "Humans are the most adaptable and ambitious people among the common races.",
-        "size": "Medium",
+        # Size is chosen by the player at character creation (SRD p.86).
+        "size": "Medium or Small",
+        "size_choice": True,
+        "height_medium": "about 4–7 feet tall",
+        "height_small": "about 2–4 feet tall",
         "speed": 30,
         "max_age": 100,
         "traits": ["Resourceful", "Skillful", "Versatile"],
@@ -719,6 +729,7 @@ SPECIES: dict[str, dict] = {
     "Orc": {
         "description": "Orcs are a fierce and enduring people with a rich history of struggle against the forces that shaped them.",
         "size": "Medium",
+        "height": "about 6–7 feet tall",
         "speed": 30,
         "max_age": 80,
         "traits": [
@@ -730,7 +741,11 @@ SPECIES: dict[str, dict] = {
     },
     "Tiefling": {
         "description": "Tieflings are derived from human bloodlines, carrying infernal power that erupted through generations past.",
-        "size": "Medium",
+        # Size is chosen by the player at character creation (SRD p.86).
+        "size": "Medium or Small",
+        "size_choice": True,
+        "height_medium": "about 4–7 feet tall",
+        "height_small": "about 3–4 feet tall",
         "speed": 30,
         "max_age": 115,
         "traits": ["Darkvision", "Fiendish Legacy", "Otherworldly Presence"],
