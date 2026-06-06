@@ -6,7 +6,7 @@ can import.  Add new backgrounds, species, or classes by extending the dicts;
 the menu nodes read them dynamically.
 """
 
-from random import randint
+from systems.dice import roll
 
 # ---------------------------------------------------------------------------
 # Ability helpers
@@ -38,7 +38,7 @@ def ability_modifier(score: int) -> int:
 
 def roll_4d6_drop_lowest() -> int:
     """Roll 4d6 and return the sum of the highest three dice."""
-    rolls = sorted([randint(1, 6) for _ in range(4)])
+    rolls = sorted([roll(6) for _ in range(4)])
     return sum(rolls[1:])  # drop the lowest
 
 
