@@ -5,12 +5,8 @@ Character sheet command — displays identity, ability scores, and combat stats.
 import time
 
 from commands.command import Command
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    CARRY_CAPACITY_MULTIPLIER,
-    ability_modifier,
-)
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
+                                CARRY_CAPACITY_MULTIPLIER, ability_modifier)
 
 _GENDER_LABELS = {
     "male": "Male",

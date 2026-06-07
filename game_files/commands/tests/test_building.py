@@ -1,0 +1,233 @@
+"""
+Tests for the unified build command and the area export/import round-trip.
+
+Run from the game/ directory:
+    evennia test --settings settings.py commands.tests.test_building
+"""
+
+import importlib.util
+import tempfile
+
+from commands.building import (CmdAreas, CmdBuild, CmdBuildArea, CmdBuildDel,
+                               CmdBuildDig, CmdBuildFields, CmdBuildSet,
+                               CmdLoadArea, CmdRooms)
+from django.conf import settings
+from evennia import create_object
+from evennia.utils.test_resources import EvenniaCommandTest
+from systems.areas import build_area_data, export_area, load_area_data
+
+
+class TestBuildAccess(EvenniaCommandTest):
+    """The build tools are lock-gated to Builder permission."""
+
+    def test_builder_can_access(self):
+        # char1 is given Developer in the test base, which outranks Builder.
+        self.assertTrue(CmdBuild().access(self.char1, "cmd"))
+        self.assertTrue(CmdLoadArea().access(self.char1, "cmd"))
+
+    def test_plain_player_denied(self):
+        self.char2.permissions.clear()
+        self.assertFalse(CmdBuild().access(self.char2, "cmd"))
+        self.assertFalse(CmdLoadArea().access(self.char2, "cmd"))
+
+
+class TestBuildEditing(EvenniaCommandTest):
+    """Entering the edit context and setting validated fields."""
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+        # Enter the editing context bound to room1.
+        self.call(CmdBuild(), "here")
+
+    def test_set_desc_and_name(self):
+        self.call(CmdBuildSet(), "desc A quiet, dusty hall.")
+        self.assertEqual(self.room1.db.desc, "A quiet, dusty hall.")
+        self.call(CmdBuildSet(), "name The Quiet Hall")
+        self.assertEqual(self.room1.key, "The Quiet Hall")
+
+    def test_fields_lists_room_fields(self):
+        out = self.call(CmdBuildFields(), "")
+        for field_name in ("name", "desc", "area"):
+            self.assertIn(field_name, out)
+
+    def test_unknown_field_rejected(self):
+        self.call(CmdBuildSet(), "bogus whatever", "Unknown field 'bogus'")
+
+    def test_bad_value_rejected(self):
+        # Punctuation-only slugifies to empty and must be refused, not stored.
+        self.call(CmdBuildSet(), "area @@@", "Invalid value for 'area'")
+        self.assertFalse(self.room1.tags.get(category="area", return_list=True))
+
+
+class TestBuildDig(EvenniaCommandTest):
+    """Digging creates a connected room with two-way exits."""
+
+    def test_dig_creates_two_way_exits(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+
+        north = [ex for ex in self.room1.exits if ex.key == "north"]
+        self.assertEqual(len(north), 1)
+        armory = north[0].destination
+        self.assertEqual(armory.key, "Armory")
+        self.assertIn("n", north[0].aliases.all())
+
+        south = [ex for ex in armory.exits if ex.key == "south"]
+        self.assertEqual(len(south), 1)
+        self.assertEqual(south[0].destination, self.room1)
+
+
+class TestBuildDelete(EvenniaCommandTest):
+    """Deletion requires a second confirming 'del'."""
+
+    def test_two_step_delete(self):
+        self.char1.permissions.add("Builder")
+        victim = create_object(settings.BASE_ROOM_TYPECLASS, key="Doomed")
+        self.call(CmdBuild(), f"#{victim.id}")
+
+        # First del only arms the confirmation.
+        self.call(CmdBuildDel(), "", "Delete Doomed?")
+        self.assertTrue(victim.pk)
+
+        # Second del actually deletes and drops the editing context.
+        self.call(CmdBuildDel(), "")
+        self.assertFalse(victim.pk)
+
+
+class TestAreaRoundTrip(EvenniaCommandTest):
+    """build -> export-data -> load reproduces rooms and the exit graph."""
+
+    def test_roundtrip_rebuilds_graph(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "testarea")
+        self.call(CmdBuildDig(), "north = Armory")
+
+        rooms, exits = build_area_data("testarea")
+        # room1's key "Room" slugs to "room"; the dug room to "armory".
+        self.assertIn("room", rooms)
+        self.assertIn("armory", rooms)
+        edges = {(frm, direction, to) for (frm, direction, to, _attrs) in exits}
+        self.assertIn(("room", "north", "armory"), edges)
+        self.assertIn(("armory", "south", "room"), edges)
+
+        # Load the captured data under a *new* area name to force fresh spawns.
+        loaded = load_area_data("imported", rooms, exits)
+        self.assertEqual(len(loaded), 2)
+        new_room, new_armory = loaded["room"], loaded["armory"]
+        self.assertNotEqual(new_room, self.room1)
+        # Description carried through the prototype.
+        self.assertEqual(new_room.db.desc, self.room1.db.desc)
+        # Exit graph rebuilt by key reference, not dbref.
+        self.assertTrue(
+            any(
+                ex.key == "north" and ex.destination == new_armory
+                for ex in new_room.exits
+            )
+        )
+        self.assertTrue(
+            any(
+                ex.key == "south" and ex.destination == new_room
+                for ex in new_armory.exits
+            )
+        )
+
+    def test_load_is_idempotent(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "testarea")
+        self.call(CmdBuildDig(), "north = Armory")
+        rooms, exits = build_area_data("testarea")
+
+        first = load_area_data("imported", rooms, exits)
+        second = load_area_data("imported", rooms, exits)
+        # Same room objects reused, and no duplicate exits created.
+        self.assertEqual(first["room"], second["room"])
+        north_exits = [ex for ex in second["room"].exits if ex.key == "north"]
+        self.assertEqual(len(north_exits), 1)
+
+
+class TestAreaExportFile(EvenniaCommandTest):
+    """export_area writes a valid, importable area module."""
+
+    def test_export_writes_importable_module(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "tmptest")
+        self.call(CmdBuildDig(), "east = Cellar")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path, rooms, exits = export_area("tmptest", directory=tmpdir)
+
+            spec = importlib.util.spec_from_file_location("area_under_test", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            self.assertIn("room", module.ROOMS)
+            self.assertIn("cellar", module.ROOMS)
+            edges = {(frm, direction, to) for (frm, direction, to, _a) in module.EXITS}
+            self.assertIn(("room", "east", "cellar"), edges)
+            self.assertIn(("cellar", "west", "room"), edges)
+
+
+class TestEditExitRedirect(EvenniaCommandTest):
+    """'edit <direction>' binds the room the exit leads to, not the exit."""
+
+    def test_edit_direction_edits_destination_room(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+
+        # 'edit north' finds the north exit and should redirect to Armory.
+        self.call(CmdBuild(), "north")
+        target = self.char1.ndb._build_target
+        self.assertEqual(target.key, "Armory")
+        self.assertIsNone(target.destination)  # it's the room, not the exit
+
+
+class TestRoomListing(EvenniaCommandTest):
+    """The areas/rooms browse commands surface what's been built."""
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "testarea")
+        self.call(CmdBuildDig(), "north = Armory")
+
+    def test_rooms_lists_area_members(self):
+        out = self.call(CmdRooms(), "testarea")
+        self.assertIn("room", out)  # room1's key
+        self.assertIn("armory", out)  # the dug room's key
+
+    def test_rooms_unknown_area_reports_known(self):
+        self.call(CmdRooms(), "nowhere", "No area")
+
+    def test_areas_lists_area_with_count(self):
+        out = self.call(CmdAreas(), "")
+        self.assertIn("testarea", out)
+        self.assertIn("2 room(s)", out)
+
+
+class TestEditNew(EvenniaCommandTest):
+    """'edit new' creates a standalone room and teleports the builder into it."""
+
+    def test_edit_new_creates_and_teleports(self):
+        self.char1.permissions.add("Builder")
+        origin = self.char1.location
+        self.call(CmdBuild(), "new Hidden Vault")
+
+        target = self.char1.ndb._build_target
+        self.assertEqual(target.key, "Hidden Vault")
+        # The builder is moved inside the new room...
+        self.assertEqual(self.char1.location, target)
+        self.assertNotEqual(self.char1.location, origin)
+        # ...and the room is genuinely standalone (no exits in or out).
+        self.assertEqual(list(target.exits), [])
+
+    def test_edit_new_without_name_uses_default(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "new")
+        self.assertEqual(self.char1.ndb._build_target.key, "An Unnamed Room")

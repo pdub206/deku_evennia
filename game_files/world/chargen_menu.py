@@ -15,26 +15,13 @@ from __future__ import annotations
 from typing import Any
 
 from evennia.utils import dedent
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    ALIGNMENTS,
-    BACKGROUNDS,
-    CLASSES,
-    MAX_AGE,
-    MIN_AGE,
-    POINT_BUY_COSTS,
-    POINT_BUY_MAX,
-    POINT_BUY_MIN,
-    POINT_BUY_TOTAL,
-    SKILLS,
-    SPECIES,
-    STANDARD_ARRAY,
-    STANDARD_ARRAY_BY_CLASS,
-    STANDARD_LANGUAGES,
-    ability_modifier,
-    roll_4d6_drop_lowest,
-)
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
+                                BACKGROUNDS, CLASSES, MAX_AGE, MIN_AGE,
+                                POINT_BUY_COSTS, POINT_BUY_MAX, POINT_BUY_MIN,
+                                POINT_BUY_TOTAL, SKILLS, SPECIES,
+                                STANDARD_ARRAY, STANDARD_ARRAY_BY_CLASS,
+                                STANDARD_LANGUAGES, ability_modifier,
+                                roll_4d6_drop_lowest)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -426,8 +413,8 @@ def menunode_choose_skills(caller: Any, raw_string: str = "", **kwargs):
     bg_skills: list[str] = BACKGROUNDS.get(bg_name, {}).get("skill_proficiencies", [])
 
     # Class skills the player has already chosen this session.
-    class_selected: list[str] = (
-        kwargs.get("class_selected") or list(char.db.chargen_skill_proficiencies or [])
+    class_selected: list[str] = kwargs.get("class_selected") or list(
+        char.db.chargen_skill_proficiencies or []
     )
     # Filter available pool to exclude skills already granted by background.
     pickable = [s for s in available if s not in bg_skills]
@@ -483,8 +470,11 @@ def menunode_choose_skills(caller: Any, raw_string: str = "", **kwargs):
                 "desc": f"{skill} ({abbr}){marker}",
                 "goto": (
                     _toggle_skill,
-                    {"class_selected": list(class_selected), "skill": skill,
-                     "num_picks": num_picks},
+                    {
+                        "class_selected": list(class_selected),
+                        "skill": skill,
+                        "num_picks": num_picks,
+                    },
                 ),
             }
         )
@@ -1297,7 +1287,9 @@ def menunode_confirm_name(caller: Any, **kwargs):
     char = _char(caller)
     name = char.key
     text = f"Your character's name will be |w{name}|n.  Confirm?"
-    next_node = "menunode_review" if char.db.chargen_from_review else "menunode_choose_gender"
+    next_node = (
+        "menunode_review" if char.db.chargen_from_review else "menunode_choose_gender"
+    )
     options = [
         {"key": ("Yes", "y"), "goto": (_confirm_name, {"next_node": next_node})},
         {"key": ("No", "n"), "goto": "menunode_choose_name"},

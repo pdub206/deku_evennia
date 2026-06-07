@@ -6,9 +6,8 @@ produced for listeners who don't understand the speaker's active language.
 Sign language is handled separately from spoken language.
 """
 
-from evennia.commands.default.general import CmdSay as _BaseSay
-
 from commands.position import _ASLEEP_MSG, _is_sleeping
+from evennia.commands.default.general import CmdSay as _BaseSay
 from systems.language import garble, hand_pronoun, is_sign_language
 
 

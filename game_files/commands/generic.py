@@ -5,10 +5,9 @@ These add game-specific behaviour — currently blocking commands while
 sleeping — without reimplementing the underlying logic.
 """
 
+from commands.position import _ASLEEP_MSG, _is_sleeping
 from evennia.commands.default.general import CmdLook as _BaseLook
 from evennia.commands.default.general import CmdPose as _BasePose
-
-from commands.position import _ASLEEP_MSG, _is_sleeping
 
 
 class CmdLook(_BaseLook):
