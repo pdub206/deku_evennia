@@ -244,10 +244,11 @@ HELP_ENTRY_DICTS = [
             object at a time and use a small set of flat verbs on it.
 
             Usage:
-              build                 show what you can build / what you're editing
-              edit here             edit the room you're standing in
-              edit new [<name>]     create a fresh unlinked room and go to it
-              edit <object>         edit an existing object by name or #dbref
+              build                   show what you can build / what you're editing
+              edit here               edit the room you're standing in
+              edit new room <name>    create a fresh unlinked room and go to it
+              edit new item <name>    create an item in this room and edit it
+              edit <object>           edit an existing room or item by name/#dbref
 
             You must have |wBuilder|n permission.  The classic builder commands
             (dig, create, set, desc, spawn, ...) still work for expert use.
@@ -258,7 +259,7 @@ HELP_ENTRY_DICTS = [
 
             |wedit here|n (or |wedit <object>|n) puts you in a sticky editing
             context bound to that object.  A header like |w[build: Town Square
-            (#5)]|n reminds you what you're editing, and your input prompt
+            (#5, Room)]|n reminds you what you're editing (and its kind), and the prompt
             changes to |weediting>|n for the whole session — so even if you walk
             away you can see you're still bound to a room.  |wdone|n clears it.
             While editing, these verbs act on the bound object:
@@ -277,7 +278,7 @@ HELP_ENTRY_DICTS = [
             ## Rooms and Exits
 
             To start a brand-new area in isolation — before it is linked into
-            the live world — use |wedit new <name>|n.  That creates a standalone
+            the live world — use |wedit new room <name>|n.  That creates a standalone
             room with no exits and teleports you into it; from there you |wdig|n
             outward to grow the area and only |wlink|n it into the game once it
             has been built and reviewed.  (|wtel #<dbref>|n takes you back where
@@ -299,6 +300,36 @@ HELP_ENTRY_DICTS = [
             fanning several exits off a hub).  To work on the new room, type
             |wedit <direction>|n — editing an exit jumps you to the room it
             leads to — or walk there and |wedit here|n.
+
+            ## Items
+
+            |wedit new item <name>|n creates an item in the room you're standing
+            in and drops you straight into editing it.  Items use the same verbs
+            as rooms — |wset|n, |wdesc|n, |wshow|n, |wdel|n, |wdone|n.  Every item
+            shares these fields:
+
+              |wname|n      the item's name
+              |wdesc|n      its description
+              |wweight|n    weight in pounds (counts against carry capacity)
+              |wvalue|n     worth in coins
+
+            ### Types
+
+            Give an item a |wtype|n with |wset type <kind>|n and extra fields for
+            that kind appear (in |wfields|n and |wshow|n); they stay hidden until
+            a type is set, and swap out if you change it:
+
+              |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
+                                  |wsubtype|n (bludgeoning / piercing / slashing)
+              |wset type armor|n      adds |wbase_ac|n and |wsubtype|n
+                                  (light / medium / heavy / shield)
+              |wset type container|n  adds |wcapacity|n (max weight it can hold)
+              |wset type none|n       back to a plain item (drops those fields)
+
+            The header shows the current type, e.g.
+            |w[build: Iron Sword (#42, Weapon)]|n.  To edit an item that already
+            exists, just |wedit <name>|n it (or |wedit #<dbref>|n).  Type
+            |wfields|n any time to see exactly what you can set.
 
             ## Areas and Export
 

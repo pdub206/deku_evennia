@@ -25,7 +25,7 @@ from evennia.utils.eveditor import EvEditor
 from evennia.utils.utils import inherits_from
 from systems.areas import (area_index, area_of, assign_area, export_area,
                            load_area, room_key_of, rooms_in_area)
-from world.build_schema import as_slug, schema_for
+from world.build_schema import TYPE_FIELDS, as_slug, schema_for
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
 # exits two-way and to alias n/s/e/w/u/d like Evennia's own tunnel command.
@@ -50,6 +50,12 @@ _BUILDER_LOCK = "cmd:perm(Builder)"
 # prompt otherwise, so its mere presence makes it obvious you're still bound to
 # a (possibly remote) room — and it's cleared again the moment you leave.
 _BUILD_PROMPT = "editing> "
+
+# Typeclass of buildable items, and the type keywords accepted by `edit new`.
+# Items are a single typeclass; specialisation is the item's `type` attribute
+# (see world/build_schema.py), set in the editor with `set type <kind>`.
+_ITEM_TYPECLASS = "typeclasses.objects.Item"
+_NEW_TYPES = ("room", "item")
 
 
 def _is_room(obj) -> bool:
@@ -84,13 +90,21 @@ def _exit_build_mode(caller) -> None:
 
 
 def _header(target) -> str:
-    return f"|w[build: {target.key} (#{target.id})]|n"
+    # Show what kind of thing is being edited. For an item that prefers its
+    # functional `type` (Weapon/Armor/Container) over the bare "Item".
+    label = type(target).__name__
+    item_type = target.db.type
+    if item_type:
+        label = item_type.capitalize()
+    return f"|w[build: {target.key} (#{target.id}, {label})]|n"
 
 
 def _field_value(target, name: str, field) -> str:
     """Render the current value of one field for ``show``."""
     if field.kind == "key":
         return target.key
+    if field.kind == "type":
+        return target.db.type or "|x(generic item)|n"
     if field.kind == "attr":
         value = target.attributes.get(field.target or name)
         if value is None:
@@ -131,10 +145,27 @@ def _render_fields(target) -> str:
     return "\n".join(lines)
 
 
+def _set_item_type(item, value: str) -> None:
+    """Set an item's ``type``, dropping the previous type's specific attributes.
+
+    Both weapon and armor expose a ``subtype`` field with different allowed
+    values, so a leftover value from the old type would mislead — clear the old
+    type's fields entirely on every change.  ``"none"`` reverts to a generic item.
+    """
+    new_type = None if value == "none" else value
+    if item.db.type == new_type:
+        return
+    for fname, fld in TYPE_FIELDS.get(item.db.type, {}).items():
+        item.attributes.remove(fld.target or fname)
+    item.db.type = new_type
+
+
 def _apply_field(target, name: str, field, value) -> None:
     """Write a validated field ``value`` to ``target`` per its schema kind."""
     if field.kind == "key":
         target.key = value
+    elif field.kind == "type":
+        _set_item_type(target, value)
     elif field.kind == "attr":
         target.attributes.add(field.target or name, value)
     elif field.kind == "tag":
@@ -157,14 +188,17 @@ class CmdBuild(Command):
     Build and edit the world.
 
     Usage:
-      build                 show what you can build and what you're editing
-      edit here             edit the room you're standing in
-      edit new [<name>]     create a fresh unlinked room and teleport into it
-      edit <object>         edit an existing object by name or #dbref
+      build                   show what you can build and what you're editing
+      edit here               edit the room you're standing in
+      edit new room <name>    create a fresh unlinked room and go into it
+      edit new item <name>    create an item in this room and edit it
+      edit <object>           edit an existing room or item by name or #dbref
 
-    |wedit new|n is how you start an area "offline": it makes a standalone room
-    with no exits and moves you inside, so you can build and review it before
-    linking it into the live world.
+    |wedit new room|n is how you start an area "offline": it makes a standalone
+    room with no exits and moves you inside, so you can build and review it
+    before linking it into the live world.  |wedit new item <name>|n drops a new
+    item into the room with you; give it a kind with |wset type weapon|n (or
+    armor / container) and its type-specific fields appear.
 
     |wbuild|n opens a sticky editing context bound to one object.  While
     editing, flat verbs act on that object:
@@ -200,7 +234,7 @@ class CmdBuild(Command):
             return
 
         if lowered == "new" or lowered.startswith("new "):
-            # Everything after the "new" keyword is the (optional) room name.
+            # Everything after "new" is an optional type keyword + name.
             self._create_new(arg[len("new") :].strip())
             return
 
@@ -225,7 +259,26 @@ class CmdBuild(Command):
         _enter_build_mode(caller, target)
         caller.msg(_header(target) + "\n" + _render_show(target))
 
-    def _create_new(self, name: str) -> None:
+    def _create_new(self, rest: str) -> None:
+        """Dispatch ``edit new <room|item> [<name>]`` to the right creator.
+
+        A type keyword is required so both flows are explicit: ``room`` teleports
+        you into a fresh standalone room; ``item`` drops a new item into the room
+        with you (give it a kind later with ``set type <weapon|armor|...>``).
+        """
+        parts = rest.split(None, 1)
+        new_type = parts[0].lower() if parts else ""
+        name = parts[1].strip() if len(parts) > 1 else ""
+        if new_type not in _NEW_TYPES:
+            self.caller.msg(f"Usage: edit new <{'|'.join(_NEW_TYPES)}> [name]")
+            return
+
+        if new_type == "room":
+            self._create_room(name)
+        else:
+            self._create_item(name)
+
+    def _create_room(self, name: str) -> None:
         """Create a standalone, unlinked room and move the builder into it.
 
         This is how an area is started "offline": the new room has no exits to
@@ -253,6 +306,27 @@ class CmdBuild(Command):
         caller.msg(note)
         caller.msg(_header(new_room) + "\n" + _render_show(new_room))
 
+    def _create_item(self, name: str) -> None:
+        """Create an item in the current room and bind it for editing.
+
+        Unlike a room, an item isn't a place, so we leave the builder where they
+        are and just drop the new item into the room with them.  Give it a kind
+        afterwards with ``set type <weapon|armor|container>``.
+        """
+        caller = self.caller
+        location = caller.location
+        if location is None:
+            caller.msg("You need to be in a room to create an item.")
+            return
+        name = name or "an unnamed item"
+        item = create_object(_ITEM_TYPECLASS, key=name, location=location)
+        _enter_build_mode(caller, item)
+        caller.msg(
+            f"Created |y{name}|n (#{item.id}) here. Set its |wtype|n to add "
+            "weapon/armor/container fields; |wfields|n lists what you can set."
+        )
+        caller.msg(_header(item) + "\n" + _render_show(item))
+
     def _status(self) -> None:
         caller = self.caller
         target = caller.ndb._build_target
@@ -261,9 +335,10 @@ class CmdBuild(Command):
         else:
             caller.msg(
                 "You are not editing anything.\n"
-                "  |wedit here|n          edit the current room\n"
-                "  |wedit new [<name>]|n  create a fresh unlinked room and go to it\n"
-                "  |wedit <object>|n      edit something by name or #dbref\n"
+                "  |wedit here|n            edit the current room\n"
+                "  |wedit new room <name>|n create a fresh unlinked room and go to it\n"
+                "  |wedit new item <name>|n create an item here and edit it\n"
+                "  |wedit <object>|n        edit something by name or #dbref\n"
                 "Type |whelp build|n for the full verb list."
             )
 
@@ -488,6 +563,9 @@ class CmdBuildSet(_BuildCommand):
 
         _apply_field(self.target, name, field, value)
         caller.msg(f"Set |y{name}|n to: {value}")
+        if field.kind == "type":
+            # Changing the type reshapes the editable fields — show the new set.
+            caller.msg(_render_show(self.target))
 
 
 def _desc_load(caller) -> str:
