@@ -202,6 +202,19 @@ class TestRoomListing(EvenniaCommandTest):
         self.assertIn("room", out)  # room1's key
         self.assertIn("armory", out)  # the dug room's key
 
+    def test_rooms_no_arg_uses_current_area(self):
+        # char1 is standing in room1, which is in 'testarea'.
+        out = self.call(CmdRooms(), "")
+        self.assertIn("testarea", out)  # the header names the current area
+        self.assertIn("room", out)
+        self.assertIn("armory", out)
+
+    def test_rooms_no_arg_without_area(self):
+        # Stand in a room that has no area assigned.
+        bare = create_object(settings.BASE_ROOM_TYPECLASS, key="Bare")
+        self.char1.location = bare
+        self.call(CmdRooms(), "", "This room has no area assigned yet.")
+
     def test_rooms_unknown_area_reports_known(self):
         self.call(CmdRooms(), "nowhere", "No area")
 

@@ -56,6 +56,12 @@ def room_key_of(room) -> str | None:
     return keys[0] if keys else None
 
 
+def area_of(room) -> str | None:
+    """Return the room's area slug tag, or ``None`` if it has no area."""
+    areas = room.tags.get(category=AREA_TAG_CATEGORY, return_list=True)
+    return areas[0] if areas else None
+
+
 def _room_key_taken(area_slug: str, room_key: str, exclude) -> bool:
     """True if another room in ``area_slug`` already uses ``room_key``."""
     for other in search_tag(room_key, category=ROOM_KEY_CATEGORY):

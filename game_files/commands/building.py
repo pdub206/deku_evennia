@@ -23,8 +23,8 @@ from evennia import CmdSet, create_object
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.utils import inherits_from
-from systems.areas import (area_index, assign_area, export_area, load_area,
-                           room_key_of, rooms_in_area)
+from systems.areas import (area_index, area_of, assign_area, export_area,
+                           load_area, room_key_of, rooms_in_area)
 from world.build_schema import as_slug, schema_for
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
@@ -323,14 +323,15 @@ class CmdAreas(Command):
 
 class CmdRooms(Command):
     """
-    List rooms, optionally within a single area.
+    List the rooms in an area.
 
     Usage:
-      rooms              show all areas and their room counts
-      rooms <area>       list the rooms in one area
+      rooms              list the rooms in your current room's area
+      rooms <area>       list the rooms in a named area
 
     Each room is shown by its area key, display name, and #dbref so you can
-    jump straight to it with |wedit <name>|n or |wedit #<dbref>|n.
+    jump straight to it with |wedit <name>|n or |wedit #<dbref>|n.  Use
+    |wareas|n for an overview of every area.
     """
 
     key = "rooms"
@@ -340,15 +341,23 @@ class CmdRooms(Command):
     def func(self) -> None:
         caller = self.caller
         arg = self.args.strip()
-        if not arg:
-            caller.msg(_render_area_index())
-            return
 
-        try:
-            slug = as_slug(arg)
-        except ValueError as err:
-            caller.msg(f"Invalid area name: {err}")
-            return
+        if arg:
+            try:
+                slug = as_slug(arg)
+            except ValueError as err:
+                caller.msg(f"Invalid area name: {err}")
+                return
+        else:
+            # Default to the area of the room the builder is standing in.
+            here = caller.location
+            if here is None:
+                caller.msg("You are not in a room.")
+                return
+            slug = area_of(here)
+            if not slug:
+                caller.msg("This room has no area assigned yet.")
+                return
 
         rooms = rooms_in_area(slug)
         if not rooms:

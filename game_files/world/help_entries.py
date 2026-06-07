@@ -304,7 +304,8 @@ HELP_ENTRY_DICTS = [
             Browse what exists with:
 
               |wareas|n                  list every area and its room count
-              |wrooms <area>|n           list the rooms in one area (with #dbrefs)
+              |wrooms|n                  list the rooms in your current area
+              |wrooms <area>|n           list the rooms in a named area (with #dbrefs)
 
             And group and save rooms with:
 
