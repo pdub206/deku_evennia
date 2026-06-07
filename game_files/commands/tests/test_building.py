@@ -7,10 +7,14 @@ Run from the game/ directory:
 
 import importlib.util
 import tempfile
+from unittest.mock import MagicMock
 
-from commands.building import (CmdAreas, CmdBuild, CmdBuildArea, CmdBuildDel,
-                               CmdBuildDig, CmdBuildFields, CmdBuildSet,
-                               CmdLoadArea, CmdRooms)
+from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
+                               CmdBuildDel, CmdBuildDig, CmdBuildFields,
+                               CmdBuildSet, CmdLoadArea, CmdRooms,
+                               _enter_build_mode, _exit_build_mode)
+from commands.command import CmdNoInput
+from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
@@ -244,3 +248,59 @@ class TestEditNew(EvenniaCommandTest):
         self.char1.permissions.add("Builder")
         self.call(CmdBuild(), "new")
         self.assertEqual(self.char1.ndb._build_target.key, "An Unnamed Room")
+
+
+class TestEditPrompt(EvenniaCommandTest):
+    """The 'editing>' prompt is armed on enter, re-sent every command, cleared
+    on exit by the generic ndb._prompt mechanism in commands.command."""
+
+    def test_enter_arms_prompt_and_exit_clears_it(self):
+        _enter_build_mode(self.char1, self.room1)
+        self.assertEqual(self.char1.ndb._prompt, _BUILD_PROMPT)
+
+        self.char1.msg = MagicMock()
+        _exit_build_mode(self.char1)
+        self.assertIsNone(self.char1.ndb._prompt)
+        self.char1.msg.assert_any_call(prompt="")  # client prompt cleared too
+
+    def test_prompt_resent_after_any_command_while_editing(self):
+        # The persistence mixin re-sends ndb._prompt from at_post_cmd, so even a
+        # non-build command (here CmdRooms) keeps the prompt at the input line.
+        self.char1.ndb._prompt = _BUILD_PROMPT
+        self.char1.msg = MagicMock()
+        cmd = CmdRooms()
+        cmd.caller = self.char1
+        cmd.at_post_cmd()
+        self.char1.msg.assert_any_call(prompt=_BUILD_PROMPT)
+
+    def test_no_prompt_when_not_editing(self):
+        self.char1.ndb._prompt = None
+        self.char1.msg = MagicMock()
+        cmd = CmdRooms()
+        cmd.caller = self.char1
+        cmd.at_post_cmd()
+        for mock_call in self.char1.msg.mock_calls:
+            self.assertNotIn("prompt", mock_call.kwargs)
+
+    def test_bare_enter_redraws_prompt(self):
+        # Empty input runs CMD_NOINPUT, not a normal command, so it needs its
+        # own redraw of the sticky prompt.
+        self.char1.ndb._prompt = _BUILD_PROMPT
+        self.char1.msg = MagicMock()
+        cmd = CmdNoInput()
+        cmd.caller = self.char1
+        cmd.func()
+        self.char1.msg.assert_any_call(prompt=_BUILD_PROMPT)
+
+    def test_bare_enter_silent_when_not_editing(self):
+        self.char1.ndb._prompt = None
+        self.char1.msg = MagicMock()
+        cmd = CmdNoInput()
+        cmd.caller = self.char1
+        cmd.func()
+        self.char1.msg.assert_not_called()
+
+    def test_noinput_registered_in_character_cmdset(self):
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+        self.assertTrue(any(isinstance(c, CmdNoInput) for c in cmdset.commands))

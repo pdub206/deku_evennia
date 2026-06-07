@@ -41,6 +41,11 @@ AUTO_PUPPET_ON_LOGIN = False
 MAX_NR_CHARACTERS = 5
 CHARGEN_MENU = "world.chargen_menu"
 
+# Base class for Evennia's default and auto-generated (exit/movement) commands.
+# Our MuxCommand adds the persistent-prompt hook so the build editor's prompt
+# stays visible after every command, not just our own. See commands/command.py.
+COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.

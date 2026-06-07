@@ -46,6 +46,11 @@ _DIRECTIONS: dict[str, tuple[str, list[str]]] = {
 
 _BUILDER_LOCK = "cmd:perm(Builder)"
 
+# Input prompt shown while a builder is in an editing session. The game has no
+# prompt otherwise, so its mere presence makes it obvious you're still bound to
+# a (possibly remote) room — and it's cleared again the moment you leave.
+_BUILD_PROMPT = "editing> "
+
 
 def _is_room(obj) -> bool:
     return inherits_from(obj, "evennia.objects.objects.DefaultRoom")
@@ -57,17 +62,25 @@ def _is_room(obj) -> bool:
 
 
 def _enter_build_mode(caller, target) -> None:
-    """Bind ``target`` and add the sticky build cmdset to ``caller``."""
+    """Bind ``target``, add the sticky build cmdset, and arm the edit prompt.
+
+    The prompt is re-emitted after every command by
+    ``commands.command._PromptPersistMixin`` (it reads ``ndb._prompt``), so it
+    stays visible no matter what the builder types — we only arm it here.
+    """
     caller.ndb._build_target = target
     caller.ndb._build_del_pending = None
+    caller.ndb._prompt = _BUILD_PROMPT
     caller.cmdset.add(BuildModeCmdSet, persistent=False)
 
 
 def _exit_build_mode(caller) -> None:
-    """Remove the build cmdset and clear the editing context."""
+    """Remove the build cmdset, clear the context, and drop the edit prompt."""
     caller.cmdset.remove(BuildModeCmdSet)
     caller.ndb._build_target = None
     caller.ndb._build_del_pending = None
+    caller.ndb._prompt = None
+    caller.msg(prompt="")
 
 
 def _header(target) -> str:

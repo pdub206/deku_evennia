@@ -258,8 +258,10 @@ HELP_ENTRY_DICTS = [
 
             |wedit here|n (or |wedit <object>|n) puts you in a sticky editing
             context bound to that object.  A header like |w[build: Town Square
-            (#5)]|n reminds you what you're editing.  While editing, these verbs
-            act on the bound object:
+            (#5)]|n reminds you what you're editing, and your input prompt
+            changes to |weediting>|n for the whole session — so even if you walk
+            away you can see you're still bound to a room.  |wdone|n clears it.
+            While editing, these verbs act on the bound object:
 
               |wfields|n                 list the editable fields, with hints
               |wshow|n                   show current field values and exits

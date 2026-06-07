@@ -16,6 +16,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.building import CmdAreas, CmdBuild, CmdLoadArea, CmdRooms
 from commands.change import CmdChange
+from commands.command import CmdNoInput
 from commands.communication import CmdSay
 from commands.generic import CmdLook, CmdPose
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
@@ -54,6 +55,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSheet)
         self.add(CmdSkills)
         self.add(CmdChange)
+        # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
+        # which otherwise runs no command and so wouldn't refresh it.
+        self.add(CmdNoInput)
         # Builder tools (lock-gated to Builder perm). The sticky edit-mode
         # verbs live in BuildModeCmdSet, added to the caller while editing.
         self.add(CmdBuild)
