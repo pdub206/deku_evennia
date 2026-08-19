@@ -197,8 +197,13 @@ ITEM_FIELDS: dict[str, Field] = {
 }
 
 
+def _item_schema(item_type) -> dict[str, Field]:
+    """Item fields plus the extra fields for ``item_type`` (None = generic)."""
+    return {**ITEM_FIELDS, **TYPE_FIELDS.get(item_type, {})}
+
+
 def schema_for(obj) -> dict[str, Field] | None:
-    """Return the field schema for ``obj``, or ``None`` if it isn't buildable.
+    """Return the field schema for a live ``obj``, or ``None`` if not buildable.
 
     For an item the schema is dynamic: the always-present fields plus the extra
     fields for whatever ``type`` the item currently has (none for a generic
@@ -207,7 +212,18 @@ def schema_for(obj) -> dict[str, Field] | None:
     if inherits_from(obj, "evennia.objects.objects.DefaultRoom"):
         return ROOM_FIELDS
     if inherits_from(obj, "typeclasses.objects.Item"):
-        extra = TYPE_FIELDS.get(obj.db.type, {})
-        return {**ITEM_FIELDS, **extra}
+        return _item_schema(obj.db.type)
     # Future: DefaultCharacter -> NPC_FIELDS.
+    return None
+
+
+def schema_for_prototype(proto: dict) -> dict[str, Field] | None:
+    """Return the field schema for a prototype dict, or ``None`` if unknown.
+
+    Mirrors :func:`schema_for` but reads from a prototype's ``typeclass``/``type``
+    keys instead of a live object, so the build editor can drive item templates
+    with the same fields as their instances.
+    """
+    if proto.get("typeclass") == "typeclasses.objects.Item":
+        return _item_schema(proto.get("type"))
     return None

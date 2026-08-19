@@ -247,8 +247,9 @@ HELP_ENTRY_DICTS = [
               build                   show what you can build / what you're editing
               edit here               edit the room you're standing in
               edit new room <name>    create a fresh unlinked room and go to it
-              edit new item <name>    create an item in this room and edit it
-              edit <object>           edit an existing room or item by name/#dbref
+              edit new item <name>    create a new item template and edit it
+              edit item <name>        edit an existing item template
+              edit <object>           edit a live room or item copy by name/#dbref
 
             You must have |wBuilder|n permission.  The classic builder commands
             (dig, create, set, desc, spawn, ...) still work for expert use.
@@ -303,21 +304,34 @@ HELP_ENTRY_DICTS = [
 
             ## Items
 
-            |wedit new item <name>|n creates an item in the room you're standing
-            in and drops you straight into editing it.  Items use the same verbs
-            as rooms — |wset|n, |wdesc|n, |wshow|n, |wdel|n, |wdone|n.  Every item
-            shares these fields:
+            Items are authored as |ytemplates|n (prototypes) and then stamped into
+            the world as copies — the DIKU object-vnum model.  You edit the
+            template once; every copy is consistent with it, and you can tweak an
+            individual copy for a one-off without touching the template.
+
+              |wedit new item <name>|n   create a new item template and edit it
+              |wedit item <name>|n       edit an existing template
+              |w@spawn <key>|n           place a copy of a template in this room
+              |witems|n / |witems <type>|n   list templates (item/weapon/armor/container)
+
+            A template uses the same verbs as a room — |wset|n, |wdesc|n, |wshow|n,
+            |wfields|n, |wdel|n, |wdone|n — over these shared fields:
 
               |wname|n      the item's name
               |wdesc|n      its description
               |wweight|n    weight in pounds (counts against carry capacity)
               |wvalue|n     worth in coins
 
+            Changes to a template persist immediately and apply to copies spawned
+            afterwards.  To customise one existing copy in the world, |wedit|n it
+            directly (by name or |w#dbref|n) — that's a one-off and leaves the
+            template and the other copies alone.
+
             ### Types
 
-            Give an item a |wtype|n with |wset type <kind>|n and extra fields for
-            that kind appear (in |wfields|n and |wshow|n); they stay hidden until
-            a type is set, and swap out if you change it:
+            Give a template a |wtype|n with |wset type <kind>|n and extra fields for
+            that kind appear (in |wfields|n and |wshow|n); they stay hidden until a
+            type is set, and swap out if you change it:
 
               |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
                                   |wsubtype|n (bludgeoning / piercing / slashing)
@@ -326,10 +340,9 @@ HELP_ENTRY_DICTS = [
               |wset type container|n  adds |wcapacity|n (max weight it can hold)
               |wset type none|n       back to a plain item (drops those fields)
 
-            The header shows the current type, e.g.
-            |w[build: Iron Sword (#42, Weapon)]|n.  To edit an item that already
-            exists, just |wedit <name>|n it (or |wedit #<dbref>|n).  Type
-            |wfields|n any time to see exactly what you can set.
+            The header shows what you're editing, e.g.
+            |w[build: iron_sword (Weapon prototype)]|n.  Type |wfields|n any time
+            to see exactly what you can set.
 
             ## Areas and Export
 

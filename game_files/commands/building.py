@@ -20,12 +20,17 @@ entry handling — the editing context itself is type-agnostic.
 from commands.command import Command
 from django.conf import settings
 from evennia import CmdSet, create_object
+from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
+                                           delete_prototype, save_prototype,
+                                           search_prototype)
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
+from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.areas import (area_index, area_of, assign_area, export_area,
                            load_area, room_key_of, rooms_in_area)
-from world.build_schema import TYPE_FIELDS, as_slug, schema_for
+from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
+                                schema_for_prototype)
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
 # exits two-way and to alias n/s/e/w/u/d like Evennia's own tunnel command.
@@ -58,8 +63,50 @@ _ITEM_TYPECLASS = "typeclasses.objects.Item"
 _NEW_TYPES = ("room", "item")
 
 
+def _is_prototype(target) -> bool:
+    """A build target is either a live object or a prototype dict (a template)."""
+    return isinstance(target, dict)
+
+
 def _is_room(obj) -> bool:
-    return inherits_from(obj, "evennia.objects.objects.DefaultRoom")
+    return not _is_prototype(obj) and inherits_from(
+        obj, "evennia.objects.objects.DefaultRoom"
+    )
+
+
+def _schema(target):
+    """The editable-field schema for a build target (live object or prototype)."""
+    if _is_prototype(target):
+        return schema_for_prototype(target)
+    return schema_for(target)
+
+
+def _flatten_prototype(proto: dict) -> dict:
+    """Convert a stored prototype into the editor's flat form.
+
+    Evennia normalises arbitrary fields into an ``attrs`` list on save (reserved
+    keys like ``key``/``typeclass`` stay top-level).  The build editor works with
+    fields as plain top-level keys, so flatten the ``attrs`` back out on load.
+    """
+    flat = {k: v for k, v in proto.items() if k != "attrs"}
+    for attr in proto.get("attrs", []):
+        flat[attr[0]] = attr[1]  # (name, value[, category, locks])
+    return flat
+
+
+def _find_item_prototype(key: str):
+    """Return the item prototype (flat form) with this exact key, or ``None``.
+
+    ``search_prototype`` matches partially, so filter for an exact key and our
+    item typeclass.
+    """
+    for proto in search_prototype(key):
+        if (
+            proto.get("prototype_key") == key
+            and proto.get("typeclass") == _ITEM_TYPECLASS
+        ):
+            return _flatten_prototype(proto)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -90,8 +137,11 @@ def _exit_build_mode(caller) -> None:
 
 
 def _header(target) -> str:
-    # Show what kind of thing is being edited. For an item that prefers its
-    # functional `type` (Weapon/Armor/Container) over the bare "Item".
+    # Show what's being edited and what kind it is. Prototypes (templates) are
+    # marked as such so a builder never confuses a template with a live copy.
+    if _is_prototype(target):
+        kind = (target.get("type") or "item").capitalize()
+        return f"|w[build: {target.get('key')} ({kind} prototype)]|n"
     label = type(target).__name__
     item_type = target.db.type
     if item_type:
@@ -99,18 +149,25 @@ def _header(target) -> str:
     return f"|w[build: {target.key} (#{target.id}, {label})]|n"
 
 
+def _crop(text: str) -> str:
+    text = str(text)
+    return text if len(text) <= 60 else text[:57] + "..."
+
+
 def _field_value(target, name: str, field) -> str:
     """Render the current value of one field for ``show``."""
+    if _is_prototype(target):
+        if field.kind == "type":
+            return target.get("type") or "|x(generic item)|n"
+        value = target.get("key" if field.kind == "key" else (field.target or name))
+        return _crop(value) if value not in (None, "") else "|x(unset)|n"
     if field.kind == "key":
         return target.key
     if field.kind == "type":
         return target.db.type or "|x(generic item)|n"
     if field.kind == "attr":
         value = target.attributes.get(field.target or name)
-        if value is None:
-            return "|x(unset)|n"
-        text = str(value)
-        return text if len(text) <= 60 else text[:57] + "..."
+        return _crop(value) if value is not None else "|x(unset)|n"
     if field.kind == "tag":
         tags = target.tags.get(category=field.target or name, return_list=True)
         return ", ".join(tags) if tags else "|x(unset)|n"
@@ -119,7 +176,7 @@ def _field_value(target, name: str, field) -> str:
 
 def _render_show(target) -> str:
     """A read-out of every field (and, for rooms, exits) of ``target``."""
-    schema = schema_for(target)
+    schema = _schema(target)
     lines = []
     if schema:
         for name, field in schema.items():
@@ -136,7 +193,7 @@ def _render_show(target) -> str:
 
 def _render_fields(target) -> str:
     """List the editable fields of ``target`` with their blurbs."""
-    schema = schema_for(target)
+    schema = _schema(target)
     if not schema:
         return "There are no editable fields for this object yet."
     lines = ["|wEditable fields|n (set with |wset <field> <value>|n):"]
@@ -145,8 +202,15 @@ def _render_fields(target) -> str:
     return "\n".join(lines)
 
 
+def _type_attr_names(item_type) -> list[str]:
+    """Attribute/key names owned by an item type's extra fields (for clearing)."""
+    return [
+        fld.target or fname for fname, fld in TYPE_FIELDS.get(item_type, {}).items()
+    ]
+
+
 def _set_item_type(item, value: str) -> None:
-    """Set an item's ``type``, dropping the previous type's specific attributes.
+    """Set a live item's ``type``, dropping the previous type's attributes.
 
     Both weapon and armor expose a ``subtype`` field with different allowed
     values, so a leftover value from the old type would mislead — clear the old
@@ -155,13 +219,35 @@ def _set_item_type(item, value: str) -> None:
     new_type = None if value == "none" else value
     if item.db.type == new_type:
         return
-    for fname, fld in TYPE_FIELDS.get(item.db.type, {}).items():
-        item.attributes.remove(fld.target or fname)
+    for attr in _type_attr_names(item.db.type):
+        item.attributes.remove(attr)
     item.db.type = new_type
+
+
+def _set_prototype_type(proto: dict, value: str) -> None:
+    """As :func:`_set_item_type`, but for a prototype dict instead of an object."""
+    new_type = None if value == "none" else value
+    if proto.get("type") == new_type:
+        return
+    for attr in _type_attr_names(proto.get("type")):
+        proto.pop(attr, None)
+    if new_type:
+        proto["type"] = new_type
+    else:
+        proto.pop("type", None)
 
 
 def _apply_field(target, name: str, field, value) -> None:
     """Write a validated field ``value`` to ``target`` per its schema kind."""
+    if _is_prototype(target):
+        if field.kind == "key":
+            target["key"] = value
+        elif field.kind == "type":
+            _set_prototype_type(target, value)
+        else:  # attr
+            target[field.target or name] = value
+        save_prototype(target)  # templates persist on every change
+        return
     if field.kind == "key":
         target.key = value
     elif field.kind == "type":
@@ -191,14 +277,19 @@ class CmdBuild(Command):
       build                   show what you can build and what you're editing
       edit here               edit the room you're standing in
       edit new room <name>    create a fresh unlinked room and go into it
-      edit new item <name>    create an item in this room and edit it
-      edit <object>           edit an existing room or item by name or #dbref
+      edit new item <name>    create a new item *template* and edit it
+      edit item <name>        edit an existing item template
+      edit <object>           edit a live room or a placed item copy by name/#dbref
 
-    |wedit new room|n is how you start an area "offline": it makes a standalone
-    room with no exits and moves you inside, so you can build and review it
-    before linking it into the live world.  |wedit new item <name>|n drops a new
-    item into the room with you; give it a kind with |wset type weapon|n (or
-    armor / container) and its type-specific fields appear.
+    Items are authored as |ytemplates|n (prototypes), then stamped into the world
+    as copies — like DIKU object vnums.  |wedit new item|n makes a template;
+    |w@spawn <key>|n places a copy of it in your room; |witems|n lists all
+    templates.  Give a template a kind with |wset type weapon|n (armor / container)
+    and its type-specific fields appear.  Editing a placed copy (|wedit <object>|n)
+    is a one-off and never changes the template.
+
+    |wedit new room|n starts an area "offline": a standalone room with no exits,
+    so you can build and review it before |wlink|ning it into the live world.
 
     |wbuild|n opens a sticky editing context bound to one object.  While
     editing, flat verbs act on that object:
@@ -236,6 +327,11 @@ class CmdBuild(Command):
         if lowered == "new" or lowered.startswith("new "):
             # Everything after "new" is an optional type keyword + name.
             self._create_new(arg[len("new") :].strip())
+            return
+
+        if lowered == "item" or lowered.startswith("item "):
+            # 'edit item <name>' edits an existing item *prototype* (template).
+            self._edit_item_prototype(arg[len("item") :].strip())
             return
 
         if lowered == "here":
@@ -307,25 +403,59 @@ class CmdBuild(Command):
         caller.msg(_header(new_room) + "\n" + _render_show(new_room))
 
     def _create_item(self, name: str) -> None:
-        """Create an item in the current room and bind it for editing.
+        """Create a new item *prototype* (template) and bind it for editing.
 
-        Unlike a room, an item isn't a place, so we leave the builder where they
-        are and just drop the new item into the room with them.  Give it a kind
-        afterwards with ``set type <weapon|armor|container>``.
+        An item is authored as a template, not a one-off: this makes a prototype
+        you edit here and later stamp copies of into the world with
+        ``@spawn <key>``.  The prototype persists as soon as it's created, so it
+        shows up in |witems|n immediately.
         """
         caller = self.caller
-        location = caller.location
-        if location is None:
-            caller.msg("You need to be in a room to create an item.")
+        if not name:
+            caller.msg("Usage: edit new item <name>")
             return
-        name = name or "an unnamed item"
-        item = create_object(_ITEM_TYPECLASS, key=name, location=location)
-        _enter_build_mode(caller, item)
+        key = as_slug(name)
+        if _find_item_prototype(key):
+            caller.msg(
+                f"An item prototype '|y{key}|n' already exists — edit it with "
+                f"|wedit item {key}|n."
+            )
+            return
+        proto = {
+            "prototype_key": key,
+            "key": name,
+            "typeclass": _ITEM_TYPECLASS,
+            "weight": 0.0,
+            "value": 0,
+        }
+        save_prototype(proto)
+        _enter_build_mode(caller, proto)
         caller.msg(
-            f"Created |y{name}|n (#{item.id}) here. Set its |wtype|n to add "
-            "weapon/armor/container fields; |wfields|n lists what you can set."
+            f"Created item prototype |y{key}|n. Set its |wtype|n to add "
+            f"weapon/armor/container fields; place copies with |w@spawn {key}|n."
         )
-        caller.msg(_header(item) + "\n" + _render_show(item))
+        caller.msg(_header(proto) + "\n" + _render_show(proto))
+
+    def _edit_item_prototype(self, name: str) -> None:
+        """Bind an existing item prototype (template) for editing."""
+        caller = self.caller
+        if not name:
+            caller.msg("Usage: edit item <name>")
+            return
+        key = as_slug(name)
+        proto = _find_item_prototype(key)
+        if proto is None:
+            caller.msg(
+                f"No item prototype '|y{key}|n'. See |witems|n, or create it with "
+                f"|wedit new item {name}|n."
+            )
+            return
+        _enter_build_mode(caller, dict(proto))  # edit a mutable copy
+        caller.msg(
+            _header(caller.ndb._build_target)
+            + "\n"
+            + _render_show(caller.ndb._build_target)
+        )
 
     def _status(self) -> None:
         caller = self.caller
@@ -337,8 +467,9 @@ class CmdBuild(Command):
                 "You are not editing anything.\n"
                 "  |wedit here|n            edit the current room\n"
                 "  |wedit new room <name>|n create a fresh unlinked room and go to it\n"
-                "  |wedit new item <name>|n create an item here and edit it\n"
-                "  |wedit <object>|n        edit something by name or #dbref\n"
+                "  |wedit new item <name>|n create a new item template and edit it\n"
+                "  |wedit item <name>|n     edit an existing item template\n"
+                "  |wedit <object>|n        edit a live room or item copy by name/#dbref\n"
                 "Type |whelp build|n for the full verb list."
             )
 
@@ -463,6 +594,89 @@ class CmdRooms(Command):
         caller.msg("\n".join(lines))
 
 
+def _all_item_prototypes() -> list[dict]:
+    """Every item prototype (template) known to the game, in flat form."""
+    return [
+        _flatten_prototype(p)
+        for p in search_prototype()
+        if p.get("typeclass") == _ITEM_TYPECLASS
+    ]
+
+
+def _proto_type_label(proto: dict) -> str:
+    """A prototype's functional type, with the generic case shown as 'item'."""
+    return proto.get("type") or "item"
+
+
+def _proto_line(proto: dict) -> str:
+    """One prototype row: key, display name, and how many copies are in the world."""
+    key = proto.get("prototype_key", "?")
+    count = len(search_tag(key, category=PROTOTYPE_TAG_CATEGORY))
+    return f"  |C{key}|n — {proto.get('key', '?')} ({count} in world)"
+
+
+class CmdItems(Command):
+    """
+    List the item prototypes (templates) that exist in the game.
+
+    Usage:
+      items              every item template, grouped by type
+      items <type>       only templates of one type (item, weapon, armor, container)
+
+    Each row shows the template's key, its display name, and how many copies are
+    spawned in the world.  Edit one with |wedit item <key>|n and place copies with
+    |w@spawn <key>|n.  ('item' here means a template with no specialised type.)
+    """
+
+    key = "items"
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+
+    def func(self) -> None:
+        caller = self.caller
+        arg = self.args.strip().lower()
+        valid_types = ("item", *ITEM_TYPES)
+
+        protos = _all_item_prototypes()
+        if not protos:
+            caller.msg(
+                "There are no item templates yet. Make one with "
+                "|wedit new item <name>|n."
+            )
+            return
+
+        if arg:
+            if arg not in valid_types:
+                caller.msg(f"Unknown type '{arg}'. Valid: {', '.join(valid_types)}.")
+                return
+            shown = [p for p in protos if _proto_type_label(p) == arg]
+            if not shown:
+                caller.msg(f"No item templates of type |y{arg}|n.")
+                return
+            lines = [f"|wItem templates of type |y{arg}|n ({len(shown)}):"]
+            lines += [
+                _proto_line(p)
+                for p in sorted(shown, key=lambda d: d.get("prototype_key", ""))
+            ]
+            caller.msg("\n".join(lines))
+            return
+
+        groups: dict[str, list] = {}
+        for proto in protos:
+            groups.setdefault(_proto_type_label(proto), []).append(proto)
+        lines = [f"|wItem templates|n ({len(protos)} total):"]
+        for type_name in valid_types:
+            group = groups.get(type_name)
+            if not group:
+                continue
+            lines.append(f"\n|y{type_name}|n ({len(group)}):")
+            lines += [
+                _proto_line(p)
+                for p in sorted(group, key=lambda d: d.get("prototype_key", ""))
+            ]
+        caller.msg("\n".join(lines))
+
+
 # ---------------------------------------------------------------------------
 # Mode commands (only present while editing)
 # ---------------------------------------------------------------------------
@@ -538,7 +752,7 @@ class CmdBuildSet(_BuildCommand):
 
     def func(self) -> None:
         caller = self.caller
-        schema = schema_for(self.target)
+        schema = _schema(self.target)
         if not schema:
             caller.msg("This object has no editable fields yet.")
             return
@@ -568,15 +782,29 @@ class CmdBuildSet(_BuildCommand):
             caller.msg(_render_show(self.target))
 
 
+def _get_desc(target) -> str:
+    return (
+        (target.get("desc") or "") if _is_prototype(target) else (target.db.desc or "")
+    )
+
+
+def _set_desc(target, value) -> None:
+    if _is_prototype(target):
+        target["desc"] = value
+        save_prototype(target)
+    else:
+        target.db.desc = value
+
+
 def _desc_load(caller) -> str:
     target = caller.ndb._build_target
-    return (target.db.desc or "") if target else ""
+    return _get_desc(target) if target else ""
 
 
 def _desc_save(caller, buf) -> bool:
     target = caller.ndb._build_target
-    if target:
-        target.db.desc = buf
+    if target is not None:
+        _set_desc(target, buf)
     return True
 
 
@@ -597,16 +825,18 @@ class CmdBuildDesc(_BuildCommand):
 
     def func(self) -> None:
         arg = self.args.strip()
+        target = self.target
         if arg:
-            self.target.db.desc = arg
+            _set_desc(target, arg)
             self.caller.msg("Description set.")
             return
+        name = target.get("key") if _is_prototype(target) else target.key
         EvEditor(
             self.caller,
             loadfunc=_desc_load,
             savefunc=_desc_save,
             quitfunc=_desc_quit,
-            key=f"desc of {self.target.key}",
+            key=f"desc of {name}",
             persistent=False,
         )
 
@@ -843,18 +1073,21 @@ class CmdBuildDel(_BuildCommand):
     def func(self) -> None:
         caller = self.caller
         target = self.target
+        name = target.get("key") if _is_prototype(target) else target.key
         if caller.ndb._build_del_pending is target:
-            name = target.key
-            if _is_room(target):
-                for ex in list(target.exits):
-                    ex.delete()
-            target.delete()
+            if _is_prototype(target):
+                delete_prototype(target["prototype_key"])
+            else:
+                if _is_room(target):
+                    for ex in list(target.exits):
+                        ex.delete()
+                target.delete()
             _exit_build_mode(caller)
             caller.msg(f"Deleted |y{name}|n. You are no longer editing.")
         else:
             caller.ndb._build_del_pending = target
             caller.msg(
-                f"|rDelete {target.key}? This cannot be undone.|n "
+                f"|rDelete {name}? This cannot be undone.|n "
                 "Type |wdel|n again to confirm, or any other verb to cancel."
             )
 
@@ -871,7 +1104,9 @@ class CmdBuildDone(_BuildCommand):
     aliases = ["q"]
 
     def func(self) -> None:
-        name = self.target.key
+        target = self.target
+        # Prototypes persist on every change, so there's nothing to save here.
+        name = target.get("key") if _is_prototype(target) else target.key
         _exit_build_mode(self.caller)
         self.caller.msg(f"Done editing |y{name}|n.")
 

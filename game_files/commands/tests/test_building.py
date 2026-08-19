@@ -10,17 +10,34 @@ import tempfile
 from unittest.mock import MagicMock
 
 from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
-                               CmdBuildDel, CmdBuildDig, CmdBuildFields,
-                               CmdBuildSet, CmdLoadArea, CmdRooms,
-                               _enter_build_mode, _exit_build_mode)
+                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
+                               CmdBuildFields, CmdBuildSet, CmdItems,
+                               CmdLoadArea, CmdRooms, _enter_build_mode,
+                               _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
 from evennia import create_object
+from evennia.prototypes.prototypes import save_prototype, search_prototype
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
-from world.build_schema import schema_for
+from world.build_schema import schema_for_prototype
+
+
+def _proto(key):
+    """Return the saved item prototype (flattened) with this exact key, or None.
+
+    Evennia stores arbitrary fields under an ``attrs`` list; flatten them back to
+    plain keys so tests can read them the way the editor does.
+    """
+    for proto in search_prototype(key):
+        if proto.get("prototype_key") == key:
+            flat = {k: v for k, v in proto.items() if k != "attrs"}
+            for attr in proto.get("attrs", []):
+                flat[attr[0]] = attr[1]
+            return flat
+    return None
 
 
 class TestBuildAccess(EvenniaCommandTest):
@@ -264,7 +281,7 @@ class TestEditNew(EvenniaCommandTest):
 
 
 class TestEditNewItem(EvenniaCommandTest):
-    """'edit new item' creates an item in the room and edits it in place."""
+    """'edit new item' authors an item *template* (prototype), not a world object."""
 
     ITEM = "typeclasses.objects.Item"
 
@@ -272,66 +289,80 @@ class TestEditNewItem(EvenniaCommandTest):
         super().setUp()
         self.char1.permissions.add("Builder")
 
-    def test_create_item_in_current_room(self):
-        origin = self.char1.location
-        self.call(CmdBuild(), "new item Iron Sword")
-        item = self.char1.ndb._build_target
-        self.assertEqual(item.key, "Iron Sword")
-        self.assertTrue(inherits_from(item, self.ITEM))
-        # Created in the room, and the builder did NOT teleport.
-        self.assertEqual(item.location, origin)
-        self.assertEqual(self.char1.location, origin)
+    def test_edit_new_item_creates_prototype(self):
+        from typeclasses.objects import Item
 
-    def test_item_defaults_and_fields(self):
+        self.call(CmdBuild(), "new item Iron Sword")
+        proto = self.char1.ndb._build_target
+        self.assertIsInstance(proto, dict)
+        self.assertEqual(proto["prototype_key"], "iron_sword")
+        self.assertEqual(proto["key"], "Iron Sword")
+        self.assertEqual(proto["typeclass"], self.ITEM)
+        # A template, not a placed object...
+        self.assertEqual(Item.objects.all_family().count(), 0)
+        # ...that persisted immediately.
+        self.assertIsNotNone(_proto("iron_sword"))
+
+    def test_defaults_and_fields(self):
         self.call(CmdBuild(), "new item Rock")
-        item = self.char1.ndb._build_target
-        self.assertEqual(item.db.weight, 0.0)
-        self.assertEqual(item.db.value, 0)
+        proto = self.char1.ndb._build_target
+        self.assertEqual(proto["weight"], 0.0)
+        self.assertEqual(proto["value"], 0)
         out = self.call(CmdBuildFields(), "")
-        for field_name in ("name", "desc", "weight", "value"):
+        for field_name in ("name", "desc", "weight", "value", "type"):
             self.assertIn(field_name, out)
 
-    def test_set_weight_and_value(self):
+    def test_set_persists_to_prototype(self):
         self.call(CmdBuild(), "new item Rock")
         self.call(CmdBuildSet(), "weight 2.5")
         self.call(CmdBuildSet(), "value 12")
-        item = self.char1.ndb._build_target
-        self.assertEqual(item.db.weight, 2.5)
-        self.assertEqual(item.db.value, 12)
+        self.assertEqual(self.char1.ndb._build_target["weight"], 2.5)
+        saved = _proto("rock")
+        self.assertEqual(saved["weight"], 2.5)
+        self.assertEqual(saved["value"], 12)
 
     def test_negative_weight_rejected(self):
         self.call(CmdBuild(), "new item Rock")
         self.call(CmdBuildSet(), "weight -3", "Invalid value for 'weight'")
-        self.assertEqual(self.char1.ndb._build_target.db.weight, 0.0)
+        self.assertEqual(self.char1.ndb._build_target["weight"], 0.0)
 
-    def test_non_numeric_value_rejected(self):
+    def test_new_item_requires_name(self):
+        self.call(CmdBuild(), "new item", "Usage: edit new item")
+
+    def test_duplicate_prototype_rejected(self):
         self.call(CmdBuild(), "new item Rock")
-        self.call(CmdBuildSet(), "value lots", "Invalid value for 'value'")
+        self.call(CmdBuild(), "new item Rock", "An item prototype")
 
-    def test_edit_existing_item_by_name(self):
-        item = create_object(self.ITEM, key="Lantern", location=self.room1)
-        self.call(CmdBuild(), "Lantern")
-        self.assertEqual(self.char1.ndb._build_target, item)
+    def test_edit_existing_prototype(self):
+        self.call(CmdBuild(), "new item Rock")
+        self.call(CmdBuildSet(), "value 5")
+        self.call(CmdBuildDone(), "")
+        self.call(CmdBuild(), "item Rock")
+        proto = self.char1.ndb._build_target
+        self.assertEqual(proto["prototype_key"], "rock")
+        self.assertEqual(proto["value"], 5)
+
+    def test_edit_missing_prototype(self):
+        self.call(CmdBuild(), "item ghost", "No item prototype")
 
 
 class TestItemType(EvenniaCommandTest):
-    """'set type <kind>' reshapes an item's editable fields dynamically."""
+    """'set type <kind>' reshapes an item *prototype's* fields dynamically."""
 
     def setUp(self):
         super().setUp()
         self.char1.permissions.add("Builder")
         self.call(CmdBuild(), "new item Thing")
-        self.item = self.char1.ndb._build_target
+        self.proto = self.char1.ndb._build_target  # the prototype dict being edited
 
     def test_type_fields_hidden_until_type_set(self):
-        # Check schema keys directly (blurb text can contain field-like words).
-        fields = set(schema_for(self.item))
+        fields = set(schema_for_prototype(self.proto))
         self.assertIn("type", fields)  # the type field itself is always offered
         self.assertEqual(fields & {"damage", "subtype", "base_ac", "capacity"}, set())
 
     def test_set_type_weapon_reveals_fields(self):
         self.call(CmdBuildSet(), "type weapon")
-        self.assertEqual(self.item.db.type, "weapon")
+        self.assertEqual(self.proto["type"], "weapon")
         out = self.call(CmdBuildFields(), "")
         self.assertIn("damage", out)
         self.assertIn("subtype", out)
@@ -340,37 +371,37 @@ class TestItemType(EvenniaCommandTest):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "damage 1d8")
         self.call(CmdBuildSet(), "subtype slashing")
-        self.assertEqual(self.item.db.damage, "1d8")
-        self.assertEqual(self.item.db.subtype, "slashing")
+        self.assertEqual(self.proto["damage"], "1d8")
+        self.assertEqual(self.proto["subtype"], "slashing")
 
     def test_invalid_damage_rejected(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "damage sharp", "Invalid value for 'damage'")
-        self.assertIsNone(self.item.db.damage)
+        self.assertIsNone(self.proto.get("damage"))
 
     def test_subtype_validated_per_type(self):
         self.call(CmdBuildSet(), "type weapon")
         # 'light' is an armor value, not valid for a weapon's subtype.
         self.call(CmdBuildSet(), "subtype light", "Invalid value for 'subtype'")
         self.call(CmdBuildSet(), "subtype piercing")
-        self.assertEqual(self.item.db.subtype, "piercing")
+        self.assertEqual(self.proto["subtype"], "piercing")
 
     def test_set_type_armor_fields(self):
         self.call(CmdBuildSet(), "type armor")
         self.call(CmdBuildSet(), "base_ac 16")
         self.call(CmdBuildSet(), "subtype heavy")
-        self.assertEqual(self.item.db.base_ac, 16)
-        self.assertEqual(self.item.db.subtype, "heavy")
+        self.assertEqual(self.proto["base_ac"], 16)
+        self.assertEqual(self.proto["subtype"], "heavy")
         self.call(CmdBuildSet(), "subtype slashing", "Invalid value for 'subtype'")
 
     def test_changing_type_clears_old_fields(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "subtype slashing")
         self.call(CmdBuildSet(), "damage 2d6")
-        # Switching type must drop the weapon's stale damage/subtype.
+        # Switching type must drop the weapon's stale damage/subtype keys.
         self.call(CmdBuildSet(), "type armor")
-        self.assertIsNone(self.item.db.subtype)
-        self.assertIsNone(self.item.db.damage)
+        self.assertIsNone(self.proto.get("subtype"))
+        self.assertIsNone(self.proto.get("damage"))
         out = self.call(CmdBuildFields(), "")
         self.assertIn("base_ac", out)
         self.assertNotIn("damage", out)
@@ -378,22 +409,60 @@ class TestItemType(EvenniaCommandTest):
     def test_set_type_container_capacity(self):
         self.call(CmdBuildSet(), "type container")
         self.call(CmdBuildSet(), "capacity 30")
-        self.assertEqual(self.item.db.capacity, 30.0)
+        self.assertEqual(self.proto["capacity"], 30.0)
 
     def test_set_type_none_reverts_to_generic(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "type none")
-        self.assertIsNone(self.item.db.type)
+        self.assertIsNone(self.proto.get("type"))
         out = self.call(CmdBuildFields(), "")
         self.assertNotIn("damage", out)
 
     def test_invalid_type_rejected(self):
         self.call(CmdBuildSet(), "type wand", "Invalid value for 'type'")
-        self.assertIsNone(self.item.db.type)
+        self.assertIsNone(self.proto.get("type"))
 
     def test_edit_new_kind_keyword_is_not_creation(self):
         # 'weapon' is no longer a creation keyword; only room/item are.
         self.call(CmdBuild(), "new weapon Sword", "Usage: edit new")
+
+
+class TestItemsListing(EvenniaCommandTest):
+    """'items' catalogues item *templates* (prototypes), grouped/filtered by type."""
+
+    ITEM = "typeclasses.objects.Item"
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+        save_prototype(
+            {
+                "prototype_key": "sword",
+                "key": "Sword",
+                "typeclass": self.ITEM,
+                "type": "weapon",
+            }
+        )
+        save_prototype({"prototype_key": "bag", "key": "Bag", "typeclass": self.ITEM})
+
+    def test_items_lists_all_with_type_groups(self):
+        out = self.call(CmdItems(), "")
+        self.assertIn("sword", out)
+        self.assertIn("bag", out)
+        self.assertIn("weapon", out)  # the group header
+
+    def test_items_filtered_by_type(self):
+        out = self.call(CmdItems(), "weapon")
+        self.assertIn("sword", out)
+        self.assertNotIn("bag", out)
+
+    def test_items_generic_filter(self):
+        out = self.call(CmdItems(), "item")
+        self.assertIn("bag", out)
+        self.assertNotIn("sword", out)
+
+    def test_items_unknown_type(self):
+        self.call(CmdItems(), "wand", "Unknown type")
 
 
 class TestEditPrompt(EvenniaCommandTest):

@@ -14,7 +14,8 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 """
 
-from commands.building import CmdAreas, CmdBuild, CmdLoadArea, CmdRooms
+from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
+                               CmdRooms)
 from commands.change import CmdChange
 from commands.command import CmdNoInput
 from commands.communication import CmdSay
@@ -64,6 +65,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdBuild)
         self.add(CmdAreas)
         self.add(CmdRooms)
+        self.add(CmdItems)
         self.add(CmdLoadArea)
 
 
