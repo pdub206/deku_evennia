@@ -327,7 +327,7 @@ HELP_ENTRY_DICTS = [
               |wedit new item <name>|n   create a new item template and edit it
               |wedit item <name>|n       edit an existing template
               |w@spawn <key>|n           place a copy of a template in this room
-              |witems|n / |witems <type>|n   list templates (item/weapon/armor/container)
+              |witems|n / |witems <type>|n   list templates and untemplated live items
 
             A template uses the same verbs as a room — |wset|n, |wdesc|n, |wshow|n,
             |wfields|n, |wdel|n, |wdone|n — over these shared fields:
@@ -340,7 +340,9 @@ HELP_ENTRY_DICTS = [
             Changes to a template persist immediately and apply to copies spawned
             afterwards.  To customise one existing copy in the world, |wedit|n it
             directly (by name or |w#dbref|n) — that's a one-off and leaves the
-            template and the other copies alone.
+            template and the other copies alone.  Items created directly, including
+            older items that predate templates, appear in |witems|n under
+            "Untemplated live items" and can be edited by their |w#dbref|n.
 
             ### Types
 

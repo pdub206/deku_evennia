@@ -20,6 +20,7 @@ entry handling — the editing context itself is type-agnostic.
 from commands.command import Command
 from django.conf import settings
 from evennia import CmdSet, create_object
+from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
                                            delete_prototype, save_prototype,
                                            search_prototype)
@@ -615,17 +616,47 @@ def _proto_line(proto: dict) -> str:
     return f"  |C{key}|n — {proto.get('key', '?')} ({count} in world)"
 
 
+def _untemplated_items(protos: list[dict]) -> list:
+    """Return live items that are not linked to any known item prototype.
+
+    Items created directly before the prototype workflow was introduced have no
+    prototype tag.  A tag can also outlive a deleted prototype, so only a tag
+    matching a currently known item prototype counts as a valid link.
+    """
+    prototype_keys = {proto.get("prototype_key") for proto in protos}
+    items = ObjectDB.objects.typeclass_search(_ITEM_TYPECLASS, include_children=True)
+    return [
+        item
+        for item in items
+        if not prototype_keys.intersection(
+            item.tags.get(category=PROTOTYPE_TAG_CATEGORY, return_list=True)
+        )
+    ]
+
+
+def _live_item_type_label(item) -> str:
+    """A live item's functional type, with the generic case shown as 'item'."""
+    return item.db.type or "item"
+
+
+def _live_item_line(item) -> str:
+    """One untemplated live-item row, identified by an editable dbref."""
+    return f"  |C#{item.id}|n — {item.key}"
+
+
 class CmdItems(Command):
     """
-    List the item prototypes (templates) that exist in the game.
+    List item prototypes and any untemplated live items in the game.
 
     Usage:
-      items              every item template, grouped by type
-      items <type>       only templates of one type (item, weapon, armor, container)
+      items              every template and untemplated live item, grouped by type
+      items <type>       only entries of one type (item, weapon, armor, container)
 
-    Each row shows the template's key, its display name, and how many copies are
-    spawned in the world.  Edit one with |wedit item <key>|n and place copies with
-    |w@spawn <key>|n.  ('item' here means a template with no specialised type.)
+    Each template row shows its key, display name, and how many linked copies are
+    spawned in the world.  Live items created directly (including items predating
+    the template workflow) appear separately by #dbref.  Edit a template with
+    |wedit item <key>|n or an untemplated item with |wedit #<dbref>|n.  ('item'
+    here means an entry with no specialised type.)
     """
 
     key = "items"
@@ -638,42 +669,90 @@ class CmdItems(Command):
         valid_types = ("item", *ITEM_TYPES)
 
         protos = _all_item_prototypes()
-        if not protos:
-            caller.msg(
-                "There are no item templates yet. Make one with "
-                "|wedit new item <name>|n."
-            )
-            return
+        untemplated = _untemplated_items(protos)
 
         if arg:
             if arg not in valid_types:
                 caller.msg(f"Unknown type '{arg}'. Valid: {', '.join(valid_types)}.")
                 return
             shown = [p for p in protos if _proto_type_label(p) == arg]
-            if not shown:
-                caller.msg(f"No item templates of type |y{arg}|n.")
-                return
-            lines = [f"|wItem templates of type |y{arg}|n ({len(shown)}):"]
-            lines += [
-                _proto_line(p)
-                for p in sorted(shown, key=lambda d: d.get("prototype_key", ""))
+            shown_untemplated = [
+                item for item in untemplated if _live_item_type_label(item) == arg
             ]
+            if not shown and not shown_untemplated:
+                caller.msg(f"No items of type |y{arg}|n.")
+                return
+            lines = []
+            if shown:
+                lines.append(f"|wItem templates of type |y{arg}|n ({len(shown)}):")
+                lines += [
+                    _proto_line(p)
+                    for p in sorted(shown, key=lambda d: d.get("prototype_key", ""))
+                ]
+            if shown_untemplated:
+                if lines:
+                    lines.append("")
+                lines.append(
+                    f"|wUntemplated live items of type |y{arg}|n "
+                    f"({len(shown_untemplated)}):"
+                )
+                lines += [
+                    _live_item_line(item)
+                    for item in sorted(shown_untemplated, key=lambda obj: obj.id)
+                ]
+                lines.append(
+                    "These items were created directly rather than spawned from a "
+                    "template; edit one with |wedit #<dbref>|n."
+                )
             caller.msg("\n".join(lines))
             return
 
         groups: dict[str, list] = {}
         for proto in protos:
             groups.setdefault(_proto_type_label(proto), []).append(proto)
-        lines = [f"|wItem templates|n ({len(protos)} total):"]
-        for type_name in valid_types:
-            group = groups.get(type_name)
-            if not group:
-                continue
-            lines.append(f"\n|y{type_name}|n ({len(group)}):")
-            lines += [
-                _proto_line(p)
-                for p in sorted(group, key=lambda d: d.get("prototype_key", ""))
-            ]
+        group_order = (*valid_types, *sorted(set(groups).difference(valid_types)))
+        lines = []
+        if protos:
+            lines.append(f"|wItem templates|n ({len(protos)} total):")
+            for type_name in group_order:
+                group = groups.get(type_name)
+                if not group:
+                    continue
+                lines.append(f"\n|y{type_name}|n ({len(group)}):")
+                lines += [
+                    _proto_line(p)
+                    for p in sorted(group, key=lambda d: d.get("prototype_key", ""))
+                ]
+        else:
+            lines.append(
+                "There are no item templates yet. Make one with "
+                "|wedit new item <name>|n."
+            )
+
+        if untemplated:
+            lines.append(f"\n|wUntemplated live items|n ({len(untemplated)} total):")
+            untemplated_groups: dict[str, list] = {}
+            for item in untemplated:
+                untemplated_groups.setdefault(_live_item_type_label(item), []).append(
+                    item
+                )
+            untemplated_group_order = (
+                *valid_types,
+                *sorted(set(untemplated_groups).difference(valid_types)),
+            )
+            for type_name in untemplated_group_order:
+                group = untemplated_groups.get(type_name)
+                if not group:
+                    continue
+                lines.append(f"\n|y{type_name}|n ({len(group)}):")
+                lines += [
+                    _live_item_line(item)
+                    for item in sorted(group, key=lambda obj: obj.id)
+                ]
+            lines.append(
+                "These items were created directly rather than spawned from a "
+                "template; edit one with |wedit #<dbref>|n."
+            )
         caller.msg("\n".join(lines))
 
 

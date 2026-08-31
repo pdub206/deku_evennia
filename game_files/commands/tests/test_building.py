@@ -19,6 +19,7 @@ from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
 from evennia import create_object
 from evennia.prototypes.prototypes import save_prototype, search_prototype
+from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
@@ -463,6 +464,55 @@ class TestItemsListing(EvenniaCommandTest):
 
     def test_items_unknown_type(self):
         self.call(CmdItems(), "wand", "Unknown type")
+
+    def test_items_lists_directly_created_item_as_untemplated(self):
+        boots = create_object(
+            self.ITEM,
+            key="a pair of leather boots",
+            location=self.char1,
+            attributes=(("type", "armor"),),
+        )
+
+        out = self.call(CmdItems(), "")
+
+        self.assertIn("Untemplated live items", out)
+        self.assertIn(f"#{boots.id}", out)
+        self.assertIn("a pair of leather boots", out)
+
+    def test_items_type_filter_includes_untemplated_item(self):
+        boots = create_object(
+            self.ITEM,
+            key="a pair of leather boots",
+            attributes=(("type", "armor"),),
+        )
+
+        out = self.call(CmdItems(), "armor")
+
+        self.assertIn(f"#{boots.id}", out)
+        self.assertIn("Untemplated live items of type", out)
+        self.assertNotIn("sword", out)
+
+    def test_items_lists_legacy_item_with_unknown_type(self):
+        wand = create_object(
+            self.ITEM,
+            key="an old wand",
+            attributes=(("type", "wand"),),
+        )
+
+        out = self.call(CmdItems(), "")
+
+        self.assertIn("wand", out)
+        self.assertIn(f"#{wand.id}", out)
+        self.assertIn("an old wand", out)
+
+    def test_spawned_item_is_counted_but_not_listed_as_untemplated(self):
+        sword = spawn("sword")[0]
+
+        out = self.call(CmdItems(), "")
+
+        self.assertIn("sword", out)
+        self.assertIn("(1 in world)", out)
+        self.assertNotIn(f"#{sword.id} —", out)
 
 
 class TestEditPrompt(EvenniaCommandTest):
