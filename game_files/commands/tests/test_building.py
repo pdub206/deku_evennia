@@ -23,7 +23,7 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
-from world.build_schema import schema_for_prototype
+from world.build_schema import ITEM_TYPES, schema_for_prototype
 
 
 def _proto(key):
@@ -412,6 +412,40 @@ class TestItemType(EvenniaCommandTest):
         self.call(CmdBuildSet(), "capacity 30")
         self.assertEqual(self.proto["capacity"], 30.0)
 
+    def test_classic_diku_item_types_are_available(self):
+        classic_types = (
+            "light",
+            "scroll",
+            "wand",
+            "staff",
+            "weapon",
+            "furniture",
+            "treasure",
+            "armor",
+            "potion",
+            "worn",
+            "other",
+            "trash",
+            "note",
+            "drinkcon",
+            "key",
+            "food",
+            "money",
+            "pen",
+            "boat",
+            "fountain",
+        )
+        self.assertTrue(set(classic_types).issubset(ITEM_TYPES))
+        for item_type in classic_types:
+            with self.subTest(item_type=item_type):
+                self.call(CmdBuildSet(), f"type {item_type}")
+                self.assertEqual(self.proto["type"], item_type)
+
+    def test_classification_only_type_has_shared_fields(self):
+        self.call(CmdBuildSet(), "type wand")
+        fields = set(schema_for_prototype(self.proto))
+        self.assertEqual(fields, {"name", "desc", "weight", "value", "type"})
+
     def test_set_type_none_reverts_to_generic(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "type none")
@@ -420,7 +454,7 @@ class TestItemType(EvenniaCommandTest):
         self.assertNotIn("damage", out)
 
     def test_invalid_type_rejected(self):
-        self.call(CmdBuildSet(), "type wand", "Invalid value for 'type'")
+        self.call(CmdBuildSet(), "type vehicle", "Invalid value for 'type'")
         self.assertIsNone(self.proto.get("type"))
 
     def test_edit_new_kind_keyword_is_not_creation(self):
@@ -463,7 +497,10 @@ class TestItemsListing(EvenniaCommandTest):
         self.assertNotIn("sword", out)
 
     def test_items_unknown_type(self):
-        self.call(CmdItems(), "wand", "Unknown type")
+        self.call(CmdItems(), "vehicle", "Unknown type")
+
+    def test_items_recognizes_empty_classic_type(self):
+        self.call(CmdItems(), "wand", "No items of type")
 
     def test_items_lists_directly_created_item_as_untemplated(self):
         boots = create_object(

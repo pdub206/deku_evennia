@@ -349,8 +349,15 @@ HELP_ENTRY_DICTS = [
             ### Types
 
             Give a template a |wtype|n with |wset type <kind>|n and extra fields for
-            that kind appear (in |wfields|n and |wshow|n); they stay hidden until a
-            type is set, and swap out if you change it:
+            kinds that support them appear in |wfields|n and |wshow|n. Supported
+            kinds are:
+
+              |wlight, scroll, wand, staff, weapon, furniture, treasure, armor,
+              potion, worn, other, trash, container, note, drinkcon, key, food,
+              money, pen, boat, fountain|n
+
+            Most kinds are classifications ready for future mechanics. These kinds
+            currently add their own editable fields:
 
               |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
                                   |wsubtype|n (bludgeoning / piercing / slashing)

@@ -301,9 +301,9 @@ class CmdBuild(Command):
     Items are authored as |ytemplates|n (prototypes), then stamped into the world
     as copies — like DIKU object vnums.  |wedit new item|n makes a template;
     |w@spawn <key>|n places a copy of it in your room; |witems|n lists all
-    templates.  Give a template a kind with |wset type weapon|n (armor / container)
-    and its type-specific fields appear.  Editing a placed copy (|wedit <object>|n)
-    is a one-off and never changes the template.
+    templates. Give a template a kind with |wset type <kind>|n; |wfields|n shows
+    whether that kind currently has type-specific fields. Editing a placed copy
+    (|wedit <object>|n) is a one-off and never changes the template.
 
     NPCs are Character objects without an Account puppeting them. Like items,
     they are authored as templates; |wedit new npc|n also spawns one copy in
@@ -464,8 +464,8 @@ class CmdBuild(Command):
         save_prototype(proto)
         _enter_build_mode(caller, proto)
         caller.msg(
-            f"Created item prototype |y{key}|n. Set its |wtype|n to add "
-            f"weapon/armor/container fields; place copies with |w@spawn {key}|n."
+            f"Created item prototype |y{key}|n. Set its kind with "
+            f"|wset type <kind>|n; place copies with |w@spawn {key}|n."
         )
         caller.msg(_header(proto) + "\n" + _render_show(proto))
 
@@ -771,7 +771,7 @@ class CmdItems(Command):
 
     Usage:
       items              every template and untemplated live item, grouped by type
-      items <type>       only entries of one type (item, weapon, armor, container)
+      items <type>       only entries of one type
 
     Each template row shows its key, display name, and how many linked copies are
     spawned in the world.  Live items created directly (including items predating

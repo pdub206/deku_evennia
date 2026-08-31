@@ -174,6 +174,33 @@ ROOM_FIELDS: dict[str, Field] = {
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
 }
 
+# Item types supported by the builder. These follow the classic Diku/Circle/tbaMUD
+# names, with the existing container type retained. Most are classifications only
+# for now; TYPE_FIELDS adds extra builder fields where mechanics already exist.
+ITEM_TYPES: tuple[str, ...] = (
+    "light",
+    "scroll",
+    "wand",
+    "staff",
+    "weapon",
+    "furniture",
+    "treasure",
+    "armor",
+    "potion",
+    "worn",
+    "other",
+    "trash",
+    "container",
+    "note",
+    "drinkcon",
+    "key",
+    "food",
+    "money",
+    "pen",
+    "boat",
+    "fountain",
+)
+
 # Extra fields a builder can set once an item's ``type`` is chosen. The "type"
 # field itself drives this: setting it makes the matching group below appear in
 # `fields`/`show`, and clearing/changing it swaps the group out. Both weapon and
@@ -215,8 +242,6 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         ),
     },
 }
-
-ITEM_TYPES: tuple[str, ...] = tuple(TYPE_FIELDS)
 
 ITEM_FIELDS: dict[str, Field] = {
     "name": Field("key", as_text, "the item's name"),

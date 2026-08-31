@@ -221,10 +221,10 @@ class Item(Object):
     """A tangible thing characters can pick up, carry, and use.
 
     Every takeable object is an ``Item``; specialisation is data-driven rather
-    than a class hierarchy.  An optional ``type`` attribute (``weapon``,
-    ``armor``, ``container`` — unset means a generic item) selects which extra
-    attributes are meaningful, and the |wbuild|n command exposes those extra
-    fields dynamically based on it (see ``world/build_schema.py``).
+    than a class hierarchy. An optional ``type`` attribute classifies it using
+    the Diku/Circle/tbaMUD item kinds (plus ``container``); unset means a generic
+    item. The |wbuild|n command exposes any implemented type-specific fields
+    dynamically based on it (see ``world/build_schema.py``).
 
     Always present:
 
@@ -232,8 +232,9 @@ class Item(Object):
       capacity readout in ``commands/sheet.py``), and
     * ``value`` — worth in the base coin.
 
-    Type-specific (only when ``type`` is set): a weapon's ``damage``/``subtype``,
-    armor's ``base_ac``/``subtype``, a container's ``capacity``.
+    Currently implemented type-specific fields: a weapon's
+    ``damage``/``subtype``, armor's ``base_ac``/``subtype``, and a container's
+    ``capacity``. Other types are available as classifications for future use.
     """
 
     def at_object_creation(self) -> None:
