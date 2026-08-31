@@ -13,7 +13,7 @@ django-classy-tags==4.1.0
 django-filter==25.2
 django-sekizai==2.0.0
 djangorestframework==3.16.1
-evennia==6.0.0
+evennia==6.1.0
 hyperlink==21.0.0
 idna==3.11
 Incremental==24.11.0
@@ -33,7 +33,7 @@ pycparser==3.0
 pytokens==0.4.1
 pytz==2026.1.post1
 PyYAML==6.0.3
-simpleeval==1.0.3
+simpleeval==1.0.5
 sqlparse==0.5.5
 Twisted==24.11.0
 txaio==25.12.2
