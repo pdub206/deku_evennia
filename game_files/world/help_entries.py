@@ -263,8 +263,10 @@ HELP_ENTRY_DICTS = [
               edit here               edit the room you're standing in
               edit new room <name>    create a fresh unlinked room and go to it
               edit new item <name>    create a new item template and edit it
+              edit new npc <name>     create a template and spawn an NPC here
               edit item <name>        edit an existing item template
-              edit <object>           edit a live room or item copy by name/#dbref
+              edit npc <name>         edit an existing NPC template
+              edit <object>           edit a live room, item, or NPC by name/#dbref
 
             You must have |wBuilder|n permission.  The classic builder commands
             (dig, create, set, desc, spawn, ...) still work for expert use.
@@ -360,6 +362,28 @@ HELP_ENTRY_DICTS = [
             The header shows what you're editing, e.g.
             |w[build: iron_sword (Weapon prototype)]|n.  Type |wfields|n any time
             to see exactly what you can set.
+
+            ## NPCs
+
+            NPCs are normal Character objects without an Account puppeting them.
+            Like items, they are authored as reusable templates. Creating one
+            also immediately spawns a live copy in the room where you are working:
+
+              |wedit new npc <name>|n    create a template, spawn one here, and edit it
+              |wedit npc <key>|n         edit an existing NPC template
+              |wnpcs|n                   list templates and their live-copy counts
+              |w@spawn <key>|n           place another copy from a template
+
+            NPC templates expose every canonical field assigned to a finished
+            player character: name, description, gender, species, class, age,
+            alignment, background, size, languages, active language, skills,
+            all six ability scores, level and XP, proficiency bonus, hit points,
+            hit die, initiative, Armor Class, passive Perception, and speed.
+            Use |wfields|n for accepted values and |wshow|n for the current sheet.
+
+            Changes persist immediately and affect copies spawned afterwards.
+            A live NPC can be edited directly with |wedit <name>|n or
+            |wedit #<dbref>|n for a one-off change that leaves its template alone.
 
             ## Areas and Export
 

@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
                                CmdBuildDel, CmdBuildDig, CmdBuildDone,
                                CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdRooms, _enter_build_mode,
-                               _exit_build_mode)
+                               CmdLoadArea, CmdNpcs, CmdRooms,
+                               _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -27,7 +27,7 @@ from world.build_schema import schema_for_prototype
 
 
 def _proto(key):
-    """Return the saved item prototype (flattened) with this exact key, or None.
+    """Return the saved prototype (flattened) with this exact key, or None.
 
     Evennia stores arbitrary fields under an ``attrs`` list; flatten them back to
     plain keys so tests can read them the way the editor does.
@@ -513,6 +513,184 @@ class TestItemsListing(EvenniaCommandTest):
         self.assertIn("sword", out)
         self.assertIn("(1 in world)", out)
         self.assertNotIn(f"#{sword.id} —", out)
+
+
+class TestEditNewNpc(EvenniaCommandTest):
+    """NPCs are Character prototypes with one initial copy spawned in-room."""
+
+    NPC = "typeclasses.characters.Character"
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+
+    def test_create_npc_template_and_spawn_copy_here(self):
+        self.call(CmdBuild(), "new npc City Guard")
+
+        proto = self.char1.ndb._build_target
+        self.assertIsInstance(proto, dict)
+        self.assertEqual(proto["prototype_key"], "city_guard")
+        self.assertEqual(proto["typeclass"], self.NPC)
+        self.assertIsNotNone(_proto("city_guard"))
+
+        spawned = [obj for obj in self.room1.contents if obj.key == "City Guard"]
+        self.assertEqual(len(spawned), 1)
+        self.assertTrue(
+            inherits_from(spawned[0], "evennia.objects.objects.DefaultCharacter")
+        )
+        self.assertIsNone(spawned[0].account)
+        self.assertEqual(spawned[0].db.position, "standing")
+
+    def test_npc_defaults_match_finished_character_attributes(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        proto = self.char1.ndb._build_target
+
+        expected = {
+            "gender": "unspecified",
+            "age": 18,
+            "char_class": "Fighter",
+            "background": "",
+            "species": "Human",
+            "size": "Medium",
+            "alignment": "Neutral",
+            "languages": ["Common"],
+            "active_language": "Common",
+            "skill_proficiencies": [],
+            "strength": 8,
+            "dexterity": 8,
+            "constitution": 8,
+            "intelligence": 8,
+            "wisdom": 8,
+            "charisma": 8,
+            "level": 1,
+            "xp": 0,
+            "proficiency_bonus": 2,
+            "hp_max": 9,
+            "hp_current": 9,
+            "hit_die": 10,
+            "initiative": -1,
+            "armor_class": 9,
+            "passive_perception": 9,
+            "speed": 30,
+        }
+        for name, value in expected.items():
+            self.assertEqual(proto[name], value, name)
+
+    def test_fields_clone_finished_pc_sheet(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        fields = set(schema_for_prototype(self.char1.ndb._build_target))
+
+        self.assertEqual(
+            fields,
+            {
+                "name",
+                "desc",
+                "gender",
+                "species",
+                "class",
+                "age",
+                "alignment",
+                "background",
+                "size",
+                "languages",
+                "active_language",
+                "skills",
+                "strength",
+                "dexterity",
+                "constitution",
+                "intelligence",
+                "wisdom",
+                "charisma",
+                "level",
+                "xp",
+                "proficiency_bonus",
+                "hp_max",
+                "hp_current",
+                "hit_die",
+                "initiative",
+                "armor_class",
+                "passive_perception",
+                "speed",
+            },
+        )
+
+    def test_set_npc_fields_persists_canonical_values(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "gender female")
+        self.call(CmdBuildSet(), "species elf")
+        self.call(CmdBuildSet(), "class wizard")
+        self.call(CmdBuildSet(), "age 240")
+        self.call(CmdBuildSet(), "alignment lawful neutral")
+        self.call(CmdBuildSet(), "background sage")
+        self.call(CmdBuildSet(), "size medium")
+        self.call(CmdBuildSet(), "languages Common, Elvish, Draconic")
+        self.call(CmdBuildSet(), "active_language elvish")
+        self.call(CmdBuildSet(), "skills Arcana, History")
+        self.call(CmdBuildSet(), "intelligence 18")
+
+        saved = _proto("city_guard")
+        self.assertEqual(saved["gender"], "female")
+        self.assertEqual(saved["species"], "Elf")
+        self.assertEqual(saved["char_class"], "Wizard")
+        self.assertEqual(saved["age"], 240)
+        self.assertEqual(saved["alignment"], "Lawful Neutral")
+        self.assertEqual(saved["background"], "Sage")
+        self.assertEqual(saved["languages"], ["Common", "Elvish", "Draconic"])
+        self.assertEqual(saved["active_language"], "Elvish")
+        self.assertEqual(saved["skill_proficiencies"], ["Arcana", "History"])
+        self.assertEqual(saved["intelligence"], 18)
+
+    def test_invalid_npc_value_rejected(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "class commoner", "Invalid value for 'class'")
+        self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
+        self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
+        self.assertEqual(self.char1.ndb._build_target["strength"], 8)
+
+    def test_edit_existing_npc_template(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "level 3")
+        self.call(CmdBuildDone(), "")
+        self.call(CmdBuild(), "npc City Guard")
+        self.assertEqual(self.char1.ndb._build_target["level"], 3)
+
+    def test_edit_live_npc_copy_without_changing_template(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        npc = next(obj for obj in self.room1.contents if obj.key == "City Guard")
+
+        self.call(CmdBuild(), f"#{npc.id}")
+        self.call(CmdBuildSet(), "level 4")
+
+        self.assertEqual(npc.db.level, 4)
+        self.assertEqual(_proto("city_guard")["level"], 1)
+
+    def test_new_npc_requires_name_and_room(self):
+        self.call(CmdBuild(), "new npc", "Usage: edit new npc")
+        self.char1.location = None
+        self.call(CmdBuild(), "new npc Wanderer", "You must be in a room")
+        self.assertIsNone(_proto("wanderer"))
+
+    def test_duplicate_npc_prototype_rejected(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuild(), "new npc City Guard", "An NPC prototype")
+
+
+class TestNpcsListing(EvenniaCommandTest):
+    """The NPC catalogue shows templates and their spawned-copy counts."""
+
+    def test_npcs_lists_created_template_and_copy(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "new npc City Guard")
+
+        out = self.call(CmdNpcs(), "")
+
+        self.assertIn("city_guard", out)
+        self.assertIn("City Guard", out)
+        self.assertIn("(1 in world)", out)
+
+    def test_npcs_empty_state(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdNpcs(), "", "There are no NPC templates yet")
 
 
 class TestEditPrompt(EvenniaCommandTest):

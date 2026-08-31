@@ -12,9 +12,8 @@ The classic Evennia building commands are deliberately left in place as "expert
 mode"; |wbuild|n is sugar over the same primitives (typeclasses, attributes,
 tags, prototypes), not a replacement.
 
-Phase 1 covers rooms and exits.  NPCs and items slot in by extending
-:func:`world.build_schema.schema_for` and adding ``build npc``/``build item``
-entry handling — the editing context itself is type-agnostic.
+Rooms, item templates, and NPC templates all share this editing context; the
+field schema decides what each target exposes.
 """
 
 from commands.command import Command
@@ -24,6 +23,7 @@ from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
                                            delete_prototype, save_prototype,
                                            search_prototype)
+from evennia.prototypes.spawner import spawn
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
@@ -61,7 +61,8 @@ _BUILD_PROMPT = "editing> "
 # Items are a single typeclass; specialisation is the item's `type` attribute
 # (see world/build_schema.py), set in the editor with `set type <kind>`.
 _ITEM_TYPECLASS = "typeclasses.objects.Item"
-_NEW_TYPES = ("room", "item")
+_NPC_TYPECLASS = "typeclasses.characters.Character"
+_NEW_TYPES = ("room", "item", "npc")
 
 
 def _is_prototype(target) -> bool:
@@ -95,19 +96,28 @@ def _flatten_prototype(proto: dict) -> dict:
     return flat
 
 
-def _find_item_prototype(key: str):
-    """Return the item prototype (flat form) with this exact key, or ``None``.
+def _find_prototype(key: str, typeclass: str | None = None):
+    """Return a prototype of ``typeclass`` with this exact key, or ``None``.
 
     ``search_prototype`` matches partially, so filter for an exact key and our
-    item typeclass.
+    expected typeclass when supplied.
     """
     for proto in search_prototype(key):
-        if (
-            proto.get("prototype_key") == key
-            and proto.get("typeclass") == _ITEM_TYPECLASS
+        if proto.get("prototype_key") == key and (
+            typeclass is None or proto.get("typeclass") == typeclass
         ):
             return _flatten_prototype(proto)
     return None
+
+
+def _find_item_prototype(key: str):
+    """Return the item prototype (flat form) with this exact key, or ``None``."""
+    return _find_prototype(key, _ITEM_TYPECLASS)
+
+
+def _find_npc_prototype(key: str):
+    """Return the NPC prototype (flat form) with this exact key, or ``None``."""
+    return _find_prototype(key, _NPC_TYPECLASS)
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +151,11 @@ def _header(target) -> str:
     # Show what's being edited and what kind it is. Prototypes (templates) are
     # marked as such so a builder never confuses a template with a live copy.
     if _is_prototype(target):
-        kind = (target.get("type") or "item").capitalize()
+        kind = (
+            "NPC"
+            if target.get("typeclass") == _NPC_TYPECLASS
+            else (target.get("type") or "item").capitalize()
+        )
         return f"|w[build: {target.get('key')} ({kind} prototype)]|n"
     label = type(target).__name__
     item_type = target.db.type
@@ -279,8 +293,10 @@ class CmdBuild(Command):
       edit here               edit the room you're standing in
       edit new room <name>    create a fresh unlinked room and go into it
       edit new item <name>    create a new item *template* and edit it
+      edit new npc <name>     create an NPC template and spawn a copy here
       edit item <name>        edit an existing item template
-      edit <object>           edit a live room or a placed item copy by name/#dbref
+      edit npc <name>         edit an existing NPC template
+      edit <object>           edit a live room, item, or NPC by name/#dbref
 
     Items are authored as |ytemplates|n (prototypes), then stamped into the world
     as copies — like DIKU object vnums.  |wedit new item|n makes a template;
@@ -288,6 +304,11 @@ class CmdBuild(Command):
     templates.  Give a template a kind with |wset type weapon|n (armor / container)
     and its type-specific fields appear.  Editing a placed copy (|wedit <object>|n)
     is a one-off and never changes the template.
+
+    NPCs are Character objects without an Account puppeting them. Like items,
+    they are authored as templates; |wedit new npc|n also spawns one copy in
+    your current room. Use |wnpcs|n to browse templates and |w@spawn <key>|n
+    for more copies.
 
     |wedit new room|n starts an area "offline": a standalone room with no exits,
     so you can build and review it before |wlink|ning it into the live world.
@@ -335,6 +356,11 @@ class CmdBuild(Command):
             self._edit_item_prototype(arg[len("item") :].strip())
             return
 
+        if lowered == "npc" or lowered.startswith("npc "):
+            # 'edit npc <name>' edits an existing NPC *prototype* (template).
+            self._edit_npc_prototype(arg[len("npc") :].strip())
+            return
+
         if lowered == "here":
             target = caller.location
             if target is None:
@@ -357,11 +383,11 @@ class CmdBuild(Command):
         caller.msg(_header(target) + "\n" + _render_show(target))
 
     def _create_new(self, rest: str) -> None:
-        """Dispatch ``edit new <room|item> [<name>]`` to the right creator.
+        """Dispatch ``edit new <room|item|npc> [<name>]`` to its creator.
 
-        A type keyword is required so both flows are explicit: ``room`` teleports
-        you into a fresh standalone room; ``item`` drops a new item into the room
-        with you (give it a kind later with ``set type <weapon|armor|...>``).
+        A type keyword is required so each flow is explicit: ``room`` teleports
+        you into a fresh standalone room, ``item`` creates a template, and
+        ``npc`` creates a template plus one live copy in the current room.
         """
         parts = rest.split(None, 1)
         new_type = parts[0].lower() if parts else ""
@@ -372,8 +398,10 @@ class CmdBuild(Command):
 
         if new_type == "room":
             self._create_room(name)
-        else:
+        elif new_type == "item":
             self._create_item(name)
+        else:
+            self._create_npc(name)
 
     def _create_room(self, name: str) -> None:
         """Create a standalone, unlinked room and move the builder into it.
@@ -416,11 +444,15 @@ class CmdBuild(Command):
             caller.msg("Usage: edit new item <name>")
             return
         key = as_slug(name)
-        if _find_item_prototype(key):
-            caller.msg(
-                f"An item prototype '|y{key}|n' already exists — edit it with "
-                f"|wedit item {key}|n."
-            )
+        existing = _find_prototype(key)
+        if existing:
+            if existing.get("typeclass") == _ITEM_TYPECLASS:
+                caller.msg(
+                    f"An item prototype '|y{key}|n' already exists — edit it with "
+                    f"|wedit item {key}|n."
+                )
+            else:
+                caller.msg(f"Prototype key '|y{key}|n' is already in use.")
             return
         proto = {
             "prototype_key": key,
@@ -458,6 +490,93 @@ class CmdBuild(Command):
             + _render_show(caller.ndb._build_target)
         )
 
+    def _create_npc(self, name: str) -> None:
+        """Create an NPC template and spawn one copy in the current room."""
+        caller = self.caller
+        if not name:
+            caller.msg("Usage: edit new npc <name>")
+            return
+        if not _is_room(caller.location):
+            caller.msg("You must be in a room to create and spawn an NPC.")
+            return
+
+        key = as_slug(name)
+        existing = _find_prototype(key)
+        if existing:
+            if existing.get("typeclass") == _NPC_TYPECLASS:
+                caller.msg(
+                    f"An NPC prototype '|y{key}|n' already exists — edit it with "
+                    f"|wedit npc {key}|n."
+                )
+            else:
+                caller.msg(f"Prototype key '|y{key}|n' is already in use.")
+            return
+
+        # These are the canonical fields written to a finished PC by chargen.
+        # The baseline mirrors chargen's fallbacks and can then be shaped with
+        # the regular `set` verb just like any other prototype.
+        proto = {
+            "prototype_key": key,
+            "key": name,
+            "typeclass": _NPC_TYPECLASS,
+            "gender": "unspecified",
+            "age": 18,
+            "char_class": "Fighter",
+            "background": "",
+            "species": "Human",
+            "size": "Medium",
+            "alignment": "Neutral",
+            "languages": ["Common"],
+            "active_language": "Common",
+            "skill_proficiencies": [],
+            "strength": 8,
+            "dexterity": 8,
+            "constitution": 8,
+            "intelligence": 8,
+            "wisdom": 8,
+            "charisma": 8,
+            "level": 1,
+            "xp": 0,
+            "proficiency_bonus": 2,
+            "hp_max": 9,
+            "hp_current": 9,
+            "hit_die": 10,
+            "initiative": -1,
+            "armor_class": 9,
+            "passive_perception": 9,
+            "speed": 30,
+        }
+        save_prototype(proto)
+        (npc,) = spawn({**proto, "location": caller.location}, caller=caller)
+        _enter_build_mode(caller, proto)
+        caller.msg(
+            f"Created NPC prototype |y{key}|n and spawned |y{npc.key}|n "
+            f"(#{npc.id}) in |y{caller.location.key}|n. Place more copies with "
+            f"|w@spawn {key}|n."
+        )
+        caller.msg(_header(proto) + "\n" + _render_show(proto))
+
+    def _edit_npc_prototype(self, name: str) -> None:
+        """Bind an existing NPC prototype (template) for editing."""
+        caller = self.caller
+        if not name:
+            caller.msg("Usage: edit npc <name>")
+            return
+        key = as_slug(name)
+        proto = _find_npc_prototype(key)
+        if proto is None:
+            caller.msg(
+                f"No NPC prototype '|y{key}|n'. See |wnpcs|n, or create it with "
+                f"|wedit new npc {name}|n."
+            )
+            return
+        _enter_build_mode(caller, dict(proto))
+        caller.msg(
+            _header(caller.ndb._build_target)
+            + "\n"
+            + _render_show(caller.ndb._build_target)
+        )
+
     def _status(self) -> None:
         caller = self.caller
         target = caller.ndb._build_target
@@ -470,7 +589,9 @@ class CmdBuild(Command):
                 "  |wedit new room <name>|n create a fresh unlinked room and go to it\n"
                 "  |wedit new item <name>|n create a new item template and edit it\n"
                 "  |wedit item <name>|n     edit an existing item template\n"
-                "  |wedit <object>|n        edit a live room or item copy by name/#dbref\n"
+                "  |wedit new npc <name>|n  create a template and spawn an NPC here\n"
+                "  |wedit npc <name>|n      edit an existing NPC template\n"
+                "  |wedit <object>|n        edit a live room, item, or NPC by name/#dbref\n"
                 "Type |whelp build|n for the full verb list."
             )
 
@@ -754,6 +875,44 @@ class CmdItems(Command):
                 "template; edit one with |wedit #<dbref>|n."
             )
         caller.msg("\n".join(lines))
+
+
+class CmdNpcs(Command):
+    """
+    List NPC prototypes.
+
+    Usage:
+      npcs
+
+    Each row shows the prototype key, display name, and number of spawned
+    copies. Edit a template with |wedit npc <key>|n, create one with
+    |wedit new npc <name>|n, or place another copy with |w@spawn <key>|n.
+    """
+
+    key = "npcs"
+    aliases = ["mobs"]
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+
+    def func(self) -> None:
+        protos = [
+            _flatten_prototype(proto)
+            for proto in search_prototype()
+            if proto.get("typeclass") == _NPC_TYPECLASS
+        ]
+        if not protos:
+            self.caller.msg(
+                "There are no NPC templates yet. Make one with "
+                "|wedit new npc <name>|n."
+            )
+            return
+
+        lines = [f"|wNPC templates|n ({len(protos)} total):"]
+        lines += [
+            _proto_line(proto)
+            for proto in sorted(protos, key=lambda data: data.get("prototype_key", ""))
+        ]
+        self.caller.msg("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------

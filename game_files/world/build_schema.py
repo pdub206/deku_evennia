@@ -10,7 +10,7 @@ editable on a buildable thing":
   through the validators here, and
 * the area exporter walks the ``attr`` fields to decide what to serialise.
 
-Add a new buildable type (Mob, Item, ...) by defining its ``*_FIELDS`` dict and
+Add a new buildable type (NPC, Item, ...) by defining its ``*_FIELDS`` dict and
 wiring it into :func:`schema_for`.  Validators raise ``ValueError`` with a short,
 player-safe reason on bad input; callers turn that into a friendly message.
 """
@@ -19,6 +19,9 @@ import re
 from typing import Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
+from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
+                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
+                                STANDARD_LANGUAGES)
 
 
 class Field(NamedTuple):
@@ -76,6 +79,21 @@ def as_nonneg_int(raw: str) -> int:
     return value
 
 
+def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
+    """Return a validator accepting whole numbers in an inclusive range."""
+
+    def validate(raw: str) -> int:
+        try:
+            value = int(raw.strip())
+        except ValueError:
+            raise ValueError("expected a whole number.")
+        if not minimum <= value <= maximum:
+            raise ValueError(f"must be between {minimum} and {maximum}.")
+        return value
+
+    return validate
+
+
 def as_weight(raw: str) -> float:
     """A weight in pounds: a number that is zero or greater."""
     try:
@@ -110,6 +128,33 @@ def as_choice(*options: str) -> Callable[[str], str]:
         if value not in allowed:
             raise ValueError(f"must be one of: {', '.join(allowed)}.")
         return value
+
+    return validate
+
+
+def as_named_choice(*options: str) -> Callable[[str], str]:
+    """Return a case-insensitive validator preserving each option's spelling."""
+    allowed = {option.lower(): option for option in options}
+
+    def validate(raw: str) -> str:
+        value = raw.strip().lower()
+        if value not in allowed:
+            raise ValueError(f"must be one of: {', '.join(options)}.")
+        return allowed[value]
+
+    return validate
+
+
+def as_choice_list(*options: str) -> Callable[[str], list[str]]:
+    """Return a validator for a comma-separated list of canonical choices."""
+    validate_choice = as_named_choice(*options)
+
+    def validate(raw: str) -> list[str]:
+        values = [part.strip() for part in raw.split(",") if part.strip()]
+        if not values:
+            raise ValueError("expected one or more comma-separated values.")
+        canonical = [validate_choice(value) for value in values]
+        return list(dict.fromkeys(canonical))
 
     return validate
 
@@ -197,6 +242,93 @@ ITEM_FIELDS: dict[str, Field] = {
 }
 
 
+_ALIGNMENT_NAMES = tuple(name for name, _abbr, _desc in ALIGNMENTS)
+_ABILITY_DB_NAMES = {name: name.lower() for name in ABILITY_NAMES}
+_PC_LANGUAGES = ("Common", *STANDARD_LANGUAGES)
+
+# NPCs use the Character typeclass and the same canonical attributes written by
+# chargen_menu.menunode_end. Operational state such as session timestamps and
+# temporary ``chargen_*`` values is deliberately excluded: those are not part
+# of a player's finished character sheet.
+NPC_FIELDS: dict[str, Field] = {
+    "name": Field("key", as_text, "the NPC's name"),
+    "desc": Field(
+        "attr",
+        as_text,
+        "the NPC's description (type 'desc' with no value for the editor)",
+        target="desc",
+    ),
+    "gender": Field(
+        "attr",
+        as_choice("male", "female", "nonbinary", "unspecified"),
+        "male, female, nonbinary, or unspecified",
+    ),
+    "species": Field(
+        "attr", as_named_choice(*SPECIES), f"species ({', '.join(SPECIES)})"
+    ),
+    "class": Field(
+        "attr", as_named_choice(*CLASSES), f"class ({', '.join(CLASSES)})", "char_class"
+    ),
+    "age": Field(
+        "attr",
+        as_int_range(MIN_AGE, MAX_AGE),
+        f"age in years ({MIN_AGE}-{MAX_AGE})",
+    ),
+    "alignment": Field(
+        "attr",
+        as_named_choice(*_ALIGNMENT_NAMES),
+        f"alignment ({', '.join(_ALIGNMENT_NAMES)})",
+    ),
+    "background": Field(
+        "attr",
+        as_named_choice(*BACKGROUNDS),
+        f"background ({', '.join(BACKGROUNDS)})",
+    ),
+    "size": Field("attr", as_named_choice("Small", "Medium"), "Small or Medium"),
+    "languages": Field(
+        "attr",
+        as_choice_list(*_PC_LANGUAGES),
+        "known languages, comma-separated",
+    ),
+    "active_language": Field(
+        "attr",
+        as_named_choice(*_PC_LANGUAGES),
+        "the language the NPC currently speaks",
+    ),
+    "skills": Field(
+        "attr",
+        as_choice_list(*SKILLS),
+        "skill proficiencies, comma-separated",
+        "skill_proficiencies",
+    ),
+    **{
+        ability.lower(): Field(
+            "attr",
+            as_int_range(3, 20),
+            f"{ability} ability score (3-20)",
+            _ABILITY_DB_NAMES[ability],
+        )
+        for ability in ABILITY_NAMES
+    },
+    "level": Field("attr", as_int_range(1, 20), "character level (1-20)"),
+    "xp": Field("attr", as_nonneg_int, "experience points (zero or greater)"),
+    "proficiency_bonus": Field(
+        "attr", as_nonneg_int, "proficiency bonus", "proficiency_bonus"
+    ),
+    "hp_max": Field("attr", as_nonneg_int, "maximum hit points", "hp_max"),
+    "hp_current": Field("attr", as_nonneg_int, "current hit points", "hp_current"),
+    "hit_die": Field("attr", as_int_range(1, 100), "hit die size, e.g. 10", "hit_die"),
+    "initiative": Field(
+        "attr", as_int_range(-20, 20), "initiative modifier", "initiative"
+    ),
+    "armor_class": Field("attr", as_nonneg_int, "Armor Class", "armor_class"),
+    "passive_perception": Field(
+        "attr", as_nonneg_int, "passive Perception", "passive_perception"
+    ),
+    "speed": Field("attr", as_nonneg_int, "movement speed in feet", "speed"),
+}
+
+
 def _item_schema(item_type) -> dict[str, Field]:
     """Item fields plus the extra fields for ``item_type`` (None = generic)."""
     return {**ITEM_FIELDS, **TYPE_FIELDS.get(item_type, {})}
@@ -211,9 +343,10 @@ def schema_for(obj) -> dict[str, Field] | None:
     """
     if inherits_from(obj, "evennia.objects.objects.DefaultRoom"):
         return ROOM_FIELDS
+    if inherits_from(obj, "evennia.objects.objects.DefaultCharacter"):
+        return NPC_FIELDS
     if inherits_from(obj, "typeclasses.objects.Item"):
         return _item_schema(obj.db.type)
-    # Future: DefaultCharacter -> NPC_FIELDS.
     return None
 
 
@@ -226,4 +359,6 @@ def schema_for_prototype(proto: dict) -> dict[str, Field] | None:
     """
     if proto.get("typeclass") == "typeclasses.objects.Item":
         return _item_schema(proto.get("type"))
+    if proto.get("typeclass") == "typeclasses.characters.Character":
+        return NPC_FIELDS
     return None
