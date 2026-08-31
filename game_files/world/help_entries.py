@@ -234,6 +234,21 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "junk",
+        "aliases": ["discard", "destroy item"],
+        "category": "Items",
+        "text": """
+            Permanently discard an item you are carrying.
+
+            Usage:
+              junk <item>
+
+            Junking destroys only that particular item. It cannot be recovered,
+            but its underlying template remains in the game and builders can
+            spawn new copies from it.
+        """,
+    },
+    {
         "key": "build",
         "aliases": ["building", "edit", "builder"],
         "category": "Building",
