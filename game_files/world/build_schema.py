@@ -19,6 +19,7 @@ import re
 from typing import Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
+from systems.equipment import WEAR_LOCATIONS
 from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
                                 CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
                                 STANDARD_LANGUAGES)
@@ -258,6 +259,12 @@ ITEM_FIELDS: dict[str, Field] = {
         target="weight",
     ),
     "value": Field("attr", as_nonneg_int, "worth in coins", target="value"),
+    "wear_locations": Field(
+        "attr",
+        as_choice_list(*WEAR_LOCATIONS),
+        "comma-separated equipment slots where this can be worn",
+        target="wear_locations",
+    ),
     "type": Field(
         "type",
         as_choice(*ITEM_TYPES, "none"),

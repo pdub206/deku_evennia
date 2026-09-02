@@ -310,8 +310,39 @@ class TestEditNewItem(EvenniaCommandTest):
         self.assertEqual(proto["weight"], 0.0)
         self.assertEqual(proto["value"], 0)
         out = self.call(CmdBuildFields(), "")
-        for field_name in ("name", "desc", "weight", "value", "type"):
+        for field_name in (
+            "name",
+            "desc",
+            "weight",
+            "value",
+            "wear_locations",
+            "type",
+        ):
             self.assertIn(field_name, out)
+
+    def test_set_wear_locations_persists_to_prototype(self):
+        self.call(CmdBuild(), "new item Bracelet")
+
+        self.call(CmdBuildSet(), "wear_locations left wrist, right wrist")
+
+        self.assertEqual(
+            self.char1.ndb._build_target["wear_locations"],
+            ["left wrist", "right wrist"],
+        )
+        self.assertEqual(
+            _proto("bracelet")["wear_locations"], ["left wrist", "right wrist"]
+        )
+
+    def test_invalid_wear_location_rejected(self):
+        self.call(CmdBuild(), "new item Bracelet")
+
+        self.call(
+            CmdBuildSet(),
+            "wear_locations nose",
+            "Invalid value for 'wear_locations'",
+        )
+
+        self.assertEqual(self.char1.ndb._build_target["wear_locations"], [])
 
     def test_set_persists_to_prototype(self):
         self.call(CmdBuild(), "new item Rock")
@@ -444,7 +475,10 @@ class TestItemType(EvenniaCommandTest):
     def test_classification_only_type_has_shared_fields(self):
         self.call(CmdBuildSet(), "type wand")
         fields = set(schema_for_prototype(self.proto))
-        self.assertEqual(fields, {"name", "desc", "weight", "value", "type"})
+        self.assertEqual(
+            fields,
+            {"name", "desc", "weight", "value", "wear_locations", "type"},
+        )
 
     def test_set_type_none_reverts_to_generic(self):
         self.call(CmdBuildSet(), "type weapon")

@@ -8,6 +8,8 @@ with a location in the game world (like Characters, Rooms, Exits).
 
 """
 
+from typing import Any
+
 from evennia.objects.objects import DefaultObject
 
 
@@ -231,6 +233,8 @@ class Item(Object):
     * ``weight`` — pounds; counts against a character's carry capacity (see the
       capacity readout in ``commands/sheet.py``), and
     * ``value`` — worth in the base coin.
+    * ``wear_locations`` — equipment slots where the item may be worn; an empty
+      list means the item is not wearable.
 
     Currently implemented type-specific fields: a weapon's
     ``damage``/``subtype``, armor's ``base_ac``/``subtype``, and a container's
@@ -244,3 +248,12 @@ class Item(Object):
         # left unset (a generic item) until a builder sets it.
         self.db.weight = 0.0
         self.db.value = 0
+        self.db.wear_locations = []
+
+    def at_post_move(
+        self, source_location: Any | None, move_type: str = "move", **kwargs: Any
+    ) -> None:
+        """Clear equipped state whenever the item changes location."""
+        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if source_location is not self.location:
+            self.db.worn_location = None

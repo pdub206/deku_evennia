@@ -19,7 +19,8 @@ from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
 from commands.change import CmdChange
 from commands.command import CmdNoInput
 from commands.communication import CmdSay
-from commands.generic import CmdInventory, CmdJunk, CmdLook, CmdPose
+from commands.generic import (CmdInventory, CmdJunk, CmdLook, CmdPose,
+                              CmdRemove, CmdWear)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
@@ -48,6 +49,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPose)
         self.add(CmdInventory)
         self.add(CmdJunk)
+        self.add(CmdWear)
+        self.add(CmdRemove)
         # Position system.
         self.add(CmdSit)
         self.add(CmdRest)

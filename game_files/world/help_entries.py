@@ -249,6 +249,42 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "wear",
+        "aliases": ["equipment", "equip"],
+        "category": "Items",
+        "text": """
+            Wear or ready an item you are carrying.
+
+            Usage:
+              wear <item>
+              wear <item> <location>
+
+            Most equipment chooses its only valid location automatically. Items
+            that can use either side, such as rings, wristbands, shoulder items,
+            and ankle items, require you to choose |wleft|n or |wright|n when both
+            sides are open. If only one allowed location is open, it is chosen
+            automatically.
+            If an item supports unrelated locations, name the location instead.
+
+            One item can occupy each equipment location. If a location is already
+            occupied, you must free it before wearing another item there.
+        """,
+    },
+    {
+        "key": "remove",
+        "aliases": ["remove equipment", "unequip"],
+        "category": "Items",
+        "text": """
+            Remove an item you are wearing and return it to your carried inventory.
+
+            Usage:
+              remove <item>
+
+            You may abbreviate the item name as long as it identifies one equipped
+            item. Removing equipment frees its location for another item.
+        """,
+    },
+    {
         "key": "build",
         "aliases": ["building", "edit", "builder"],
         "category": "Building",
@@ -338,6 +374,8 @@ HELP_ENTRY_DICTS = [
               |wdesc|n      its description
               |wweight|n    weight in pounds (counts against carry capacity)
               |wvalue|n     worth in coins
+              |wwear_locations|n  comma-separated equipment slots, such as
+                              |whead|n or |wleft wrist, right wrist|n
 
             Changes to a template persist immediately and apply to copies spawned
             afterwards.  To customise one existing copy in the world, |wedit|n it

@@ -460,6 +460,7 @@ class CmdBuild(Command):
             "typeclass": _ITEM_TYPECLASS,
             "weight": 0.0,
             "value": 0,
+            "wear_locations": [],
         }
         save_prototype(proto)
         _enter_build_mode(caller, proto)
