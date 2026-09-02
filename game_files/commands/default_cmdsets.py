@@ -14,16 +14,19 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 """
 
+from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
+                               CmdNpcs, CmdRooms)
+from commands.change import CmdChange
+from commands.command import CmdNoInput
+from commands.communication import CmdSay
+from commands.generic import (CmdInventory, CmdJunk, CmdLook, CmdPose,
+                              CmdRemove, CmdWear)
+from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
+from commands.sheet import CmdSheet
+from commands.skills import CmdSkills
 from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenCmdSet
-
-from commands.change import CmdChange
-from commands.communication import CmdSay
-from commands.generic import CmdLook, CmdPose
-from commands.position import CmdSit, CmdRest, CmdSleep, CmdStand, CmdWake
-from commands.sheet import CmdSheet
-from commands.skills import CmdSkills
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -40,10 +43,15 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         Populates the cmdset
         """
         super().at_cmdset_creation()
-        # Position system — overrides Evennia's look/say/pose with sleep-aware versions.
+        # General commands - overrides Evennia's defaults.
         self.add(CmdLook)
         self.add(CmdSay)
         self.add(CmdPose)
+        self.add(CmdInventory)
+        self.add(CmdJunk)
+        self.add(CmdWear)
+        self.add(CmdRemove)
+        # Position system.
         self.add(CmdSit)
         self.add(CmdRest)
         self.add(CmdSleep)
@@ -53,6 +61,17 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSheet)
         self.add(CmdSkills)
         self.add(CmdChange)
+        # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
+        # which otherwise runs no command and so wouldn't refresh it.
+        self.add(CmdNoInput)
+        # Builder tools (lock-gated to Builder perm). The sticky edit-mode
+        # verbs live in BuildModeCmdSet, added to the caller while editing.
+        self.add(CmdBuild)
+        self.add(CmdAreas)
+        self.add(CmdRooms)
+        self.add(CmdItems)
+        self.add(CmdNpcs)
+        self.add(CmdLoadArea)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

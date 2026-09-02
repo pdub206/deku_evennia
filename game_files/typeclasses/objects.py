@@ -8,6 +8,8 @@ with a location in the game world (like Characters, Rooms, Exits).
 
 """
 
+from typing import Any
+
 from evennia.objects.objects import DefaultObject
 
 
@@ -215,3 +217,43 @@ class Object(ObjectParent, DefaultObject):
     """
 
     pass
+
+
+class Item(Object):
+    """A tangible thing characters can pick up, carry, and use.
+
+    Every takeable object is an ``Item``; specialisation is data-driven rather
+    than a class hierarchy. An optional ``type`` attribute classifies it using
+    the Diku/Circle/tbaMUD item kinds (plus ``container``); unset means a generic
+    item. The |wbuild|n command exposes any implemented type-specific fields
+    dynamically based on it (see ``world/build_schema.py``).
+
+    Always present:
+
+    * ``weight`` — pounds; counts against a character's carry capacity (see the
+      capacity readout in ``commands/sheet.py``), and
+    * ``value`` — worth in the base coin.
+    * ``wear_locations`` — equipment slots where the item may be worn; an empty
+      list means the item is not wearable.
+
+    Currently implemented type-specific fields: a weapon's
+    ``damage``/``subtype``, armor's ``base_ac``/``subtype``, and a container's
+    ``capacity``. Other types are available as classifications for future use.
+    """
+
+    def at_object_creation(self) -> None:
+        super().at_object_creation()
+        # Sensible defaults so a freshly built item reads as 0/0 rather than
+        # "unset"; builders override them via the `build` command.  `type` is
+        # left unset (a generic item) until a builder sets it.
+        self.db.weight = 0.0
+        self.db.value = 0
+        self.db.wear_locations = []
+
+    def at_post_move(
+        self, source_location: Any | None, move_type: str = "move", **kwargs: Any
+    ) -> None:
+        """Clear equipped state whenever the item changes location."""
+        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if source_location is not self.location:
+            self.db.worn_location = None

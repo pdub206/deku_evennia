@@ -42,7 +42,9 @@ class CmdChange(Command):
         if subcmd == "language":
             self._change_language(remainder.strip())
         else:
-            self.caller.msg(f"Unknown option '{subcmd}'. Usage: change language <language>")
+            self.caller.msg(
+                f"Unknown option '{subcmd}'. Usage: change language <language>"
+            )
 
     def _change_language(self, lang_arg: str) -> None:
         if not lang_arg:

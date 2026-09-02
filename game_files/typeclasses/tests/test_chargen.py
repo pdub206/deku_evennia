@@ -8,18 +8,10 @@ Run from the game/ directory:
 from unittest.mock import MagicMock
 
 from evennia.utils.test_resources import EvenniaTest
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ALIGNMENTS,
-    BACKGROUNDS,
-    CLASSES,
-    POINT_BUY_COSTS,
-    POINT_BUY_TOTAL,
-    STANDARD_ARRAY,
-    STANDARD_ARRAY_BY_CLASS,
-    ability_modifier,
-    roll_4d6_drop_lowest,
-)
+from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
+                                CLASSES, POINT_BUY_COSTS, POINT_BUY_TOTAL,
+                                STANDARD_ARRAY, STANDARD_ARRAY_BY_CLASS,
+                                ability_modifier, roll_4d6_drop_lowest)
 from world.chargen_menu import menunode_end
 
 # ---------------------------------------------------------------------------

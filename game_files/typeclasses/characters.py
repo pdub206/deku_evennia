@@ -9,8 +9,10 @@ creation commands.
 """
 
 import time
+from typing import Any
 
 from evennia.objects.objects import DefaultCharacter
+from systems.equipment import WEAR_LOCATIONS
 
 from .objects import ObjectParent
 
@@ -44,6 +46,29 @@ class Character(ObjectParent, DefaultCharacter):
             self.msg("You are asleep and cannot move. Type |wwake|n to wake up.")
             return False
         return True
+
+    def get_display_things(self, looker: Any, **kwargs: Any) -> str:
+        """Show worn equipment, without exposing the rest of the inventory."""
+        equipped = self.filter_visible(
+            [item for item in self.contents if item.db.worn_location], looker, **kwargs
+        )
+        if not equipped:
+            return ""
+
+        location_order = {
+            location: index for index, location in enumerate(WEAR_LOCATIONS)
+        }
+        equipped.sort(
+            key=lambda item: (
+                location_order.get(item.db.worn_location, len(location_order)),
+                item.key.lower(),
+            )
+        )
+        lines = [
+            f"  |C{item.get_display_name(looker, **kwargs)}|n ({item.db.worn_location})"
+            for item in equipped
+        ]
+        return "|wEquipped:|n\n" + "\n".join(lines)
 
     def at_post_puppet(self, **kwargs) -> None:
         super().at_post_puppet(**kwargs)

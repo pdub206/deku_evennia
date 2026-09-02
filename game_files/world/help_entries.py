@@ -234,6 +234,229 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "junk",
+        "aliases": ["discard", "destroy item"],
+        "category": "Items",
+        "text": """
+            Permanently discard an item you are carrying.
+
+            Usage:
+              junk <item>
+
+            Junking destroys only that particular item. It cannot be recovered,
+            but its underlying template remains in the game and builders can
+            spawn new copies from it.
+        """,
+    },
+    {
+        "key": "wear",
+        "aliases": ["equipment", "equip"],
+        "category": "Items",
+        "text": """
+            Wear or ready an item you are carrying.
+
+            Usage:
+              wear <item>
+              wear <item> <location>
+
+            Most equipment chooses its only valid location automatically. Items
+            that can use either side, such as rings, wristbands, shoulder items,
+            and ankle items, require you to choose |wleft|n or |wright|n when both
+            sides are open. If only one allowed location is open, it is chosen
+            automatically.
+            If an item supports unrelated locations, name the location instead.
+
+            One item can occupy each equipment location. If a location is already
+            occupied, you must free it before wearing another item there.
+        """,
+    },
+    {
+        "key": "remove",
+        "aliases": ["remove equipment", "unequip"],
+        "category": "Items",
+        "text": """
+            Remove an item you are wearing and return it to your carried inventory.
+
+            Usage:
+              remove <item>
+
+            You may abbreviate the item name as long as it identifies one equipped
+            item. Removing equipment frees its location for another item.
+        """,
+    },
+    {
+        "key": "build",
+        "aliases": ["building", "edit", "builder"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            The |wbuild|n command is the unified, in-game world builder.  Rather
+            than memorising a dozen separate builder verbs, you |wedit|n one
+            object at a time and use a small set of flat verbs on it.
+
+            Usage:
+              build                   show what you can build / what you're editing
+              edit here               edit the room you're standing in
+              edit new room <name>    create a fresh unlinked room and go to it
+              edit new item <name>    create a new item template and edit it
+              edit new npc <name>     create a template and spawn an NPC here
+              edit item <name>        edit an existing item template
+              edit npc <name>         edit an existing NPC template
+              edit <object>           edit a live room, item, or NPC by name/#dbref
+
+            You must have |wBuilder|n permission.  The classic builder commands
+            (dig, create, set, desc, spawn, ...) still work for expert use.
+
+            # subtopics
+
+            ## Editing
+
+            |wedit here|n (or |wedit <object>|n) puts you in a sticky editing
+            context bound to that object.  A header like |w[build: Town Square
+            (#5, Room)]|n reminds you what you're editing (and its kind), and the prompt
+            changes to |weediting>|n for the whole session — so even if you walk
+            away you can see you're still bound to a room.  |wdone|n clears it.
+            While editing, these verbs act on the bound object:
+
+              |wfields|n                 list the editable fields, with hints
+              |wshow|n                   show current field values and exits
+              |wset <field> <value>|n    set a field, e.g. |wset name The Plaza|n
+              |wdesc|n                   open the multi-line description editor
+              |wdesc <text>|n            set the description on one line
+              |wdel|n                    delete this object (type |wdel|n twice)
+              |wdone|n                   leave the editing context
+
+            Values are validated — a bad value is rejected with a reason instead
+            of being stored.  Type |wfields|n any time to see what you can set.
+
+            ## Rooms and Exits
+
+            To start a brand-new area in isolation — before it is linked into
+            the live world — use |wedit new room <name>|n.  That creates a standalone
+            room with no exits and teleports you into it; from there you |wdig|n
+            outward to grow the area and only |wlink|n it into the game once it
+            has been built and reviewed.  (|wtel #<dbref>|n takes you back where
+            you came from.)
+
+            When editing a room you can shape the map without leaving the
+            context:
+
+              |wdig <dir> = <Room Name>|n   dig a new room with two-way exits
+              |wdig <dir>|n                 same, naming it 'An Unnamed Room'
+              |wlink <dir> = <room>|n       add an exit to an existing room
+              |wunlink <dir>|n              remove an exit
+
+            Standard directions (north/south/east/west/up/down/in/out and the
+            diagonals) automatically get a reverse exit and short aliases
+            (n, s, e, w, u, d).  Dug rooms inherit the current room's area.
+
+            After digging you stay on the room you started from (handy for
+            fanning several exits off a hub).  To work on the new room, type
+            |wedit <direction>|n — editing an exit jumps you to the room it
+            leads to — or walk there and |wedit here|n.
+
+            ## Items
+
+            Items are authored as |ytemplates|n (prototypes) and then stamped into
+            the world as copies — the DIKU object-vnum model.  You edit the
+            template once; every copy is consistent with it, and you can tweak an
+            individual copy for a one-off without touching the template.
+
+              |wedit new item <name>|n   create a new item template and edit it
+              |wedit item <name>|n       edit an existing template
+              |w@spawn <key>|n           place a copy of a template in this room
+              |witems|n / |witems <type>|n   list templates and untemplated live items
+
+            A template uses the same verbs as a room — |wset|n, |wdesc|n, |wshow|n,
+            |wfields|n, |wdel|n, |wdone|n — over these shared fields:
+
+              |wname|n      the item's name
+              |wdesc|n      its description
+              |wweight|n    weight in pounds (counts against carry capacity)
+              |wvalue|n     worth in coins
+              |wwear_locations|n  comma-separated equipment slots, such as
+                              |whead|n or |wleft wrist, right wrist|n
+
+            Changes to a template persist immediately and apply to copies spawned
+            afterwards.  To customise one existing copy in the world, |wedit|n it
+            directly (by name or |w#dbref|n) — that's a one-off and leaves the
+            template and the other copies alone.  Items created directly, including
+            older items that predate templates, appear in |witems|n under
+            "Untemplated live items" and can be edited by their |w#dbref|n.
+
+            ### Types
+
+            Give a template a |wtype|n with |wset type <kind>|n and extra fields for
+            kinds that support them appear in |wfields|n and |wshow|n. Supported
+            kinds are:
+
+              |wlight, scroll, wand, staff, weapon, furniture, treasure, armor,
+              potion, worn, other, trash, container, note, drinkcon, key, food,
+              money, pen, boat, fountain|n
+
+            Most kinds are classifications ready for future mechanics. These kinds
+            currently add their own editable fields:
+
+              |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
+                                  |wsubtype|n (bludgeoning / piercing / slashing)
+              |wset type armor|n      adds |wbase_ac|n and |wsubtype|n
+                                  (light / medium / heavy / shield)
+              |wset type container|n  adds |wcapacity|n (max weight it can hold)
+              |wset type none|n       back to a plain item (drops those fields)
+
+            The header shows what you're editing, e.g.
+            |w[build: iron_sword (Weapon prototype)]|n.  Type |wfields|n any time
+            to see exactly what you can set.
+
+            ## NPCs
+
+            NPCs are normal Character objects without an Account puppeting them.
+            Like items, they are authored as reusable templates. Creating one
+            also immediately spawns a live copy in the room where you are working:
+
+              |wedit new npc <name>|n    create a template, spawn one here, and edit it
+              |wedit npc <key>|n         edit an existing NPC template
+              |wnpcs|n                   list templates and their live-copy counts
+              |w@spawn <key>|n           place another copy from a template
+
+            NPC templates expose every canonical field assigned to a finished
+            player character: name, description, gender, species, class, age,
+            alignment, background, size, languages, active language, skills,
+            all six ability scores, level and XP, proficiency bonus, hit points,
+            hit die, initiative, Armor Class, passive Perception, and speed.
+            Use |wfields|n for accepted values and |wshow|n for the current sheet.
+
+            Changes persist immediately and affect copies spawned afterwards.
+            A live NPC can be edited directly with |wedit <name>|n or
+            |wedit #<dbref>|n for a one-off change that leaves its template alone.
+
+            ## Areas and Export
+
+            Rooms are grouped into |yareas|n, which are the unit of saving.
+            Browse what exists with:
+
+              |wareas|n                  list every area and its room count
+              |wrooms|n                  list the rooms in your current area
+              |wrooms <area>|n           list the rooms in a named area (with #dbrefs)
+
+            And group and save rooms with:
+
+              |warea <name>|n            assign the room you're editing to an area
+              |wexport|n                 save that area to a git-tracked file
+
+            |wexport|n writes |wgame_files/world/areas/<area>.py|n — a readable
+            file describing the rooms and the exit graph by stable keys (not
+            dbrefs), so it can be reviewed in version control and re-loaded into
+            any world.  To apply a saved area to the live game, sync it in,
+            reload, then:
+
+              |wloadarea <area>|n        spawn an area's rooms and exits
+
+            Loading is idempotent: existing rooms and exits are reused, not
+            duplicated, so you can safely re-run it after edits.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

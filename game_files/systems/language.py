@@ -10,7 +10,7 @@ import random
 _VOWELS = "aeiou"
 _CONSONANTS = "bcdfghjklmnpqrstvwxyz"
 # Characters treated as punctuation and stripped from word edges before garbling.
-_PUNCT = frozenset('.,!?;:\'"()-–—')
+_PUNCT = frozenset(".,!?;:'\"()-–—")
 
 
 def garble(text: str) -> str:
