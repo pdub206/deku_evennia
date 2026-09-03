@@ -19,6 +19,7 @@ from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
 from commands.change import CmdChange
 from commands.command import CmdNoInput
 from commands.communication import CmdSay
+from commands.effects import CmdEffects
 from commands.generic import (CmdInventory, CmdJunk, CmdLook, CmdPose,
                               CmdRemove, CmdWear)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
@@ -72,6 +73,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdItems)
         self.add(CmdNpcs)
         self.add(CmdLoadArea)
+        self.add(CmdEffects)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

@@ -14,6 +14,7 @@ from typing import Any
 
 from evennia.objects.objects import DefaultCharacter
 from systems.character_stats import CharacterStats
+from systems.effects import EffectHandler
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 
 from .objects import ObjectParent
@@ -43,10 +44,14 @@ class Character(ObjectParent, DefaultCharacter):
         """Return the canonical, on-demand interface to equipped items."""
         return EquipmentHandler(self)
 
+    @property
+    def effects(self) -> EffectHandler:
+        """Return the canonical interface to persistent active effects."""
+        return EffectHandler(self)
+
     def get_effect_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
-        """Yield active effect modifiers once the condition model exists."""
-        # TODO(RULES-03): Return modifiers from persistent active effects here.
-        return ()
+        """Yield numeric modifiers supplied by persistent active effects."""
+        return self.effects.modifier_sources()
 
     def get_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
         """Yield intrinsic, equipped, and active-effect stat contributions."""

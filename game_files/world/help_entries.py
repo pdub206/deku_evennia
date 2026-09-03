@@ -214,6 +214,25 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "conditions",
+        "aliases": ["effects", "status effects", "buffs", "debuffs"],
+        "category": "Character",
+        "text": """
+            Conditions are lasting effects that can change what your character
+            can do or alter statistics shown by commands such as |wscore|n.
+            They may be permanent or expire after a number of world pulses.
+
+            The game tells you when a visible condition begins, changes,
+            expires, or is removed. Reapplying a condition may be rejected,
+            refresh its duration, replace it, or add a limited number of stacks,
+            depending on that condition's rules.
+
+            Some hostile conditions allow a saving throw when first applied or
+            on later pulses. Others can be removed by an appropriate cure or
+            dispelling effect. Those details depend on the individual condition.
+        """,
+    },
+    {
         "key": "change language",
         "aliases": ["change"],
         "category": "Character",
@@ -490,6 +509,27 @@ HELP_ENTRY_DICTS = [
 
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
+        """,
+    },
+    {
+        "key": "@effects",
+        "aliases": ["@conditions", "effect inspection"],
+        "category": "Staff",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Inspect persistent effects on a character without changing them.
+
+            Usage:
+              @effects
+              @effects <character or #dbref>
+
+            Each entry shows its stable key and instance ID, stacks, remaining
+            pulses or permanence, source, condition flags, numeric modifiers,
+            saving throw, and ordinary removal categories. A missing definition
+            is marked explicitly so staff can diagnose stale persistent data.
+
+            You must have |wBuilder|n permission or higher. Invalid effect data
+            must be inspected through the target's |wactive_effects|n Attribute.
         """,
     },
     {
