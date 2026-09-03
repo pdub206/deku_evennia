@@ -46,6 +46,31 @@ CHARGEN_MENU = "world.chargen_menu"
 # stays visible after every command, not just our own. See commands/command.py.
 COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
 
+# One one-second heartbeat owns all recurring live-world work. Lane cadences
+# are heartbeat counts, so the effect lane is currently one six-second SRD
+# round while slower systems remain independently tunable.
+GAME_PULSE_INTERVAL_SECONDS = 1
+GAME_PULSE_CADENCES = {
+    "combat": 2,
+    "recovery": 60,
+    "mobiles": 10,
+    "effects": 6,
+    "corpses": 60,
+    "world_time": 60,
+    "weather": 300,
+    "resets": 60,
+}
+GLOBAL_SCRIPTS = {
+    "game_pulse": {
+        "typeclass": "typeclasses.scripts.GamePulseScript",
+        "interval": GAME_PULSE_INTERVAL_SECONDS,
+        "repeats": 0,
+        "start_delay": True,
+        "persistent": True,
+        "desc": "Central scheduler for recurring live-world systems.",
+    }
+}
+
 
 ######################################################################
 # Settings given in secret_settings.py override those in this file.
