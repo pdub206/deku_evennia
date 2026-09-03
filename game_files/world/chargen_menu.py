@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from evennia.utils import dedent
+from systems.character_stats import calculate_max_hp
 from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
                                 BACKGROUNDS, CLASSES, MAX_AGE, MIN_AGE,
                                 POINT_BUY_COSTS, POINT_BUY_MAX, POINT_BUY_MIN,
@@ -1422,7 +1423,9 @@ def menunode_review(caller: Any, **kwargs):
 
     cls_data = CLASSES.get(cls_name, {})
     con_mod = ability_modifier(final_scores.get("Constitution", 8))
-    hp_max = cls_data.get("hp_base", 8) + con_mod
+    hp_max = calculate_max_hp(
+        cls_data.get("hp_base", 8), 1, final_scores.get("Constitution", 8)
+    )
 
     gender_display = {
         "male": "Male",
@@ -1583,28 +1586,29 @@ def menunode_end(caller: Any, **kwargs):
     char.db.wisdom = final["Wisdom"]
     char.db.charisma = final["Charisma"]
 
-    # Derived stats.
+    # Persistent rules inputs. Derived values come from ``char.stats`` so they
+    # respond immediately when these inputs or modifier sources change.
     cls_data = CLASSES.get(cls_name, CLASSES["Fighter"])
-    con_mod = ability_modifier(final["Constitution"])
-    dex_mod = ability_modifier(final["Dexterity"])
-    wis_mod = ability_modifier(final["Wisdom"])
-
     char.db.level = 1
     char.db.xp = 0
-    char.db.proficiency_bonus = 2
-    char.db.hp_max = cls_data["hp_base"] + con_mod
-    char.db.hp_current = char.db.hp_max
-    char.db.hit_die = cls_data["hit_die"]
-    char.db.initiative = dex_mod
-    char.db.armor_class = 10 + dex_mod
-    char.db.passive_perception = 10 + wis_mod
-    char.db.speed = SPECIES.get(species, {}).get("speed", 30)
-
-    # Identity / origin.
     char.db.char_class = cls_name
-    char.db.background = bg
     char.db.species = species
     char.db.size = size
+    char.db.hp_base = cls_data["hp_base"]
+    char.db.hit_die = cls_data["hit_die"]
+    char.db.speed = species_data.get("speed", 30)
+    for stale_derived in (
+        "proficiency_bonus",
+        "hp_max",
+        "initiative",
+        "armor_class",
+        "passive_perception",
+    ):
+        char.attributes.remove(stale_derived)
+    char.db.hp_current = char.stats.hp_max
+
+    # Identity / origin.
+    char.db.background = bg
     char.db.alignment = alignment
     char.db.languages = ["Common"] + list(langs)
     char.db.active_language = char.db.languages[0]
@@ -1641,7 +1645,7 @@ def menunode_end(caller: Any, **kwargs):
 
           Class: {cls_name}  |  Background: {bg}  |  Species: {species}
           Alignment: {alignment}
-          HP: {char.db.hp_max}  |  AC: {char.db.armor_class}  |  Initiative: {char.db.initiative:+d}
+          HP: {char.stats.hp_max}  |  AC: {char.stats.armor_class}  |  Reaction: {char.stats.reaction_modifier:+d}
 
         Entering the world now…
     """)

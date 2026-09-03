@@ -90,7 +90,7 @@ HELP_ENTRY_DICTS = [
             Six core abilities describe your character's natural talents:
 
               |wStrength (STR)|n     — Physical power; melee attacks, lifting, climbing.
-              |wDexterity (DEX)|n    — Agility; ranged attacks, AC, Stealth, Initiative.
+              |wDexterity (DEX)|n    — Agility; ranged attacks, AC, Stealth, Reaction.
               |wConstitution (CON)|n — Endurance; Hit Points, concentration.
               |wIntelligence (INT)|n — Memory and reasoning; Arcana, History, Investigation.
               |wWisdom (WIS)|n       — Perception and intuition; Insight, Perception, Medicine.
@@ -102,9 +102,13 @@ HELP_ENTRY_DICTS = [
 
               |wHit Points (HP)|n     — Determined at level 1 by class hit die + CON modifier.
               |wArmor Class (AC)|n    — 10 + DEX modifier (base, no armor).
-              |wInitiative|n          — DEX modifier; used to order combat turns.
+              |wReaction|n            — DEX modifier; slightly adjusts attack cadence.
               |wProficiency Bonus|n   — +2 at level 1; increases as you gain levels.
               |wPassive Perception|n  — 10 + WIS (Perception) modifier.
+              |wSpeed|n               — Scales travel time relative to the normal 30 feet.
+
+            Effective statistics update when your abilities, level, equipment,
+            or active conditions change.
 
             ## Identity
 
@@ -423,7 +427,7 @@ HELP_ENTRY_DICTS = [
             player character: name, description, gender, species, class, age,
             alignment, background, size, languages, active language, skills,
             all six ability scores, level and XP, proficiency bonus, hit points,
-            hit die, initiative, Armor Class, passive Perception, and speed.
+            hit die, Reaction, Armor Class, passive Perception, and speed.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.

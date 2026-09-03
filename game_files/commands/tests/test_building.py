@@ -635,13 +635,9 @@ class TestEditNewNpc(EvenniaCommandTest):
             "charisma": 8,
             "level": 1,
             "xp": 0,
-            "proficiency_bonus": 2,
-            "hp_max": 9,
+            "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,
-            "initiative": -1,
-            "armor_class": 9,
-            "passive_perception": 9,
             "speed": 30,
         }
         for name, value in expected.items():
@@ -675,10 +671,11 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "level",
                 "xp",
                 "proficiency_bonus",
+                "hp_base",
                 "hp_max",
                 "hp_current",
                 "hit_die",
-                "initiative",
+                "reaction",
                 "armor_class",
                 "passive_perception",
                 "speed",
@@ -717,6 +714,23 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
+
+    def test_derived_stat_fields_store_explicit_overrides(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "proficiency_bonus 4")
+        self.call(CmdBuildSet(), "hp_base 20")
+        self.call(CmdBuildSet(), "hp_max 30")
+        self.call(CmdBuildSet(), "reaction 3")
+        self.call(CmdBuildSet(), "armor_class 17")
+        self.call(CmdBuildSet(), "passive_perception 15")
+
+        saved = _proto("city_guard")
+        self.assertEqual(saved["proficiency_bonus_override"], 4)
+        self.assertEqual(saved["hp_base"], 20)
+        self.assertEqual(saved["hp_max_override"], 30)
+        self.assertEqual(saved["reaction_modifier_override"], 3)
+        self.assertEqual(saved["armor_class_override"], 17)
+        self.assertEqual(saved["passive_perception_override"], 15)
 
     def test_edit_existing_npc_template(self):
         self.call(CmdBuild(), "new npc City Guard")

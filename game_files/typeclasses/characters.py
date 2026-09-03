@@ -9,9 +9,11 @@ creation commands.
 """
 
 import time
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from evennia.objects.objects import DefaultCharacter
+from systems.character_stats import CharacterStats
 from systems.equipment import WEAR_LOCATIONS
 
 from .objects import ObjectParent
@@ -31,6 +33,33 @@ class Character(ObjectParent, DefaultCharacter):
         super().at_object_creation()
         self.db.position = "standing"
 
+    @property
+    def stats(self) -> CharacterStats:
+        """Return the canonical, on-demand interface to character statistics."""
+        return CharacterStats(self)
+
+    def get_effect_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
+        """Yield active effect modifiers once the condition model exists."""
+        # TODO(RULES-03): Return modifiers from persistent active effects here.
+        return ()
+
+    def get_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
+        """Yield intrinsic, equipped, and active-effect stat contributions."""
+        intrinsic = self.db.stat_modifiers
+        if isinstance(intrinsic, Mapping):
+            yield intrinsic
+
+        for item in self.contents:
+            if not item.db.worn_location:
+                continue
+            modifiers = item.db.stat_modifiers
+            if isinstance(modifiers, Mapping):
+                yield modifiers
+
+        # TODO(RULES-02): Interpret armor, shields, and wielded weapon data as
+        # typed stat/attack contributions instead of generic modifier mappings.
+        yield from self.get_effect_stat_modifier_sources()
+
     def at_msg_receive(self, text=None, from_obj=None, **kwargs) -> bool:
         # Sleeping characters cannot perceive messages from other objects.
         if (
@@ -45,6 +74,8 @@ class Character(ObjectParent, DefaultCharacter):
         if (self.db.position or "standing") == "sleeping":
             self.msg("You are asleep and cannot move. Type |wwake|n to wake up.")
             return False
+        # TODO(WORLD-02): Schedule traversal using stats.movement_delay() so
+        # movement cannot bypass pursuit simply by submitting commands rapidly.
         return True
 
     def get_display_things(self, looker: Any, **kwargs: Any) -> str:

@@ -278,10 +278,9 @@ _ALIGNMENT_NAMES = tuple(name for name, _abbr, _desc in ALIGNMENTS)
 _ABILITY_DB_NAMES = {name: name.lower() for name in ABILITY_NAMES}
 _PC_LANGUAGES = ("Common", *STANDARD_LANGUAGES)
 
-# NPCs use the Character typeclass and the same canonical attributes written by
-# chargen_menu.menunode_end. Operational state such as session timestamps and
-# temporary ``chargen_*`` values is deliberately excluded: those are not part
-# of a player's finished character sheet.
+# NPCs use the Character typeclass and the same canonical stat inputs written by
+# chargen. Builder-facing derived fields target explicit overrides so changing a
+# base ability or level cannot silently leave an ordinary NPC with stale values.
 NPC_FIELDS: dict[str, Field] = {
     "name": Field("key", as_text, "the NPC's name"),
     "desc": Field(
@@ -345,17 +344,36 @@ NPC_FIELDS: dict[str, Field] = {
     "level": Field("attr", as_int_range(1, 20), "character level (1-20)"),
     "xp": Field("attr", as_nonneg_int, "experience points (zero or greater)"),
     "proficiency_bonus": Field(
-        "attr", as_nonneg_int, "proficiency bonus", "proficiency_bonus"
+        "attr",
+        as_nonneg_int,
+        "optional proficiency bonus override",
+        "proficiency_bonus_override",
     ),
-    "hp_max": Field("attr", as_nonneg_int, "maximum hit points", "hp_max"),
+    "hp_base": Field(
+        "attr",
+        as_nonneg_int,
+        "accumulated HP before Constitution",
+        "hp_base",
+    ),
+    "hp_max": Field(
+        "attr", as_nonneg_int, "optional maximum HP override", "hp_max_override"
+    ),
     "hp_current": Field("attr", as_nonneg_int, "current hit points", "hp_current"),
     "hit_die": Field("attr", as_int_range(1, 100), "hit die size, e.g. 10", "hit_die"),
-    "initiative": Field(
-        "attr", as_int_range(-20, 20), "initiative modifier", "initiative"
+    "reaction": Field(
+        "attr",
+        as_int_range(-20, 20),
+        "optional combat Reaction override",
+        "reaction_modifier_override",
     ),
-    "armor_class": Field("attr", as_nonneg_int, "Armor Class", "armor_class"),
+    "armor_class": Field(
+        "attr", as_nonneg_int, "optional Armor Class override", "armor_class_override"
+    ),
     "passive_perception": Field(
-        "attr", as_nonneg_int, "passive Perception", "passive_perception"
+        "attr",
+        as_nonneg_int,
+        "optional passive Perception override",
+        "passive_perception_override",
     ),
     "speed": Field("attr", as_nonneg_int, "movement speed in feet", "speed"),
 }

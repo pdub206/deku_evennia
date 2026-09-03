@@ -513,9 +513,9 @@ class CmdBuild(Command):
                 caller.msg(f"Prototype key '|y{key}|n' is already in use.")
             return
 
-        # These are the canonical fields written to a finished PC by chargen.
-        # The baseline mirrors chargen's fallbacks and can then be shaped with
-        # the regular `set` verb just like any other prototype.
+        # These are the canonical inputs written to a finished PC by chargen.
+        # Effective combat values are derived by Character.stats; builders can
+        # add explicit overrides through the regular `set` verb when needed.
         proto = {
             "prototype_key": key,
             "key": name,
@@ -538,13 +538,9 @@ class CmdBuild(Command):
             "charisma": 8,
             "level": 1,
             "xp": 0,
-            "proficiency_bonus": 2,
-            "hp_max": 9,
+            "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,
-            "initiative": -1,
-            "armor_class": 9,
-            "passive_perception": 9,
             "speed": 30,
         }
         save_prototype(proto)

@@ -212,10 +212,11 @@ class TestChargenEnd(EvenniaTest):
 
         # CON after bonus = 14 (no bonus on CON in this scenario)
         # ability_modifier(14) = 2 → hp_max = 12 + 2 = 14
-        self.assertEqual(char.db.hp_max, 14)
+        self.assertEqual(char.db.hp_base, 12)
+        self.assertEqual(char.stats.hp_max, 14)
         self.assertEqual(char.db.level, 1)
         self.assertEqual(char.db.xp, 0)
-        self.assertEqual(char.db.proficiency_bonus, 2)
+        self.assertEqual(char.stats.proficiency_bonus, 2)
         self.assertEqual(char.db.char_class, "Barbarian")
         self.assertEqual(char.db.background, "Soldier")
         self.assertEqual(char.db.species, "Human")
@@ -271,10 +272,11 @@ class TestChargenEnd(EvenniaTest):
 
         # CON = 13 + 1 = 14 → modifier = +2 → hp_max = 6 + 2 = 8
         self.assertEqual(char.db.constitution, 14)
-        self.assertEqual(char.db.hp_max, 8)
+        self.assertEqual(char.db.hp_base, 6)
+        self.assertEqual(char.stats.hp_max, 8)
 
-    def test_initiative_and_ac(self):
-        """Initiative = DEX modifier; AC = 10 + DEX modifier (base)."""
+    def test_reaction_and_ac(self):
+        """Reaction = DEX modifier; AC = 10 + DEX modifier (base)."""
         char = self.char1
         char.db.chargen_class = "Rogue"
         char.db.chargen_background = "Criminal"
@@ -297,5 +299,7 @@ class TestChargenEnd(EvenniaTest):
 
         # DEX = 15 + 2 = 17 → modifier = +3
         self.assertEqual(char.db.dexterity, 17)
-        self.assertEqual(char.db.initiative, 3)
-        self.assertEqual(char.db.armor_class, 13)
+        self.assertEqual(char.stats.reaction_modifier, 3)
+        self.assertEqual(char.stats.armor_class, 13)
+        self.assertIsNone(char.db.initiative)
+        self.assertIsNone(char.db.armor_class)

@@ -653,7 +653,7 @@ BACKGROUNDS: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 # Full species traits will be expanded when the species chapter is implemented.
-# For chargen we store name, size, and speed so derived stats can be set.
+# Chargen stores name, size, and base speed; the stat API derives effective speed.
 
 SPECIES: dict[str, dict] = {
     "Dragonborn": {
