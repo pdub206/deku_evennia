@@ -14,7 +14,7 @@ from typing import Any
 
 from evennia.objects.objects import DefaultCharacter
 from systems.character_stats import CharacterStats
-from systems.equipment import WEAR_LOCATIONS
+from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 
 from .objects import ObjectParent
 
@@ -38,6 +38,11 @@ class Character(ObjectParent, DefaultCharacter):
         """Return the canonical, on-demand interface to character statistics."""
         return CharacterStats(self)
 
+    @property
+    def equipment(self) -> EquipmentHandler:
+        """Return the canonical, on-demand interface to equipped items."""
+        return EquipmentHandler(self)
+
     def get_effect_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
         """Yield active effect modifiers once the condition model exists."""
         # TODO(RULES-03): Return modifiers from persistent active effects here.
@@ -49,15 +54,7 @@ class Character(ObjectParent, DefaultCharacter):
         if isinstance(intrinsic, Mapping):
             yield intrinsic
 
-        for item in self.contents:
-            if not item.db.worn_location:
-                continue
-            modifiers = item.db.stat_modifiers
-            if isinstance(modifiers, Mapping):
-                yield modifiers
-
-        # TODO(RULES-02): Interpret armor, shields, and wielded weapon data as
-        # typed stat/attack contributions instead of generic modifier mappings.
+        yield from self.equipment.stat_modifier_sources()
         yield from self.get_effect_stat_modifier_sources()
 
     def at_msg_receive(self, text=None, from_obj=None, **kwargs) -> bool:

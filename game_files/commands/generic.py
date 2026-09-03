@@ -13,7 +13,13 @@ from evennia.commands.default.general import CmdInventory as _BaseInventory
 from evennia.commands.default.general import CmdLook as _BaseLook
 from evennia.commands.default.general import CmdPose as _BasePose
 from evennia.utils import utils
-from systems.equipment import WEAR_LOCATIONS, WEAR_SIDES, wear_phrase
+from systems.equipment import (
+    WEAR_LOCATIONS,
+    WEAR_SIDES,
+    EquipmentError,
+    allowed_wear_locations,
+    wear_phrase,
+)
 
 
 class CmdLook(_BaseLook):
@@ -187,14 +193,7 @@ class CmdWear(Command):
             caller.msg("You can only wear items.")
             return
 
-        raw_locations = item.db.wear_locations or []
-        if isinstance(raw_locations, str):
-            raw_locations = [raw_locations]
-        locations = [
-            str(location).lower()
-            for location in raw_locations
-            if str(location).lower() in WEAR_LOCATIONS
-        ]
+        locations = list(allowed_wear_locations(item))
         display_name = item.get_display_name(caller)
         if not locations:
             caller.msg(f"You cannot wear {display_name}.")
@@ -211,14 +210,9 @@ class CmdWear(Command):
             )
             return
 
-        occupying_item = next(
-            (
-                carried
-                for carried in caller.contents
-                if carried is not item and carried.db.worn_location == location
-            ),
-            None,
-        )
+        occupying_item = caller.equipment.item_at(location)
+        if occupying_item is item:
+            occupying_item = None
         if occupying_item:
             occupying_name = occupying_item.get_display_name(caller)
             caller.msg(
@@ -226,7 +220,13 @@ class CmdWear(Command):
             )
             return
 
-        item.db.worn_location = location
+        try:
+            caller.equipment.equip(item, location)
+        except EquipmentError:
+            # Every expected failure is reported above; this guards against a
+            # concurrent or externally initiated equipment-state change.
+            caller.msg(f"You cannot wear {display_name} there.")
+            return
         caller.msg(f"You wear {display_name} {wear_phrase(location)}.")
 
     def _choose_location(
@@ -259,10 +259,7 @@ class CmdWear(Command):
         open_locations = [
             location
             for location in locations
-            if not any(
-                carried is not item and carried.db.worn_location == location
-                for carried in caller.contents
-            )
+            if caller.equipment.item_at(location) in (None, item)
         ]
         if len(open_locations) == 1:
             return open_locations[0]
@@ -311,5 +308,5 @@ class CmdRemove(Command):
             return
 
         display_name = item.get_display_name(caller)
-        item.db.worn_location = None
+        caller.equipment.unequip(item)
         caller.msg(f"You remove {display_name}.")

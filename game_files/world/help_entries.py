@@ -272,6 +272,31 @@ HELP_ENTRY_DICTS = [
 
             One item can occupy each equipment location. If a location is already
             occupied, you must free it before wearing another item there.
+
+            # subtopics
+
+            ## Armor
+
+            Primary armor worn on your body determines Armor Class: light armor
+            adds your full Dexterity modifier, medium armor adds at most +2 from
+            Dexterity, and heavy armor does not add Dexterity. A shield adds its
+            defense separately. Armor worn anywhere else never increases Armor
+            Class.
+
+            Locational armor instead reduces damage when its worn location is
+            struck. Head, neck, and body protect those locations directly. Arms,
+            hands, legs, and feet protect both sides; shoulder and wrist items
+            protect only their named side. Percentage reduction is applied before
+            flat reduction and can reduce damage to zero. Ordinary armor protects
+            against bludgeoning, piercing, and slashing unless built otherwise.
+
+            ## Training
+
+            You may equip any armor, shield, or weapon, even without class
+            training, and the equipment command will not stop or warn you.
+            Untrained weapons do not add your proficiency bonus to attacks.
+            Untrained armor still supplies its AC and damage mitigation, but may
+            penalize relevant rolls and spellcasting.
         """,
     },
     {
@@ -401,12 +426,19 @@ HELP_ENTRY_DICTS = [
             Most kinds are classifications ready for future mechanics. These kinds
             currently add their own editable fields:
 
-              |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
-                                  |wsubtype|n (bludgeoning / piercing / slashing)
-              |wset type armor|n      adds |wbase_ac|n and |wsubtype|n
-                                  (light / medium / heavy / shield)
+              |wset type weapon|n     adds |wdamage|n, damage |wsubtype|n,
+                                  |wweapon_category|n, |wweapon_kind|n, and
+                                  |wattack_ability|n
+              |wset type armor|n      adds |wbase_ac|n, armor |wsubtype|n,
+                                  |wmitigation_flat|n, |wmitigation_percent|n,
+                                  and |wmitigation_types|n
               |wset type container|n  adds |wcapacity|n (max weight it can hold)
               |wset type none|n       back to a plain item (drops those fields)
+
+            Armor mitigation protects the hit location implied by
+            |wwear_locations|n; there is no separate coverage field. Mitigation
+            types default to bludgeoning, piercing, and slashing when left unset.
+            Percentage mitigation is limited to 80.
 
             The header shows what you're editing, e.g.
             |w[build: iron_sword (Weapon prototype)]|n.  Type |wfields|n any time

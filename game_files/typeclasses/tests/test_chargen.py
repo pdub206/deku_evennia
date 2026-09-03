@@ -8,10 +8,18 @@ Run from the game/ directory:
 from unittest.mock import MagicMock
 
 from evennia.utils.test_resources import EvenniaTest
-from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
-                                CLASSES, POINT_BUY_COSTS, POINT_BUY_TOTAL,
-                                STANDARD_ARRAY, STANDARD_ARRAY_BY_CLASS,
-                                ability_modifier, roll_4d6_drop_lowest)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    CLASSES,
+    POINT_BUY_COSTS,
+    POINT_BUY_TOTAL,
+    STANDARD_ARRAY,
+    STANDARD_ARRAY_BY_CLASS,
+    ability_modifier,
+    roll_4d6_drop_lowest,
+)
 from world.chargen_menu import menunode_end
 
 # ---------------------------------------------------------------------------
@@ -123,10 +131,19 @@ class TestClassData(EvenniaTest):
             "hp_base",
             "saving_throws",
             "skill_choices",
+            "armor_training",
+            "weapon_categories",
+            "weapon_proficiencies",
         }
         for cls_name, data in CLASSES.items():
             for key in required:
                 self.assertIn(key, data, f"Class '{cls_name}' missing key '{key}'")
+
+    def test_weapon_training_is_machine_readable(self):
+        self.assertEqual(CLASSES["Fighter"]["weapon_categories"], ["simple", "martial"])
+        self.assertIn("shortsword", CLASSES["Monk"]["weapon_proficiencies"])
+        self.assertIn("rapier", CLASSES["Rogue"]["weapon_proficiencies"])
+        self.assertIn("dagger", CLASSES["Wizard"]["weapon_proficiencies"])
 
 
 class TestBackgroundData(EvenniaTest):

@@ -19,10 +19,26 @@ import re
 from typing import Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import WEAR_LOCATIONS
-from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
-                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
-                                STANDARD_LANGUAGES)
+from systems.equipment import (
+    ARMOR_CATEGORIES,
+    ATTACK_ABILITIES,
+    DAMAGE_TYPES,
+    MAX_MITIGATION_PERCENT,
+    PHYSICAL_DAMAGE_TYPES,
+    WEAPON_CATEGORIES,
+    WEAR_LOCATIONS,
+)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    CLASSES,
+    MAX_AGE,
+    MIN_AGE,
+    SKILLS,
+    SPECIES,
+    STANDARD_LANGUAGES,
+)
 
 
 class Field(NamedTuple):
@@ -218,23 +234,59 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         ),
         "subtype": Field(
             "attr",
-            as_choice("bludgeoning", "piercing", "slashing"),
+            as_choice(*PHYSICAL_DAMAGE_TYPES),
             "damage type: bludgeoning, piercing, or slashing",
             target="subtype",
+        ),
+        "weapon_category": Field(
+            "attr",
+            as_choice(*WEAPON_CATEGORIES),
+            "training category: simple or martial",
+            target="weapon_category",
+        ),
+        "weapon_kind": Field(
+            "attr",
+            as_slug,
+            "weapon identity for specific training, e.g. shortsword",
+            target="weapon_kind",
+        ),
+        "attack_ability": Field(
+            "attr",
+            as_choice(*ATTACK_ABILITIES),
+            "ability used for attacks: strength or dexterity",
+            target="attack_ability",
         ),
     },
     "armor": {
         "base_ac": Field(
             "attr",
             as_nonneg_int,
-            "base Armor Class this grants (a shield's bonus)",
+            "primary armor's base AC, or the additive bonus for a shield",
             target="base_ac",
         ),
         "subtype": Field(
             "attr",
-            as_choice("light", "medium", "heavy", "shield"),
+            as_choice(*ARMOR_CATEGORIES),
             "armor category: light, medium, heavy, or shield",
             target="subtype",
+        ),
+        "mitigation_flat": Field(
+            "attr",
+            as_nonneg_int,
+            "flat damage removed when this armor's worn slot is hit",
+            target="mitigation_flat",
+        ),
+        "mitigation_percent": Field(
+            "attr",
+            as_int_range(0, MAX_MITIGATION_PERCENT),
+            f"percentage damage removed at its worn slot (0-{MAX_MITIGATION_PERCENT})",
+            target="mitigation_percent",
+        ),
+        "mitigation_types": Field(
+            "attr",
+            as_choice_list(*DAMAGE_TYPES),
+            "affected damage types; defaults to physical when unset",
+            target="mitigation_types",
         ),
     },
     "container": {

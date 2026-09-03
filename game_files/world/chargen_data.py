@@ -100,6 +100,8 @@ ABILITY_SCORE_MODIFIERS: dict[int, int] = {
 #   skills_available – pool of skills to pick from
 #   armor_training  – list of armor categories the class trains with
 #   weapon_profs    – brief description of weapon proficiencies
+#   weapon_categories – machine-readable simple/martial training
+#   weapon_proficiencies – machine-readable exceptions by weapon kind
 
 CLASSES: dict[str, dict] = {
     "Barbarian": {
@@ -120,6 +122,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Shields"],
         "weapon_profs": "Simple and Martial weapons",
+        "weapon_categories": ["simple", "martial"],
+        "weapon_proficiencies": [],
     },
     "Bard": {
         "likes": "Performing",
@@ -151,6 +155,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light"],
         "weapon_profs": "Simple weapons",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": [],
     },
     "Cleric": {
         "likes": "Gods",
@@ -169,6 +175,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Shields"],
         "weapon_profs": "Simple weapons",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": [],
     },
     "Druid": {
         "likes": "Nature",
@@ -190,6 +198,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Shields"],
         "weapon_profs": "Simple weapons",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": [],
     },
     "Fighter": {
         "likes": "Weapons",
@@ -211,6 +221,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Heavy", "Shields"],
         "weapon_profs": "Simple and Martial weapons",
+        "weapon_categories": ["simple", "martial"],
+        "weapon_proficiencies": [],
     },
     "Monk": {
         "likes": "Unarmed combat",
@@ -230,6 +242,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": [],
         "weapon_profs": "Simple weapons and Shortswords",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": ["shortsword"],
     },
     "Paladin": {
         "likes": "Defense",
@@ -249,6 +263,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Heavy", "Shields"],
         "weapon_profs": "Simple and Martial weapons",
+        "weapon_categories": ["simple", "martial"],
+        "weapon_proficiencies": [],
     },
     "Ranger": {
         "likes": "Survival",
@@ -270,6 +286,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light", "Medium", "Shields"],
         "weapon_profs": "Simple and Martial weapons",
+        "weapon_categories": ["simple", "martial"],
+        "weapon_proficiencies": [],
     },
     "Rogue": {
         "likes": "Stealth",
@@ -294,6 +312,13 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light"],
         "weapon_profs": "Simple weapons, hand crossbows, longswords, rapiers, shortswords",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": [
+            "hand_crossbow",
+            "longsword",
+            "rapier",
+            "shortsword",
+        ],
     },
     "Sorcerer": {
         "likes": "Power",
@@ -313,6 +338,14 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": [],
         "weapon_profs": "Daggers, darts, slings, quarterstaffs, light crossbows",
+        "weapon_categories": [],
+        "weapon_proficiencies": [
+            "dagger",
+            "dart",
+            "sling",
+            "quarterstaff",
+            "light_crossbow",
+        ],
     },
     "Warlock": {
         "likes": "Occult lore",
@@ -333,6 +366,8 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": ["Light"],
         "weapon_profs": "Simple weapons",
+        "weapon_categories": ["simple"],
+        "weapon_proficiencies": [],
     },
     "Wizard": {
         "likes": "Spellbooks",
@@ -352,6 +387,14 @@ CLASSES: dict[str, dict] = {
         ],
         "armor_training": [],
         "weapon_profs": "Daggers, darts, slings, quarterstaffs, light crossbows",
+        "weapon_categories": [],
+        "weapon_proficiencies": [
+            "dagger",
+            "dart",
+            "sling",
+            "quarterstaff",
+            "light_crossbow",
+        ],
     },
 }
 

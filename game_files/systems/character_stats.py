@@ -11,9 +11,16 @@ from dataclasses import dataclass
 from numbers import Real
 from typing import Any, Mapping
 
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
-                                CARRY_CAPACITY_MULTIPLIER, CLASSES, SKILLS,
-                                SPECIES, ability_modifier)
+from systems.equipment import DamageMitigation
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    CARRY_CAPACITY_MULTIPLIER,
+    CLASSES,
+    SKILLS,
+    SPECIES,
+    ability_modifier,
+)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -43,6 +50,7 @@ class AttackProfile:
     damage_base: int
     damage_bonus: int
     damage_type: str
+    proficient: bool
 
 
 class CharacterStats:
@@ -210,12 +218,22 @@ class CharacterStats:
     @property
     def armor_class(self) -> int:
         """Return effective Armor Class."""
-        override = self._attribute("armor_class_override")
-        base = (
-            int(override)
-            if override is not None
-            else 10 + self.ability_modifier("Dexterity")
-        )
+        armor = self.owner.equipment.primary_armor
+        dexterity = self.ability_modifier("Dexterity")
+        if armor is None or armor.attributes.get("base_ac") is None:
+            override = self._attribute("armor_class_override")
+            base = int(override) if override is not None else 10 + dexterity
+        else:
+            base = int(armor.db.base_ac)
+            category = str(armor.db.subtype).lower()
+            if category == "light":
+                base += dexterity
+            elif category == "medium":
+                base += min(dexterity, 2)
+
+        shield = self.owner.equipment.shield
+        if shield is not None and shield.attributes.get("base_ac") is not None:
+            base += int(shield.db.base_ac)
         return max(0, base + self._modifier_total("armor_class"))
 
     @property
@@ -282,17 +300,24 @@ class CharacterStats:
             "saving_throw", f"saving_throw:{canonical.lower()}"
         )
 
-    def attack_profile(
-        self,
-        *,
-        name: str = "unarmed strike",
-        ability: str = "Strength",
-        proficient: bool = True,
-        damage_dice: str | None = None,
-        damage_base: int = 1,
-        damage_type: str = "bludgeoning",
-    ) -> AttackProfile:
-        """Build an attack profile; combat remains responsible for rolling it."""
+    def attack_profile(self) -> AttackProfile:
+        """Build the current wielded-weapon or unarmed attack profile."""
+        weapon = self.owner.equipment.wielded_weapon
+        if weapon is None:
+            name = "unarmed strike"
+            ability = "Strength"
+            proficient = True
+            damage_dice = None
+            damage_base = 1
+            damage_type = "bludgeoning"
+        else:
+            name = weapon.key
+            ability = weapon.db.attack_ability or "Strength"
+            proficient = self.owner.equipment.is_weapon_proficient(weapon)
+            damage_dice = weapon.db.damage
+            damage_base = 0
+            damage_type = weapon.db.subtype or "bludgeoning"
+
         canonical = self._ability_name(ability)
         attack_bonus = self.ability_modifier(canonical)
         if proficient:
@@ -309,7 +334,19 @@ class CharacterStats:
             damage_base=damage_base,
             damage_bonus=damage_bonus,
             damage_type=damage_type,
+            proficient=proficient,
         )
+
+    @property
+    def has_untrained_armor(self) -> bool:
+        """Return whether equipped armor should trigger training penalties."""
+        return self.owner.equipment.has_untrained_armor
+
+    def mitigate_damage(
+        self, amount: int, hit_location: str, damage_type: str
+    ) -> DamageMitigation:
+        """Apply current locational armor without changing hit points."""
+        return self.owner.equipment.mitigate_damage(amount, hit_location, damage_type)
 
     @property
     def speed(self) -> int:

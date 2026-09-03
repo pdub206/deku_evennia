@@ -11,6 +11,7 @@ with a location in the game world (like Characters, Rooms, Exits).
 from typing import Any
 
 from evennia.objects.objects import DefaultObject
+from systems.equipment import clear_equipped_state
 
 
 class ObjectParent:
@@ -236,9 +237,10 @@ class Item(Object):
     * ``wear_locations`` — equipment slots where the item may be worn; an empty
       list means the item is not wearable.
 
-    Currently implemented type-specific fields: a weapon's
-    ``damage``/``subtype``, armor's ``base_ac``/``subtype``, and a container's
-    ``capacity``. Other types are available as classifications for future use.
+    Currently implemented type-specific fields: a weapon's damage, damage type,
+    training identity, and attack ability; armor's category, base AC, and
+    locational mitigation; and a container's ``capacity``. Other types are
+    available as classifications for future use.
     """
 
     def at_object_creation(self) -> None:
@@ -256,4 +258,4 @@ class Item(Object):
         """Clear equipped state whenever the item changes location."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
-            self.db.worn_location = None
+            clear_equipped_state(self)
