@@ -14,6 +14,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 """
 
+from commands.account import CmdOOC
 from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
                                CmdNpcs, CmdRooms)
 from commands.change import CmdChange
@@ -97,6 +98,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         super().at_cmdset_creation()
         # Replace default charcreate/ic with the EvMenu-driven versions.
         self.add(ContribChargenCmdSet)
+        # Preserve the default command while identifying deliberate unpuppets.
+        self.add(CmdOOC)
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):

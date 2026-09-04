@@ -721,7 +721,18 @@ class EffectHandler:
             "target": str(getattr(self.owner, "key", "Someone")),
         }
         if message.target:
-            self.owner.msg(message.target.format_map(values))
+            target_message = message.target.format_map(values)
+            if event in {"expire", "remove", "save"}:
+                # Import lazily so the foundational systems remain acyclic.
+                from systems.lifecycle import queue_or_deliver_character_notice
+
+                queue_or_deliver_character_notice(
+                    self.owner,
+                    target_message,
+                    notice_id=f"effect:{effect.instance_id}:{event}",
+                )
+            else:
+                self.owner.msg(target_message)
         location = getattr(self.owner, "location", None)
         if message.room and location is not None:
             location.msg_contents(

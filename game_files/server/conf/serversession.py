@@ -21,7 +21,12 @@ settings file:
 
 """
 
+from typing import Any
+
 from evennia.server.serversession import ServerSession as BaseServerSession
+from systems.lifecycle import (UnavailabilityCause,
+                               clear_session_unpuppet_cause,
+                               mark_session_unpuppet_cause)
 
 
 class ServerSession(BaseServerSession):
@@ -34,4 +39,10 @@ class ServerSession(BaseServerSession):
     through their session(s).
     """
 
-    pass
+    def at_disconnect(self, reason: Any = None) -> None:
+        """Identify network loss while Evennia performs its normal cleanup."""
+        mark_session_unpuppet_cause(self, UnavailabilityCause.DISCONNECT)
+        try:
+            super().at_disconnect(reason=reason)
+        finally:
+            clear_session_unpuppet_cause(self)

@@ -17,6 +17,10 @@ from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
 from systems.effects import EffectHandler, EffectStorageError
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
+from systems.lifecycle import (deliver_character_notices,
+                               mark_character_available,
+                               mark_character_unavailable,
+                               resolve_unavailability_cause)
 
 from .objects import ObjectParent
 
@@ -132,16 +136,42 @@ class Character(ObjectParent, DefaultCharacter):
         ]
         return "|wEquipped:|n\n" + "\n".join(lines)
 
-    def at_post_puppet(self, **kwargs) -> None:
+    def at_post_puppet(self, **kwargs: Any) -> None:
         super().at_post_puppet(**kwargs)
-        # Record the moment this session began so we can accumulate IC time.
-        self.db.session_login_time = time.time()
+        if self.sessions.count() == 1:
+            mark_character_available(self)
+            deliver_character_notices(self)
+        # Multiple sessions share one continuous IC interval.
+        if self.db.session_login_time is None:
+            self.db.session_login_time = time.time()
 
-    def at_post_unpuppet(self, account, session=None, **kwargs) -> None:
-        # Accumulate elapsed IC time before releasing the character.
-        login_time = self.db.session_login_time
-        if login_time:
-            elapsed = time.time() - login_time
-            self.db.time_played = (self.db.time_played or 0.0) + elapsed
-        self.db.session_login_time = None
+    def at_post_unpuppet(
+        self,
+        account: Any,
+        session: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Run final-session cleanup before Evennia stows the character."""
+        has_sessions = bool(self.sessions.count())
+        cause = resolve_unavailability_cause(
+            session,
+            reason=kwargs.get("reason"),
+            cold_shutdown=bool(self.ndb._world_cold_shutdown),
+        )
+        mark_character_unavailable(
+            self,
+            cause,
+            has_controlling_sessions=has_sessions,
+        )
+        if not has_sessions:
+            login_time = self.db.session_login_time
+            if login_time:
+                elapsed = time.time() - login_time
+                self.db.time_played = (self.db.time_played or 0.0) + elapsed
+            self.db.session_login_time = None
         super().at_post_unpuppet(account, session=session, **kwargs)
+
+    def at_server_shutdown(self) -> None:
+        """Distinguish server shutdown unpuppets from player departures."""
+        self.ndb._world_cold_shutdown = True
+        super().at_server_shutdown()

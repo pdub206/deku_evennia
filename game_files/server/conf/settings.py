@@ -40,6 +40,7 @@ AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
 AUTO_PUPPET_ON_LOGIN = False
 MAX_NR_CHARACTERS = 5
 CHARGEN_MENU = "world.chargen_menu"
+SERVER_SESSION_CLASS = "server.conf.serversession.ServerSession"
 
 # Base class for Evennia's default and auto-generated (exit/movement) commands.
 # Our MuxCommand adds the persistent-prompt hook so the build editor's prompt
