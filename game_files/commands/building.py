@@ -28,6 +28,7 @@ from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
+from systems.action_policy import ActionCategory
 from systems.areas import (area_index, area_of, assign_area, export_area,
                            load_area, room_key_of, rooms_in_area)
 from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
@@ -336,6 +337,7 @@ class CmdBuild(Command):
     aliases = ["edit"]
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         caller = self.caller
@@ -609,6 +611,7 @@ class CmdLoadArea(Command):
     key = "loadarea"
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         area = self.args.strip().lower()
@@ -654,6 +657,7 @@ class CmdAreas(Command):
     key = "areas"
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         self.caller.msg(_render_area_index())
@@ -675,6 +679,7 @@ class CmdRooms(Command):
     key = "rooms"
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         caller = self.caller
@@ -780,6 +785,7 @@ class CmdItems(Command):
     key = "items"
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         caller = self.caller
@@ -890,6 +896,7 @@ class CmdNpcs(Command):
     aliases = ["mobs"]
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         protos = [
@@ -927,6 +934,7 @@ class _BuildCommand(Command):
 
     locks = _BUILDER_LOCK
     help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     @property
     def target(self):

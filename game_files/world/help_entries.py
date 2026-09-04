@@ -119,6 +119,38 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "positions",
+        "aliases": ["position", "posture", "resting", "sleeping"],
+        "category": "Character",
+        "text": """
+            Your position determines which actions you can take. Use |wsit|n,
+            |wrest|n, |wsleep|n, |wstand|n, and |wwake|n to change posture.
+
+            # subtopics
+
+            ## Postures
+
+            |wStanding|n characters can act, handle items, move, and fight.
+            |wSitting|n and |wresting|n characters can look, communicate, handle
+            items, and change posture, but must stand before moving or fighting.
+            |wSleeping|n characters cannot perceive or act; use |wwake|n to wake
+            into a sitting posture.
+
+            ## Restricted States
+
+            Combat, injuries, and conditions can temporarily impose a more
+            restrictive state without changing your chosen posture. While
+            |wfighting|n, you may look, communicate, and use combat actions, but
+            cannot handle items, change posture, or use a normal exit. While
+            |wstunned|n, |wincapacitated|n, |wdying|n, or |wdead|n, you cannot
+            perform in-world actions.
+
+            Help, account controls, character information, and appropriate staff
+            recovery commands remain available regardless of position.
+
+        """,
+    },
+    {
         "key": "skills",
         "aliases": ["skill"],
         "category": "Character",

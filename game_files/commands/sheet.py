@@ -5,6 +5,7 @@ Character sheet command — displays identity, ability scores, and combat stats.
 import time
 
 from commands.command import Command
+from systems.action_policy import ActionCategory
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
 _GENDER_LABELS = {
@@ -48,6 +49,7 @@ class CmdSheet(Command):
     key = "score"
     aliases = ["sheet", "sc"]
     help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         char = self.caller

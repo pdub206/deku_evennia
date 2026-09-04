@@ -18,10 +18,10 @@ from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
                                CmdNpcs, CmdRooms)
 from commands.change import CmdChange
 from commands.command import CmdNoInput
-from commands.communication import CmdSay
+from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
-from commands.generic import (CmdInventory, CmdJunk, CmdLook, CmdPose,
-                              CmdRemove, CmdWear)
+from commands.generic import (CmdDrop, CmdGet, CmdGive, CmdInventory, CmdJunk,
+                              CmdLook, CmdPose, CmdRemove, CmdWear)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
@@ -49,6 +49,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSay)
         self.add(CmdPose)
         self.add(CmdInventory)
+        self.add(CmdGet)
+        self.add(CmdDrop)
+        self.add(CmdGive)
+        self.add(CmdWhisper)
         self.add(CmdJunk)
         self.add(CmdWear)
         self.add(CmdRemove)

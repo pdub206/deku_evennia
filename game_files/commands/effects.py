@@ -1,6 +1,7 @@
 """Staff inspection command for persistent character effects."""
 
 from commands.command import Command
+from systems.action_policy import ActionCategory
 from systems.effects import ActiveEffect, EffectStorageError
 
 
@@ -59,6 +60,7 @@ class CmdEffects(Command):
     aliases = ["@conditions"]
     locks = "cmd:perm(Builder)"
     help_category = "Staff"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         caller = self.caller

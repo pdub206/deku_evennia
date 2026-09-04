@@ -8,10 +8,11 @@ Commands describe the input the account can do to the game.
 from evennia.commands.cmdhandler import CMD_NOINPUT
 from evennia.commands.command import Command as BaseCommand
 from evennia.commands.default.muxcommand import MuxCommand as BaseMuxCommand
+from systems.action_policy import ActionCategory
 
 
-class _PromptPersistMixin:
-    """Re-send the caller's persistent input prompt after every command.
+class _CommandHooksMixin:
+    """Apply declared action policy and preserve persistent input prompts.
 
     DEKU has no prompt by default — input happens on a bare line.  A feature
     that wants a sticky prompt (currently the build editor) sets
@@ -21,11 +22,28 @@ class _PromptPersistMixin:
     build verb, anything — keeping it pinned to the input line for the whole
     session.  When ``_prompt`` is unset (the normal case) this is a no-op.
 
-    It lives on a mixin so both command bases below share it: the project
+    These hooks live on a mixin so both command bases below share them: the project
     ``Command`` (custom commands) and ``MuxCommand`` (wired in via
     ``settings.COMMAND_DEFAULT_CLASS`` so Evennia's own default and exit
     commands honour it too).
     """
+
+    action_category: ActionCategory | None = None
+
+    def at_pre_cmd(self) -> bool:
+        """Abort a declared in-character action when the policy denies it."""
+        if super().at_pre_cmd():
+            return True
+        if self.action_category is None:
+            return False
+        policy = getattr(self.caller, "actions", None)
+        if policy is None:
+            return False
+        decision = policy.check(self.action_category)
+        if decision.allowed:
+            return False
+        self.caller.msg(decision.message)
+        return True
 
     def at_post_cmd(self):
         super().at_post_cmd()
@@ -36,7 +54,7 @@ class _PromptPersistMixin:
             caller.msg(prompt=prompt)
 
 
-class Command(_PromptPersistMixin, BaseCommand):
+class Command(_CommandHooksMixin, BaseCommand):
     """
     Base command (you may see this if a child command had no help text defined)
 
@@ -57,26 +75,17 @@ class Command(_PromptPersistMixin, BaseCommand):
     #         every command, like prompts.
     #
 
-    # Commands that should still work while sleeping.
-    _sleep_allowed = {"wake"}
-
-    def at_pre_cmd(self):
-        if self.key in self._sleep_allowed:
-            return False
-        char = self.caller
-        if getattr(char, "db", None) and (char.db.position or "standing") == "sleeping":
-            char.msg("You are asleep and cannot do that. Type |wwake|n to wake up.")
-            return True  # Abort execution.
-        return False
+    # Most project commands manipulate the in-character world. Commands in a
+    # different family declare that family on their class.
+    action_category = ActionCategory.MANIPULATE
 
 
-class MuxCommand(_PromptPersistMixin, BaseMuxCommand):
+class MuxCommand(_CommandHooksMixin, BaseMuxCommand):
     """Project default command class, wired in via `COMMAND_DEFAULT_CLASS`.
 
-    Identical to Evennia's `MuxCommand` (it keeps the standard `parse()` the
-    default commands rely on) but also persists the input prompt, so Evennia's
-    own default commands and the auto-generated exit/movement commands keep the
-    build editor's `editing>` prompt visible like everything else.
+    Evennia supplies both in-character and account/staff commands through this
+    base, so it has no policy category by default. Project wrappers declare a
+    category for the in-character defaults that need one.
     """
 
 
@@ -84,13 +93,13 @@ class CmdNoInput(BaseCommand):
     """Handle empty input (a bare Enter) by redrawing the persistent prompt.
 
     Empty input is routed by Evennia to the special `CMD_NOINPUT` command rather
-    than a normal one, so it bypasses `_PromptPersistMixin.at_post_cmd`.  Without
+    than a normal one, so it bypasses `_CommandHooksMixin.at_post_cmd`. Without
     this, pressing Enter while editing would leave you with no prompt until your
     next real command.  When no sticky prompt is set (`ndb._prompt` is unset)
     this does nothing — preserving Evennia's default "Enter does nothing".
 
     It subclasses the plain base command (not the project `Command`) so a bare
-    Enter never triggers the sleep guard or other per-command side effects.
+    Enter never triggers action policy or other per-command side effects.
     """
 
     key = CMD_NOINPUT

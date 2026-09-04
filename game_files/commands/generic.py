@@ -1,25 +1,23 @@
 """
 Overrides of common Evennia game commands (look, pose, etc.).
 
-These add game-specific behaviour — currently blocking commands while
-sleeping — without reimplementing the underlying logic.
+These attach game-specific policy or presentation without reimplementing the
+underlying Evennia command logic.
 """
 
 from typing import Any
 
 from commands.command import Command
-from commands.position import _ASLEEP_MSG, _is_sleeping
+from evennia.commands.default.general import CmdDrop as _BaseDrop
+from evennia.commands.default.general import CmdGet as _BaseGet
+from evennia.commands.default.general import CmdGive as _BaseGive
 from evennia.commands.default.general import CmdInventory as _BaseInventory
 from evennia.commands.default.general import CmdLook as _BaseLook
 from evennia.commands.default.general import CmdPose as _BasePose
 from evennia.utils import utils
-from systems.equipment import (
-    WEAR_LOCATIONS,
-    WEAR_SIDES,
-    EquipmentError,
-    allowed_wear_locations,
-    wear_phrase,
-)
+from systems.action_policy import ActionCategory
+from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
+                               allowed_wear_locations, wear_phrase)
 
 
 class CmdLook(_BaseLook):
@@ -31,14 +29,10 @@ class CmdLook(_BaseLook):
       look <object>
       look <direction>
 
-    Blocked while sleeping — use |wwake|n to wake up first.
+    Requires a conscious character able to observe their surroundings.
     """
 
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
+    action_category = ActionCategory.OBSERVE
 
 
 class CmdPose(_BasePose):
@@ -49,14 +43,10 @@ class CmdPose(_BasePose):
       pose <action>
       :<action>
 
-    Blocked while sleeping — use |wwake|n to wake up first.
+    Requires a conscious character able to communicate.
     """
 
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
+    action_category = ActionCategory.COMMUNICATE
 
 
 class CmdInventory(_BaseInventory):
@@ -67,15 +57,14 @@ class CmdInventory(_BaseInventory):
       inventory
       inv
 
-    Lists what you are carrying by name only.  Use |wlook <item>|n to read an
-    item's description.  Blocked while sleeping.
+    Lists what you are carrying by name only. Use |wlook <item>|n to read an
+    item's description. Requires a position that permits item handling.
     """
+
+    action_category = ActionCategory.MANIPULATE
 
     def func(self) -> None:
         caller = self.caller
-        if _is_sleeping(caller):
-            caller.msg(_ASLEEP_MSG)
-            return
         items = caller.contents
         if not items:
             caller.msg(text=("You are not carrying anything.", {"type": "inventory"}))
@@ -90,6 +79,36 @@ class CmdInventory(_BaseInventory):
         ]
         string = "|wYou are carrying:|n\n" + "\n".join(lines)
         caller.msg(text=(string, {"type": "inventory"}))
+
+
+class CmdGet(_BaseGet):
+    """Pick up an item when the shared action policy allows manipulation.
+
+    Usage:
+      get <item>
+    """
+
+    action_category = ActionCategory.MANIPULATE
+
+
+class CmdDrop(_BaseDrop):
+    """Drop a carried item when the shared action policy allows manipulation.
+
+    Usage:
+      drop <item>
+    """
+
+    action_category = ActionCategory.MANIPULATE
+
+
+class CmdGive(_BaseGive):
+    """Give an item when the shared action policy allows manipulation.
+
+    Usage:
+      give <item> = <character>
+    """
+
+    action_category = ActionCategory.MANIPULATE
 
 
 class CmdJunk(Command):

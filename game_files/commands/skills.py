@@ -3,6 +3,7 @@ Skills command — displays all skill bonuses for the character.
 """
 
 from commands.command import Command
+from systems.action_policy import ActionCategory
 from world.chargen_data import ABILITY_SHORT, SKILLS
 
 _SEP = "|x" + "─" * 60 + "|n"
@@ -28,6 +29,7 @@ class CmdSkills(Command):
     key = "skills"
     aliases = ["sk"]
     help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         char = self.caller
