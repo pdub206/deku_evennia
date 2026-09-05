@@ -807,6 +807,14 @@ def _is_modifier_name(name: str) -> bool:
         return detail in _ABILITY_KEYS
     if prefix == "skill":
         return detail in _SKILL_KEYS
+    if prefix == "recovery":
+        # Resources own the semantics; RULES-04 only requires a stable resource
+        # key so effects can provide numeric recovery bonuses or penalties.
+        try:
+            _validate_key(detail, "recovery resource")
+        except EffectError:
+            return False
+        return True
     return False
 
 

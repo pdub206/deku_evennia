@@ -106,6 +106,12 @@ class TestPulseState(EvenniaTest):
         self.assertEqual(self.script.db.pulse_state["heartbeat"], 1)
         self.assertEqual(self.script.db.pulse_state["lane_sequences"]["combat"], 1)
 
+    def test_recovery_lane_uses_the_shared_resource_processor(self):
+        event = PulseEvent(60, PulseLane.RECOVERY, 1)
+        with patch("typeclasses.scripts.process_resource_recovery_pulse") as recovery:
+            self.script.at_recovery_pulse(event)
+        recovery.assert_called_once_with(event)
+
     def test_persisted_state_reconstructs_without_replaying_a_token(self):
         cadences = {lane: 1 for lane in PULSE_LANES}
         first_state, first_events = advance_pulse_state(initial_pulse_state(), cadences)

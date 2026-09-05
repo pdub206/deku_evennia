@@ -110,6 +110,15 @@ HELP_ENTRY_DICTS = [
             Effective statistics update when your abilities, level, equipment,
             or active conditions change.
 
+            ## Natural Recovery
+
+            While you are in the world, HP recovers automatically every minute
+            when you are alive and not fighting. Recovery starts at your level
+            plus Constitution modifier (at least 1), then improves with posture:
+            sitting restores 1.25×, resting 1.5×, and sleeping 2× the standing
+            amount. Fractions round down. You do not recover while incapacitated,
+            dying, dead, at 0 HP, or while your character is offline or stowed.
+
             ## Identity
 
               |wClass|n, |wBackground|n, |wSpecies|n, |wAlignment|n, |wLanguages|n

@@ -158,6 +158,13 @@ def process_effect_pulse(event: PulseEvent) -> EffectPulseResult:
     return EffectPulseResult(processed, removals, failures)
 
 
+def process_resource_recovery_pulse(event: PulseEvent):
+    """Dispatch RULES-04 recovery without adding a typeclass import cycle."""
+    from systems.resources import process_recovery_pulse
+
+    return process_recovery_pulse(event)
+
+
 def _validated_state(
     stored_state: Mapping[str, Any],
 ) -> tuple[int, dict[str, int]]:

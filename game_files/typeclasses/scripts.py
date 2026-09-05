@@ -18,7 +18,8 @@ from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
 from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
                             configured_cadences, initial_pulse_state,
-                            process_effect_pulse)
+                            process_effect_pulse,
+                            process_resource_recovery_pulse)
 
 
 class Script(DefaultScript):
@@ -155,6 +156,7 @@ class GamePulseScript(Script):
 
     def at_recovery_pulse(self, event: PulseEvent) -> None:
         """Run resource recovery supplied by RULES-04."""
+        process_resource_recovery_pulse(event)
 
     def at_mobiles_pulse(self, event: PulseEvent) -> None:
         """Run mobile behavior supplied by MOB-01."""
