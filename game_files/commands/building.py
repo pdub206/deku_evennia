@@ -522,6 +522,7 @@ class CmdBuild(Command):
             "prototype_key": key,
             "key": name,
             "typeclass": _NPC_TYPECLASS,
+            "is_player_character": False,
             "gender": "unspecified",
             "age": 18,
             "char_class": "Fighter",

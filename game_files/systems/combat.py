@@ -51,6 +51,7 @@ class CombatActionResult:
     """Structured result returned by the current combat action resolver."""
 
     acted: bool = False
+    remove_target: bool = False
 
 
 @dataclass(frozen=True)
@@ -295,6 +296,10 @@ def _process_encounter(
             )
         else:
             actions += 1
+            if result.remove_target:
+                _remove_participant(state, encounter_id, target.id)
+                _repair_state(state)
+                _write_state(state)
     return actions, failures
 
 

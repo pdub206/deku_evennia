@@ -138,6 +138,26 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "attack",
+        "aliases": ["kill", "hit", "combat"],
+        "category": "Combat",
+        "text": """
+            Start a fight with |wattack <target>|n. You can also use |wkill|n or
+            |whit|n. Starting or switching a target does not strike immediately:
+            attacks happen automatically on combat rounds.
+
+            You attack with your wielded weapon, or an unarmed strike when no
+            weapon is wielded. Armor Class determines whether a blow lands.
+            A natural 1 misses, while a natural 20 is a critical and rolls the
+            weapon's damage dice twice. Hits land on a body location; armor worn
+            at that location can reduce matching damage.
+
+            You may only attack an eligible character in the same room. Protected
+            characters cannot be attacked. Player-versus-player combat is disabled
+            unless an explicit game permission allows it during this interim rule.
+        """,
+    },
+    {
         "key": "positions",
         "aliases": ["position", "posture", "resting", "sleeping"],
         "category": "Character",

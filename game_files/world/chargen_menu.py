@@ -1555,6 +1555,9 @@ def _restart_chargen(caller: Any, raw_string: str = "", **kwargs):
 def menunode_end(caller: Any, **kwargs):
     """Finalise all choices and write canonical character attributes."""
     char = _char(caller)
+    # This persists ownership across disconnects; combat must never infer PC
+    # status from transient session state.
+    char.db.is_player_character = True
 
     cls_name: str = char.db.chargen_class or "Fighter"
     bg: str = char.db.chargen_background or ""
