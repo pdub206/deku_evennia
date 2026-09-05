@@ -15,15 +15,12 @@ from typing import Any
 from systems.action_policy import ActionCategory
 from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult
-from systems.dice import roll, roll_damage_expression
+from systems.combat_math import (HIT_LOCATION_WEIGHTS,
+                                 resolve_attack_calculation)
+from systems.dice import roll
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    announce_transition,
-    apply_damage,
-    injury_record,
-)
+from systems.injury import (InjuryError, InjuryState, announce_transition,
+                            apply_damage, injury_record)
 from systems.pulses import PulseEvent
 
 
@@ -73,23 +70,6 @@ HitLocationSelector = Callable[[Any, Any], str]
 
 # Body and limbs are deliberately common; the complete initial target set is
 # derived from equipment's canonical list rather than copied into combat code.
-HIT_LOCATION_WEIGHTS = {
-    "head": 6,
-    "neck": 2,
-    "body": 30,
-    "right shoulder": 5,
-    "left shoulder": 5,
-    "right arm": 8,
-    "left arm": 8,
-    "right wrist": 3,
-    "left wrist": 3,
-    "right hand": 3,
-    "left hand": 3,
-    "right leg": 9,
-    "left leg": 9,
-    "right foot": 3,
-    "left foot": 3,
-}
 if set(HIT_LOCATION_WEIGHTS) != set(HIT_LOCATIONS) or any(
     weight <= 0 for weight in HIT_LOCATION_WEIGHTS.values()
 ):
@@ -166,46 +146,35 @@ def resolve_basic_attack(
         InjuryState.DYING,
         InjuryState.INCAPACITATED,
     }
-    # Untrained armor imposes disadvantage; finishing an unconscious target
-    # grants advantage. The two conditions cancel to a single roll.
-    has_advantage = has_advantage or target_unconscious
-    has_disadvantage = has_disadvantage or attacker.stats.has_untrained_armor
-    attack_rolls = (
-        (die_roller(20), die_roller(20))
-        if has_advantage != has_disadvantage
-        else (die_roller(20),)
+    calculation = resolve_attack_calculation(
+        profile,
+        target.stats.armor_class,
+        target_unconscious=target_unconscious,
+        attacker_untrained_armor=attacker.stats.has_untrained_armor,
+        has_advantage=has_advantage,
+        has_disadvantage=has_disadvantage,
+        extra_damage_dice=extra_damage_dice,
+        roller=die_roller,
+        select_location=lambda: location_selector(attacker, target),
+        mitigate=target.stats.mitigate_damage,
     )
-    if any(
-        isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 20
-        for value in attack_rolls
+    if (
+        calculation.hit_location is not None
+        and calculation.hit_location not in HIT_LOCATIONS
     ):
-        raise ValueError("Attack roller returned an invalid d20 result.")
-    die_roll = (
-        max(attack_rolls)
-        if has_advantage and not has_disadvantage
-        else min(attack_rolls)
-    )
-    total = die_roll + profile.attack_bonus
-    armor_class = target.stats.armor_class
-    if die_roll == 1:
-        outcome = AttackOutcome.MISS
-    elif die_roll == 20 or target_unconscious:
-        outcome = AttackOutcome.CRITICAL
-    elif total >= armor_class:
-        outcome = AttackOutcome.HIT
-    else:
-        outcome = AttackOutcome.MISS
+        raise ValueError("Hit-location selector returned an unsupported location.")
+    outcome = AttackOutcome(calculation.outcome.value)
 
     common = {
         "accepted": True,
         "attacker_id": attacker.id,
         "target_id": target.id,
         "attack_name": attack_name or profile.name,
-        "attack_rolls": attack_rolls,
-        "die_roll": die_roll,
+        "attack_rolls": calculation.attack_rolls,
+        "die_roll": calculation.die_roll,
         "attack_bonus": profile.attack_bonus,
-        "total": total,
-        "armor_class": armor_class,
+        "total": calculation.total,
+        "armor_class": calculation.armor_class,
         "outcome": outcome,
         "damage_type": profile.damage_type,
     }
@@ -215,44 +184,20 @@ def resolve_basic_attack(
             render_attack_result(attacker, target, result)
         return result
 
-    location = location_selector(attacker, target)
-    if location not in HIT_LOCATIONS:
-        raise ValueError("Hit-location selector returned an unsupported location.")
-    if profile.damage_dice:
-        damage_roll = roll_damage_expression(
-            profile.damage_dice,
-            multiplier=2 if outcome is AttackOutcome.CRITICAL else 1,
-            roller=die_roller,
-        )
-        damage_rolls, dice_total = damage_roll.rolls, damage_roll.total
-    else:
-        damage_rolls, dice_total = (), 0
-    if extra_damage_dice:
-        extra_roll = roll_damage_expression(
-            extra_damage_dice,
-            multiplier=2 if outcome is AttackOutcome.CRITICAL else 1,
-            roller=die_roller,
-        )
-        damage_rolls += extra_roll.rolls
-        dice_total += extra_roll.total
-    damage_total = max(0, dice_total + profile.damage_base + profile.damage_bonus)
-    mitigation = target.stats.mitigate_damage(
-        damage_total, location, profile.damage_type
-    )
     injury = apply_damage(
         target,
-        mitigation.final,
+        calculation.final_damage,
         critical=outcome is AttackOutcome.CRITICAL,
         emit_messages=False,
         source=attacker,
     )
     result = AttackResult(
         acted=True,
-        hit_location=location,
-        damage_rolls=damage_rolls,
-        damage_total=damage_total,
-        mitigation=mitigation,
-        final_damage=mitigation.final,
+        hit_location=calculation.hit_location,
+        damage_rolls=calculation.damage_rolls,
+        damage_total=calculation.damage_total,
+        mitigation=calculation.mitigation,
+        final_damage=calculation.final_damage,
         resulting_hp=injury.resulting_hp,
         remove_target=injury.combat_cleanup_required,
         **common,

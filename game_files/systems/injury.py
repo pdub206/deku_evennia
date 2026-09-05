@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any
 from uuid import uuid4
 
 from evennia.utils import logger
 from systems.action_policy import Position
+from systems.combat_outcomes import InjuryState, predict_damage_transition
 from systems.dice import roll
 from systems.pulses import PulseEvent, PulseLane
 
@@ -24,15 +24,6 @@ INJURY_VERSION = 1
 
 class InjuryError(ValueError):
     """An injury operation or its persisted record is invalid."""
-
-
-class InjuryState(str, Enum):
-    """Stable consciousness states imposed by the injury system."""
-
-    CONSCIOUS = "conscious"
-    DYING = "dying"
-    INCAPACITATED = "incapacitated"
-    DEAD = "dead"
 
 
 @dataclass(frozen=True)
@@ -76,7 +67,8 @@ class InjuryPulseResult:
 def _refresh_combat_controls(owner: Any, previous_hp: int, current_hp: int) -> None:
     """Refresh COMBAT-09 after the injury state reaches its final value."""
     try:
-        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
+        from systems.combat_controls import (reconcile_wimpy,
+                                             refresh_combat_prompt)
 
         reconcile_wimpy(owner, previous_hp, current_hp)
         refresh_combat_prompt(owner)
@@ -176,25 +168,27 @@ def apply_damage(
             f"Could not record COMBAT-07 damage attribution for #{getattr(owner, 'id', '?')}."
         )
 
+    prediction = predict_damage_transition(
+        previous_hp,
+        owner.stats.hp_max,
+        record.state,
+        record.successes,
+        record.failures,
+        amount,
+        critical=critical,
+        uses_death_saves=_uses_death_saves(owner),
+    )
     final_hp = owner.stats.take_damage(amount)
-    next_record = record
-    reason = "damaged"
-    if previous_hp > 0 and final_hp == 0:
-        if amount - previous_hp >= owner.stats.hp_max:
-            next_record = _dead(record)
-            reason = "massive_damage"
-        elif _uses_death_saves(owner):
-            next_record = InjuryRecord(InjuryState.DYING, 0, 0, record.last_recovery)
-            reason = "reduced_to_zero"
-        else:
-            next_record = _dead(record)
-            reason = "reduced_to_zero"
-    elif final_hp == 0 and record.state is InjuryState.INCAPACITATED:
-        next_record = _with_failure(record, 2 if critical else 1)
-        reason = "destabilized"
-    elif final_hp == 0 and record.state is InjuryState.DYING:
-        next_record = _with_failure(record, 2 if critical else 1)
-        reason = "death_save_failure"
+    next_record = InjuryRecord(
+        prediction.state,
+        prediction.successes,
+        prediction.failures,
+        record.last_recovery,
+        record.death_id,
+    )
+    if next_record.state is InjuryState.DEAD:
+        next_record = _dead(next_record)
+    reason = prediction.reason
 
     _write(owner, next_record, source=source)
     cleanup = next_record.state in {

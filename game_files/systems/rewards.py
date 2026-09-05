@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from math import floor
 from typing import Any
 
 from django.db import transaction
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
+from systems.combat_outcomes import calculate_npc_xp
 from systems.injury import InjuryError, InjuryState, injury_record
 
 LEDGER_ATTRIBUTE = "combat_contribution_ledger"
@@ -238,10 +238,7 @@ def _resolve(
             None,
         )
     npc_level, recipient_level = victim.stats.level, recipient.stats.level
-    multiplier = max(0.0, min(2.0, 1.0 + 0.1 * (npc_level - recipient_level)))
-    final_xp = floor(base * multiplier)
-    if base > 0 and multiplier > 0:
-        final_xp = max(1, final_xp)
+    multiplier, final_xp = calculate_npc_xp(base, npc_level, recipient_level)
     previous_xp = recipient.stats.xp
     return (
         RewardResult(

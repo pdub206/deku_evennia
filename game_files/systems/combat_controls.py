@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
-from systems.attacks import HIT_LOCATION_WEIGHTS
-from systems.combat import get_encounter_id, get_target, is_fighting, schedule_flee
+from systems.combat import (get_encounter_id, get_target, is_fighting,
+                            schedule_flee)
+from systems.combat_math import (HIT_LOCATION_WEIGHTS,
+                                 expected_damage_per_action, hit_probability)
 from systems.combat_movement import choose_flee_exit
-from systems.dice import _DAMAGE_EXPRESSION
 from systems.injury import InjuryError, InjuryState, injury_record
 
 WIMPY_ATTRIBUTE = "combat_wimpy"
@@ -220,10 +221,24 @@ def estimate_threat(observer: Any, target: Any) -> CombatEstimate:
     """Compare live combat expectations without rolling, messaging, or mutating."""
     observer_profile = observer.stats.attack_profile()
     target_profile = target.stats.attack_profile()
-    observer_hit = _hit_rate(observer_profile.attack_bonus, target.stats.armor_class)
-    target_hit = _hit_rate(target_profile.attack_bonus, observer.stats.armor_class)
-    observer_damage = _expected_damage(observer_profile, target) * observer_hit
-    target_damage = _expected_damage(target_profile, observer) * target_hit
+    observer_hit = hit_probability(
+        observer_profile.attack_bonus, target.stats.armor_class
+    )
+    target_hit = hit_probability(
+        target_profile.attack_bonus, observer.stats.armor_class
+    )
+    observer_damage = expected_damage_per_action(
+        observer_profile,
+        target.stats.armor_class,
+        mitigate=target.stats.mitigate_damage,
+        location_weights=HIT_LOCATION_WEIGHTS,
+    )
+    target_damage = expected_damage_per_action(
+        target_profile,
+        observer.stats.armor_class,
+        mitigate=observer.stats.mitigate_damage,
+        location_weights=HIT_LOCATION_WEIGHTS,
+    )
     base_delay = float(getattr(settings, "GAME_COMBAT_BASE_DELAY", 1.0))
     observer_delay = max(0.001, observer.stats.combat_delay(base_delay))
     target_delay = max(0.001, target.stats.combat_delay(base_delay))
@@ -248,46 +263,6 @@ def estimate_threat(observer: Any, target: Any) -> CombatEstimate:
         target_damage,
         observer_delay,
         target_delay,
-    )
-
-
-def _hit_rate(attack_bonus: int, armor_class: int) -> float:
-    """Return exact normal-roll hit chance, including natural 1 and 20 rules."""
-    hits = sum(
-        1
-        for die in range(1, 21)
-        if die != 1 and (die == 20 or die + attack_bonus >= armor_class)
-    )
-    return hits / 20
-
-
-def _expected_damage(profile: Any, target: Any) -> float:
-    """Average post-mitigation damage over the shared weighted hit locations."""
-    raw = (
-        profile.damage_base + profile.damage_bonus + _average_dice(profile.damage_dice)
-    )
-    total_weight = sum(HIT_LOCATION_WEIGHTS.values())
-    return (
-        sum(
-            target.stats.mitigate_damage(
-                max(0, int(raw)), location, profile.damage_type
-            ).final
-            * weight
-            for location, weight in HIT_LOCATION_WEIGHTS.items()
-        )
-        / total_weight
-    )
-
-
-def _average_dice(expression: str | None) -> float:
-    """Calculate a damage expression's mean without invoking the dice service."""
-    if not expression:
-        return 0.0
-    match = _DAMAGE_EXPRESSION.fullmatch(expression.strip().lower().replace(" ", ""))
-    if match is None:
-        return 0.0
-    return int(match["count"]) * (int(match["sides"]) + 1) / 2 + int(
-        match["modifier"] or 0
     )
 
 
