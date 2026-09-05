@@ -18,12 +18,16 @@ from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
 from systems.attacks import resolve_basic_attack
 from systems.combat import process_combat_pulse, set_combat_action_hook
-from systems.injury import \
-    process_recovery_pulse as process_injury_recovery_pulse
-from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
-                            configured_cadences, initial_pulse_state,
-                            process_effect_pulse,
-                            process_resource_recovery_pulse)
+from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
+from systems.pulses import (
+    PulseEvent,
+    PulseLane,
+    advance_pulse_state,
+    configured_cadences,
+    initial_pulse_state,
+    process_effect_pulse,
+    process_resource_recovery_pulse,
+)
 
 # The global script imports this module on boot, making the COMBAT-02 resolver
 # available even before its first server-start callback.
@@ -172,6 +176,9 @@ class GamePulseScript(Script):
         """Run normal recovery and COMBAT-04 death saves on one durable token."""
         process_resource_recovery_pulse(event)
         process_injury_recovery_pulse(event)
+        from systems.respawn import process_linkdead_pulse
+
+        process_linkdead_pulse(event)
 
     def at_mobiles_pulse(self, event: PulseEvent) -> None:
         """Run mobile behavior supplied by MOB-01."""

@@ -660,9 +660,10 @@ def _valid_intent(intent: Any) -> bool:
 
 
 def _on_character_lifecycle(event: CharacterLifecycleEvent) -> None:
-    """End combat on final disconnect, OOC transition, or unpuppet."""
+    """End combat except during COMBAT-06's exposed link-dead interval."""
     if event.availability is CharacterAvailability.UNAVAILABLE:
-        handle_departure(event.character)
+        if event.cause is not UnavailabilityCause.DISCONNECT:
+            handle_departure(event.character)
         if event.cause is UnavailabilityCause.OOC:
             from systems.injury import handle_ooc_departure
 

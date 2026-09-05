@@ -68,6 +68,11 @@ GAME_PULSE_CADENCES = {
 # Combat action clocks are measured in combat-pulse tokens. CharacterStats
 # adjusts this base cadence through its Reaction-derived ``combat_delay`` API.
 GAME_COMBAT_BASE_DELAY = 1.0
+# COMBAT-06 resolves this stable ``area:room_key`` pair at entry. Set it in
+# secret_settings.py for each deployed world; an unset/ambiguous value fails
+# closed for dead-character entry rather than guessing from a mutable home.
+COMBAT_RESPAWN_SANCTUARY = None
+COMBAT_LINKDEAD_MINUTES = 30
 
 # RULES-05 limits recursive carried objects independently of weight.  Builders
 # may override this per character/NPC with ``carry_item_limit`` when needed.

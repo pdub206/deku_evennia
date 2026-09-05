@@ -445,7 +445,11 @@ def _write(owner: Any, record: InjuryRecord) -> None:
         try:
             from systems.corpses import create_corpse
 
-            create_corpse(owner, record.death_id or "")
+            corpse = create_corpse(owner, record.death_id or "")
+            # COMBAT-06 cannot OOC/extract before COMBAT-05's transfer commits.
+            from systems.respawn import final_death
+
+            final_death(owner, corpse)
         except Exception:
             logger.log_trace(
                 f"Corpse creation failed for object #{getattr(owner, 'id', '?')} "

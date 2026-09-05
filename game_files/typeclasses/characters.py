@@ -25,6 +25,7 @@ from systems.lifecycle import (
     mark_character_available,
     mark_character_unavailable,
     resolve_unavailability_cause,
+    UnavailabilityCause,
 )
 
 from .objects import ObjectParent
@@ -206,7 +207,10 @@ class Character(ObjectParent, DefaultCharacter):
                 elapsed = time.time() - login_time
                 self.db.time_played = (self.db.time_played or 0.0) + elapsed
             self.db.session_login_time = None
-        super().at_post_unpuppet(account, session=session, **kwargs)
+        # COMBAT-06 keeps a final network-disconnected PC physically present.
+        # Deliberate OOC and all other unpuppet paths retain Evennia's stowing.
+        if cause is not UnavailabilityCause.DISCONNECT:
+            super().at_post_unpuppet(account, session=session, **kwargs)
 
     def at_server_shutdown(self) -> None:
         """Distinguish server shutdown unpuppets from player departures."""

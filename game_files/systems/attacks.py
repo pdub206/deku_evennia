@@ -128,12 +128,6 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "staff_immune")
     if not target.access(attacker, "attack", default=True):
         return AttackabilityDecision(False, "access_denied")
-    if _is_player_character(attacker) and _is_player_character(target):
-        if not (
-            _is_staff_override(attacker)
-            or _has_explicit_attack_permission(attacker, target)
-        ):
-            return AttackabilityDecision(False, "pvp_denied")
     return AttackabilityDecision(True)
 
 

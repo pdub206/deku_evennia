@@ -175,8 +175,9 @@ HELP_ENTRY_DICTS = [
             at that location can reduce matching damage.
 
             You may only attack an eligible character in the same room. Protected
-            characters cannot be attacked. Player-versus-player combat is disabled
-            unless an explicit game permission allows it during this interim rule.
+            characters, unquelled staff, and no-combat locations cannot be
+            attacked. Player-versus-player combat is enabled everywhere else;
+            there are no consent, level-range, or opt-out rules.
 
             While fighting, normal exits are blocked. Use |wflee [exit]|n to queue
             an escape on your next combat action. With no exit, an eligible route
@@ -207,6 +208,17 @@ HELP_ENTRY_DICTS = [
             Ordinary NPCs die at 0 HP unless a builder enables their death-save
             policy. Leaving with |wooc|n at 0 HP is fatal; a disconnect leaves
             death saves running. Corpses remain in the room after a death.
+
+            When your character dies, you return to the account screen. Choose
+            that character again to respawn immediately at the world sanctuary.
+            Respawning restores maximum HP, clears temporary effects, and leaves
+            you resting. It costs no XP, level, banked money, or additional items,
+            but it does not reveal where your corpse is or how long it remains.
+
+            A disconnected character stays in the world for 30 minutes. It can
+            be seen, attacked, and continue fighting normally. Reconnecting in
+            time restores control. Once safely stowed, a stable unconscious
+            character returns to its original room at 1 HP; no corpse is made.
         """,
     },
     {

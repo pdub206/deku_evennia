@@ -1,7 +1,5 @@
 """Deterministic COMBAT-02 tests for basic attack resolution."""
 
-from unittest.mock import patch
-
 from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
@@ -101,13 +99,10 @@ class TestBasicAttacks(EvenniaTest):
         self.assertEqual(result.final_damage, 0)
         self.assertEqual(self.char2.stats.hp_current, before)
 
-    def test_pvp_is_denied_until_an_explicit_attack_lock_allows_it(self):
+    def test_pvp_is_allowed_without_an_explicit_attack_lock(self):
         self.char1.db.is_player_character = True
         self.char2.db.is_player_character = True
-        with patch("systems.attacks._is_staff_override", return_value=False):
-            self.assertFalse(can_attack(self.char1, self.char2).allowed)
-            self.char2.locks.add("attack:all()")
-            self.assertTrue(can_attack(self.char1, self.char2).allowed)
+        self.assertTrue(can_attack(self.char1, self.char2).allowed)
 
     def test_zero_hp_removes_target_from_scheduled_encounter(self):
         ServerConfig.objects.conf(COMBAT_CONFIG_KEY, delete=True)
@@ -129,4 +124,6 @@ class TestBasicAttacks(EvenniaTest):
         result = process_combat_pulse(PulseEvent(2, PulseLane.COMBAT, 1))
 
         self.assertEqual(result.actions, 1)
-        self.assertLessEqual(self.char2.stats.hp_current, 0)
+        # COMBAT-06 extracts an ordinary NPC only after its corpse transaction
+        # completes, so combat must be repaired without inspecting a deleted row.
+        self.assertFalse(self.char1.action_position.value == "fighting")

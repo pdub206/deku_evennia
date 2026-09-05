@@ -27,8 +27,9 @@ from typing import Any
 from django.db import transaction
 from evennia.accounts.accounts import CharactersHandler, DefaultGuest
 from evennia.accounts.models import AccountDB
-from evennia.contrib.rpg.character_creator.character_creator import \
-    ContribChargenAccount
+from evennia.contrib.rpg.character_creator.character_creator import (
+    ContribChargenAccount,
+)
 from evennia.objects.models import ObjectDB
 from evennia.utils.utils import lazy_property
 
@@ -196,6 +197,14 @@ class Account(ContribChargenAccount):
         """Validate ownership and live control before Evennia mutates a Session."""
         if not session or not obj:
             return super().puppet_object(session, obj)
+
+        if not administrative:
+            from systems.respawn import RespawnError, prepare_entry
+
+            try:
+                prepare_entry(obj)
+            except RespawnError as err:
+                raise RuntimeError(str(err)) from err
 
         with transaction.atomic():
             AccountDB.objects.select_for_update().get(pk=self.pk)
