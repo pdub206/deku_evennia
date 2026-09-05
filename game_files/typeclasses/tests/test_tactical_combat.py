@@ -6,15 +6,26 @@ from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.attacks import AttackOutcome, AttackResult
-from systems.combat import (COMBAT_CONFIG_KEY, get_target,
-                            process_combat_pulse, rescue_retarget,
-                            schedule_tactical_action, set_combat_action_hook,
-                            start_fight)
+from systems.combat import (
+    COMBAT_CONFIG_KEY,
+    get_target,
+    process_combat_pulse,
+    rescue_retarget,
+    schedule_tactical_action,
+    set_combat_action_hook,
+    start_fight,
+)
 from systems.dice import RollResult
 from systems.pulses import PulseEvent, PulseLane
-from systems.tactical_combat import (PRONE_EFFECT_KEY, _aim, _backstab, _bash,
-                                     _kick, consume_prone_action,
-                                     resolve_combat_action)
+from systems.tactical_combat import (
+    PRONE_EFFECT_KEY,
+    _aim,
+    _backstab,
+    _bash,
+    _kick,
+    consume_prone_action,
+    resolve_combat_action,
+)
 from typeclasses.characters import Character
 
 
@@ -57,6 +68,16 @@ class TestTacticalIntentStorage(EvenniaTest):
         self.assertGreaterEqual(first.actions, 1)
         self.assertFalse(replay.processed)
         self.assertIsNone(record["pending_intent"])
+
+    def test_tactical_intent_cannot_target_an_ally_after_joining_a_mobile(self):
+        """Two combatants attacking one target never become tactical PvP targets."""
+        ally = create_object(Character, key="Ally", location=self.room1)
+        start_fight(ally, self.char2)
+
+        result = schedule_tactical_action(self.char1, "kick", ally)
+
+        self.assertFalse(result.accepted)
+        self.assertEqual(result.reason, "invalid_target")
 
 
 class TestPhysicalTactics(EvenniaTest):

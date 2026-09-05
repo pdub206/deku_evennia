@@ -18,13 +18,23 @@ from math import ceil
 from pathlib import Path
 from typing import Any
 
-from systems.character_stats import AttackProfile
-from systems.combat_math import (HIT_LOCATION_WEIGHTS, AttackClassification,
-                                 resolve_attack_calculation)
-from systems.combat_outcomes import (InjuryState, calculate_npc_xp,
-                                     predict_damage_transition)
-from systems.equipment import (DAMAGE_TYPES, HIT_LOCATIONS,
-                               MAX_MITIGATION_PERCENT, DamageMitigation)
+from systems.character_stats import AttackProfile, combat_delay_from_reaction
+from systems.combat_math import (
+    HIT_LOCATION_WEIGHTS,
+    AttackClassification,
+    resolve_attack_calculation,
+)
+from systems.combat_outcomes import (
+    InjuryState,
+    calculate_npc_xp,
+    predict_damage_transition,
+)
+from systems.equipment import (
+    DAMAGE_TYPES,
+    HIT_LOCATIONS,
+    MAX_MITIGATION_PERCENT,
+    DamageMitigation,
+)
 
 
 class BalanceValidationError(ValueError):
@@ -56,7 +66,13 @@ class MitigationRule:
 
 @dataclass(frozen=True)
 class CombatantScenario:
-    """All immutable, primitive inputs needed to simulate one combatant."""
+    """All immutable, primitive inputs needed to simulate one combatant.
+
+    ``tactical_action`` models one first-ready-action intent using the same
+    attack calculation seam as live combat. ``wimpy_percent`` assumes that an
+    eligible flee route exists; the harness deliberately does not model rooms
+    or exits, only the combat result of the queued next-ready-action escape.
+    """
 
     name: str
     level: int
@@ -69,6 +85,8 @@ class CombatantScenario:
     xp_reward: int = 0
     uses_death_saves: bool = False
     untrained_armor: bool = False
+    tactical_action: str = "basic"
+    wimpy_percent: int = 0
 
     def __post_init__(self) -> None:
         if (
@@ -92,6 +110,10 @@ class CombatantScenario:
             or not isinstance(self.profile, AttackProfile)
             or not isinstance(self.mitigation, tuple)
             or not all(isinstance(rule, MitigationRule) for rule in self.mitigation)
+            or self.tactical_action not in {"basic", "kick"}
+            or isinstance(self.wimpy_percent, bool)
+            or not isinstance(self.wimpy_percent, int)
+            or not 0 <= self.wimpy_percent <= 90
         ):
             raise BalanceValidationError("Combatant scenario is invalid.")
 
@@ -139,8 +161,15 @@ class BalanceResult:
     seed: int
     iterations: int
     wins: tuple[int, int]
+    losses: tuple[int, int]
     draws: int
     stalls: int
+    fled: tuple[int, int]
+    win_rates: tuple[float, float]
+    loss_rates: tuple[float, float]
+    draw_rate: float
+    stall_rate: float
+    flee_rates: tuple[float, float]
     hit_rate: float
     critical_rate: float
     damage_per_action: float
@@ -169,6 +198,8 @@ class _CombatantState:
     hp: int
     injury: InjuryState = InjuryState.CONSCIOUS
     next_action: float = 0.0
+    opening_tactical_consumed: bool = False
+    pending_flee: bool = False
 
     @property
     def alive(self) -> bool:
@@ -183,6 +214,7 @@ def run_scenario(
     _validate_run_arguments(iterations, seed)
     rng = random.Random(seed)
     wins = [0, 0]
+    fled = [0, 0]
     draws = stalls = hits = criticals = actions = rounds = total_damage = 0
     defeat_actions: list[int] = []
     defeat_rounds: list[int] = []
@@ -200,34 +232,43 @@ def run_scenario(
         survivor_hp[0] += outcome["survivor_hp"][0]
         survivor_hp[1] += outcome["survivor_hp"][1]
         diagnostics.add(outcome["reason"])
-        if outcome["winner"] is None:
+        if outcome["reason"] == "mutual_defeat":
+            draws += 1
+        elif outcome["winner"] is None:
             stalls += 1
-            if outcome["reason"] == "mutual_defeat":
-                draws += 1
         else:
             wins[outcome["winner"]] += 1
+            if outcome["fled_team"] is not None:
+                fled[outcome["fled_team"]] += 1
             defeat_actions.append(outcome["actions"])
             defeat_rounds.append(outcome["rounds"])
     completed_time = sum(defeat_rounds)
     return BalanceResult(
-        scenario.identity,
-        seed,
-        iterations,
-        tuple(wins),
-        draws,
-        stalls,
-        hits / actions if actions else 0.0,
-        criticals / actions if actions else 0.0,
-        total_damage / actions if actions else 0.0,
-        total_damage / rounds if rounds else 0.0,
-        _mean(defeat_actions),
-        _mean(defeat_rounds),
-        _percentile(defeat_rounds, 0.5),
-        _percentile(defeat_rounds, 0.9),
-        (survivor_hp[0] / iterations, survivor_hp[1] / iterations),
-        xp_total / iterations,
-        xp_total / completed_time if completed_time else 0.0,
-        tuple(sorted(diagnostics)),
+        scenario=scenario.identity,
+        seed=seed,
+        iterations=iterations,
+        wins=tuple(wins),
+        losses=(wins[1], wins[0]),
+        draws=draws,
+        stalls=stalls,
+        fled=tuple(fled),
+        win_rates=(wins[0] / iterations, wins[1] / iterations),
+        loss_rates=(wins[1] / iterations, wins[0] / iterations),
+        draw_rate=draws / iterations,
+        stall_rate=stalls / iterations,
+        flee_rates=(fled[0] / iterations, fled[1] / iterations),
+        hit_rate=hits / actions if actions else 0.0,
+        critical_rate=criticals / actions if actions else 0.0,
+        damage_per_action=total_damage / actions if actions else 0.0,
+        damage_per_round=total_damage / rounds if rounds else 0.0,
+        mean_actions_to_defeat=_mean(defeat_actions),
+        mean_rounds_to_defeat=_mean(defeat_rounds),
+        time_to_kill_p50=_percentile(defeat_rounds, 0.5),
+        time_to_kill_p90=_percentile(defeat_rounds, 0.9),
+        mean_survivor_hp=(survivor_hp[0] / iterations, survivor_hp[1] / iterations),
+        expected_xp=xp_total / iterations,
+        xp_per_combat_time=xp_total / completed_time if completed_time else 0.0,
+        diagnostics=tuple(sorted(diagnostics)),
     )
 
 
@@ -333,6 +374,16 @@ def standard_matrix() -> tuple[BalanceScenario, ...]:
             fighter("slow NPC", reaction_modifier=-10, is_npc=True, xp_reward=100),
         ),
         versus(
+            "opening_kick",
+            fighter("kicking PC", tactical_action="kick"),
+            fighter("NPC", is_npc=True, xp_reward=100),
+        ),
+        versus(
+            "automatic_flee",
+            fighter("wimpy PC", hp=20, wimpy_percent=50),
+            fighter("NPC", profile=greatsword, is_npc=True, xp_reward=100),
+        ),
+        versus(
             "locational_fire_mitigation",
             fighter(
                 "fire PC",
@@ -398,7 +449,11 @@ def render_results(results: Sequence[BalanceResult], output_format: str) -> str:
         "Seed",
         "Runs",
         "Wins A/B",
+        "Win% A/B",
+        "Draw%",
         "Stall",
+        "Stall%",
+        "Flee A/B",
         "Hit",
         "Crit",
         "Dmg/act",
@@ -411,7 +466,11 @@ def render_results(results: Sequence[BalanceResult], output_format: str) -> str:
             str(result.seed),
             str(result.iterations),
             f"{result.wins[0]}/{result.wins[1]}",
+            f"{result.win_rates[0]:.1%}/{result.win_rates[1]:.1%}",
+            f"{result.draw_rate:.1%}",
             str(result.stalls),
+            f"{result.stall_rate:.1%}",
+            f"{result.fled[0]}/{result.fled[1]}",
             f"{result.hit_rate:.1%}",
             f"{result.critical_rate:.1%}",
             f"{result.damage_per_action:.2f}",
@@ -512,6 +571,20 @@ def _run_once(scenario: BalanceScenario, rng: random.Random) -> dict[str, Any]:
             actor = ready.pop(0)
             if not actor.alive:
                 continue
+            if actor.pending_flee:
+                actions += 1
+                return _outcome(
+                    1 - actor.team,
+                    "fled",
+                    actions,
+                    round_number,
+                    hits,
+                    criticals,
+                    damage,
+                    xp,
+                    states,
+                    fled_team=actor.team,
+                )
             targets = [
                 state for state in states if state.team != actor.team and state.alive
             ]
@@ -528,8 +601,9 @@ def _run_once(scenario: BalanceScenario, rng: random.Random) -> dict[str, Any]:
                     states,
                 )
             target = min(targets, key=lambda state: (state.hp, state.order))
+            profile, delay_multiplier = _next_attack(actor)
             calculation = resolve_attack_calculation(
-                actor.scenario.profile,
+                profile,
                 target.scenario.armor_class,
                 target_unconscious=False,
                 attacker_untrained_armor=actor.scenario.untrained_armor,
@@ -543,16 +617,20 @@ def _run_once(scenario: BalanceScenario, rng: random.Random) -> dict[str, Any]:
                 ),
             )
             actions += 1
-            actor.next_action += _action_delay(
-                actor.scenario.reaction_modifier, scenario.base_delay
+            actor.next_action += (
+                combat_delay_from_reaction(
+                    actor.scenario.reaction_modifier, scenario.base_delay
+                )
+                * delay_multiplier
             )
             if calculation.outcome is not AttackClassification.MISS:
                 hits += 1
             if calculation.outcome is AttackClassification.CRITICAL:
                 criticals += 1
             damage += calculation.final_damage
+            previous_hp = target.hp
             transition = predict_damage_transition(
-                target.hp,
+                previous_hp,
                 target.scenario.hp,
                 target.injury,
                 0,
@@ -562,6 +640,8 @@ def _run_once(scenario: BalanceScenario, rng: random.Random) -> dict[str, Any]:
                 uses_death_saves=target.scenario.uses_death_saves,
             )
             target.hp, target.injury = transition.resulting_hp, transition.state
+            if _wimpy_crossed(target, previous_hp):
+                target.pending_flee = True
             if (
                 not target.alive
                 and target.scenario.is_npc
@@ -629,6 +709,8 @@ def _outcome(
     damage: int,
     xp: int,
     states: Sequence[_CombatantState],
+    *,
+    fled_team: int | None = None,
 ) -> dict[str, Any]:
     return {
         "winner": winner,
@@ -639,6 +721,7 @@ def _outcome(
         "criticals": criticals,
         "damage": damage,
         "xp": xp,
+        "fled_team": fled_team,
         "survivor_hp": tuple(
             sum(state.hp for state in states if state.team == team and state.alive)
             for team in (0, 1)
@@ -671,8 +754,37 @@ def _select_location(rng: random.Random) -> str:
     raise RuntimeError("Hit location weights are invalid.")
 
 
-def _action_delay(reaction: int, base_delay: float) -> float:
-    return base_delay * max(0.80, min(1.20, 1.0 - reaction * 0.02))
+def _next_attack(state: _CombatantState) -> tuple[AttackProfile, float]:
+    """Return this ready action's live-equivalent profile and delay multiplier."""
+    if state.opening_tactical_consumed or state.scenario.tactical_action == "basic":
+        return state.scenario.profile, 1.0
+    state.opening_tactical_consumed = True
+    profile = state.scenario.profile
+    return (
+        AttackProfile(
+            "kick",
+            profile.ability,
+            profile.attack_bonus,
+            "1d4",
+            0,
+            profile.damage_bonus,
+            "bludgeoning",
+            True,
+        ),
+        1.5,
+    )
+
+
+def _wimpy_crossed(state: _CombatantState, previous_hp: int) -> bool:
+    """Match COMBAT-09's one-way PC threshold trigger in an exitless model."""
+    threshold = state.scenario.wimpy_percent
+    boundary = state.scenario.hp * threshold / 100
+    return bool(
+        threshold
+        and not state.scenario.is_npc
+        and state.injury is InjuryState.CONSCIOUS
+        and previous_hp > boundary >= state.hp
+    )
 
 
 def _combatant_from_dict(raw: Mapping[str, Any]) -> CombatantScenario:
@@ -688,17 +800,19 @@ def _combatant_from_dict(raw: Mapping[str, Any]) -> CombatantScenario:
         for rule in raw.get("mitigation", ())
     )
     return CombatantScenario(
-        raw["name"],
-        raw["level"],
-        raw["hp"],
-        raw["armor_class"],
-        profile,
-        raw.get("reaction_modifier", 0),
-        mitigation,
-        raw.get("is_npc", False),
-        raw.get("xp_reward", 0),
-        raw.get("uses_death_saves", False),
-        raw.get("untrained_armor", False),
+        name=raw["name"],
+        level=raw["level"],
+        hp=raw["hp"],
+        armor_class=raw["armor_class"],
+        profile=profile,
+        reaction_modifier=raw.get("reaction_modifier", 0),
+        mitigation=mitigation,
+        is_npc=raw.get("is_npc", False),
+        xp_reward=raw.get("xp_reward", 0),
+        uses_death_saves=raw.get("uses_death_saves", False),
+        untrained_armor=raw.get("untrained_armor", False),
+        tactical_action=raw.get("tactical_action", "basic"),
+        wimpy_percent=raw.get("wimpy_percent", 0),
     )
 
 

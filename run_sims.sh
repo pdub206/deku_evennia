@@ -34,9 +34,14 @@
 #   Wins A/B  - Completed fights won by side A / side B. In the standard matrix,
 #               A is the first team listed (normally PC(s)); B is the NPC team.
 #               Runs not counted as wins reached a safety limit (see Stall).
+#   Win% A/B  - Win rates for sides A/B; losses are the opposing side's win rate.
+#   Draw%     - Mutual defeats as a rate of all runs.
 #   Stall     - Fights that hit their configured action or round limit without a
 #               winner. Zero is expected for ordinary working matchups.
 #   Hit       - Percentage of all actions that landed, including critical hits.
+#   Stall%    - Rate of safety-limit stalls across all runs.
+#   Flee A/B  - Completed automatic-flee exits by side; these assume one eligible
+#               route because the offline harness does not create rooms or exits.
 #   Crit      - Percentage of all actions that landed as critical hits. A normal
 #               d20 matchup should trend near 5% as Runs becomes large.
 #   Dmg/act   - Mean final HP damage per attempted action, including misses and
@@ -56,6 +61,8 @@
 #   level_delta_-10 ... +10    Level, HP, AC, and XP-adjustment differences at
 #                              the representative -10/-5/-3/-1/+1/+3/+5/+10 gaps.
 #   reaction_cadence           Reaction-derived action-delay advantage (+10 vs -10).
+#   opening_kick               One queued COMBAT-08 kick and its 150% follow-up delay.
+#   automatic_flee             A COMBAT-09 50% wimpy crossing with an eligible exit.
 #   locational_fire_mitigation Fire damage against body-only fire protection.
 #   two_pcs_vs_npc             Team targeting, multiple attackers, and NPC XP.
 #

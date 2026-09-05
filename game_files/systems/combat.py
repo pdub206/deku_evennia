@@ -99,17 +99,34 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
 
     if actor_encounter is not None and target_encounter is not None:
         if actor_encounter == target_encounter:
+            encounter = state["encounters"][str(actor_encounter)]
+            if not _can_target(encounter, actor_id, target_id):
+                return CombatOperationResult(
+                    False, False, reason="target is not an opposing participant"
+                )
             changed = _set_target(state, actor_encounter, actor_id, target_id)
             _write_state(state)
             _refresh_prompts(actor, target)
             return CombatOperationResult(True, changed, actor_encounter)
-        encounter_id = _merge_encounters(state, actor_encounter, target_encounter)
+        encounter_id = _merge_encounters(
+            state, actor_encounter, target_encounter, actor_id, target_id
+        )
     elif actor_encounter is not None:
         encounter_id = actor_encounter
-        _add_participant(state, encounter_id, target_id)
+        _add_participant(
+            state,
+            encounter_id,
+            target_id,
+            _opposing_side(state["encounters"][str(encounter_id)], actor_id),
+        )
     elif target_encounter is not None:
         encounter_id = target_encounter
-        _add_participant(state, encounter_id, actor_id)
+        _add_participant(
+            state,
+            encounter_id,
+            actor_id,
+            _opposing_side(state["encounters"][str(encounter_id)], target_id),
+        )
     else:
         encounter_id = _create_encounter(state, actor.location.id, actor_id, target_id)
 
@@ -137,7 +154,7 @@ def change_target(actor: Any, target: Any) -> CombatOperationResult:
     if encounter_id is None:
         return CombatOperationResult(False, False, reason="actor is not fighting")
     encounter = state["encounters"][str(encounter_id)]
-    if str(target.id) not in encounter["participants"]:
+    if not _can_target(encounter, actor.id, target.id):
         return CombatOperationResult(False, False, reason="target is not in this fight")
     changed = _set_target(state, encounter_id, actor.id, target.id)
     _write_state(state)
@@ -285,7 +302,7 @@ def schedule_tactical_action(
     if encounter_id is None:
         return CombatOperationResult(False, False, reason="not_fighting")
     encounter = state["encounters"][str(encounter_id)]
-    if str(target_id) not in encounter["participants"] or actor_id == target_id:
+    if not _can_target(encounter, actor_id, target_id):
         return CombatOperationResult(False, False, reason="invalid_target")
     record = encounter["participants"][str(actor_id)]
     changed = record.get("pending_intent") != intent
@@ -326,9 +343,11 @@ def rescue_retarget(rescuer: Any, protected: Any, enemy: Any) -> CombatRetargetR
     encounter_id = encounter_ids[0]
     encounter = state["encounters"][str(encounter_id)]
     if not all(
-        _valid_encounter_target(rescuer, value, encounter)
-        for value in (protected, enemy)
+        _participant_is_valid(value, encounter) for value in (rescuer, protected, enemy)
     ):
+        return CombatRetargetResult(False, False, "invalid_participant", encounter_id)
+    sides = _participant_sides(encounter)
+    if sides[rescuer.id] != sides[protected.id] or sides[rescuer.id] == sides[enemy.id]:
         return CombatRetargetResult(False, False, "invalid_participant", encounter_id)
     if encounter["participants"][str(enemy.id)]["target"] != protected.id:
         return CombatRetargetResult(
@@ -535,6 +554,7 @@ def _read_state() -> dict[str, Any]:
                     str(actor_id): {
                         "target": participant["target"],
                         "ready_at": participant["ready_at"],
+                        "side": _participant_sides(encounter)[int(actor_id)],
                         "pending_intent": participant.get("pending_intent"),
                     }
                     for actor_id, participant in encounter["participants"].items()
@@ -576,10 +596,14 @@ def _valid_state(state: Any) -> bool:
                 return False
             if set(participant) not in (
                 {"target", "ready_at"},
+                {"target", "ready_at", "side"},
                 {"target", "ready_at", "pending_intent"},
+                {"target", "ready_at", "side", "pending_intent"},
             ):
                 return False
             if not _positive_int(participant["target"]):
+                return False
+            if "side" in participant and participant["side"] not in {0, 1}:
                 return False
             ready_at = participant["ready_at"]
             if isinstance(ready_at, bool) or not isinstance(ready_at, (int, float)):
@@ -612,10 +636,18 @@ def _repair_state(state: dict[str, Any]) -> None:
             del state["encounters"][encounter_id]
             _close_reward_ledger(int(encounter_id))
             continue
+        sides = _participant_sides(encounter)
+        for actor_id, side in sides.items():
+            participants[str(actor_id)]["side"] = side
+        if len(set(sides.values())) < 2:
+            _clear_encounter_conditions(encounter)
+            del state["encounters"][encounter_id]
+            _close_reward_ledger(int(encounter_id))
+            continue
         seen.update(valid_ids)
         for actor_id, record in participants.items():
             target_id = record["target"]
-            if str(target_id) not in participants or target_id == int(actor_id):
+            if not _can_target(encounter, int(actor_id), target_id):
                 record["target"] = _fallback_target(participants, int(actor_id))
         # A room object can disappear between checks; this expression ensures
         # all retained characters share the serialized room identity.
@@ -646,6 +678,7 @@ def _valid_encounter_target(
         and _participant_is_valid(actor, encounter)
         and _participant_is_valid(target, encounter)
         and str(target.id) in encounter["participants"]
+        and _can_target(encounter, actor.id, target.id)
     )
 
 
@@ -696,19 +729,24 @@ def _create_encounter(state: dict[str, Any], room_id: int, *actor_ids: int) -> i
     encounter_id = state["next_id"]
     state["next_id"] += 1
     state["encounters"][str(encounter_id)] = {"room": room_id, "participants": {}}
-    for actor_id in actor_ids:
-        _add_participant(state, encounter_id, actor_id)
+    for index, actor_id in enumerate(actor_ids):
+        _add_participant(state, encounter_id, actor_id, 0 if index == 0 else 1)
     return encounter_id
 
 
-def _add_participant(state: dict[str, Any], encounter_id: int, actor_id: int) -> bool:
+def _add_participant(
+    state: dict[str, Any], encounter_id: int, actor_id: int, side: int
+) -> bool:
     """Insert a participant with a readiness clock based on last processed token."""
     participants = state["encounters"][str(encounter_id)]["participants"]
     if str(actor_id) in participants:
         return False
+    if side not in {0, 1}:
+        raise CombatError("Combat participants must join one of two encounter sides.")
     participants[str(actor_id)] = {
         "target": actor_id,
         "ready_at": state["last_pulse"] + 1,
+        "side": side,
         "pending_intent": None,
     }
     return True
@@ -720,7 +758,9 @@ def _set_target(
     """Set a target when both ids currently belong to the same encounter."""
     participants = state["encounters"][str(encounter_id)]["participants"]
     record = participants.get(str(actor_id))
-    if record is None or str(target_id) not in participants or actor_id == target_id:
+    if record is None or not _can_target(
+        state["encounters"][str(encounter_id)], actor_id, target_id
+    ):
         return False
     if record["target"] == target_id:
         return False
@@ -728,8 +768,15 @@ def _set_target(
     return True
 
 
-def _merge_encounters(state: dict[str, Any], first_id: int, second_id: int) -> int:
+def _merge_encounters(
+    state: dict[str, Any], first_id: int, second_id: int, actor_id: int, target_id: int
+) -> int:
     """Merge same-room records deterministically into their lower identity."""
+    first = state["encounters"][str(first_id)]
+    second = state["encounters"][str(second_id)]
+    if _participant_sides(first)[actor_id] == _participant_sides(second)[target_id]:
+        for member_id, side in _participant_sides(second).items():
+            second["participants"][str(member_id)]["side"] = 1 - side
     keep_id, remove_id = sorted((first_id, second_id))
     keep = state["encounters"][str(keep_id)]
     remove = state["encounters"][str(remove_id)]
@@ -772,16 +819,66 @@ def _remove_participant(
     if len(participants) < 2:
         _clear_encounter_conditions({"participants": participants})
         return
+    if len(set(_participant_sides({"participants": participants}).values())) < 2:
+        _clear_encounter_conditions({"participants": participants})
+        return
     for survivor_id, record in participants.items():
-        if record["target"] == actor_id:
+        if not _can_target(
+            {"participants": participants}, int(survivor_id), record["target"]
+        ):
             record["target"] = _fallback_target(participants, int(survivor_id))
 
 
 def _fallback_target(participants: Mapping[str, Any], actor_id: int) -> int:
     """Choose the lowest dbref opponent as a stable repair target."""
+    sides = _participant_sides({"participants": participants})
     return min(
-        int(candidate) for candidate in participants if int(candidate) != actor_id
+        candidate
+        for candidate, side in sides.items()
+        if candidate != actor_id and side != sides[actor_id]
     )
+
+
+def _participant_sides(encounter: Mapping[str, Any]) -> dict[int, int]:
+    """Return stable binary sides, upgrading legacy target-only records safely."""
+    participants = encounter["participants"]
+    sides = {
+        int(actor_id): record["side"]
+        for actor_id, record in participants.items()
+        if record.get("side") in {0, 1}
+    }
+    for actor_id in sorted(int(value) for value in participants):
+        sides.setdefault(actor_id, 0)
+        target_id = participants[str(actor_id)]["target"]
+        if str(target_id) in participants and target_id != actor_id:
+            sides.setdefault(target_id, 1 - sides[actor_id])
+    # Re-run once so target chains that begin after their target get a stable side.
+    for actor_id in sorted(int(value) for value in participants):
+        target_id = participants[str(actor_id)]["target"]
+        if str(target_id) in participants and target_id != actor_id:
+            if actor_id not in sides:
+                sides[actor_id] = 1 - sides[target_id]
+            elif target_id not in sides:
+                sides[target_id] = 1 - sides[actor_id]
+    return sides
+
+
+def _opposing_side(encounter: Mapping[str, Any], actor_id: int) -> int:
+    """Return the one binary side which may oppose an existing participant."""
+    return 1 - _participant_sides(encounter)[actor_id]
+
+
+def _can_target(encounter: Mapping[str, Any], actor_id: int, target_id: int) -> bool:
+    """Require distinct members assigned to opposing encounter sides."""
+    participants = encounter["participants"]
+    if (
+        actor_id == target_id
+        or str(actor_id) not in participants
+        or str(target_id) not in participants
+    ):
+        return False
+    sides = _participant_sides(encounter)
+    return sides[actor_id] != sides[target_id]
 
 
 def _clear_encounter_conditions(encounter: Mapping[str, Any]) -> None:

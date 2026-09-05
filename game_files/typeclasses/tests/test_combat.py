@@ -55,9 +55,9 @@ class TestCombatRegistry(EvenniaTest):
             self.char1.actions.check(ActionCategory.CHANGE_POSITION).allowed
         )
 
-        retargeted = change_target(self.char1, self.char3)
+        retargeted = change_target(self.char2, self.char1)
         self.assertTrue(retargeted.changed)
-        self.assertIs(get_target(self.char1), self.char3)
+        self.assertIs(get_target(self.char2), self.char1)
 
         left = leave_fight(self.char3)
         self.assertTrue(left.changed)
@@ -76,6 +76,21 @@ class TestCombatRegistry(EvenniaTest):
         self.assertFalse(start_fight(self.char1, self.char2).accepted)
         self.assertFalse(start_fight(self.char1, self.room1).accepted)
         self.assertFalse(is_fighting(self.char1))
+
+    def test_merging_encounters_aligns_opposing_sides(self):
+        """Two room-local fights merge without turning former allies hostile."""
+        char4 = create_object(Character, key="Char4", location=self.room1)
+        first = start_fight(self.char1, self.char2)
+        second = start_fight(self.char3, char4)
+
+        merged = start_fight(self.char1, self.char3)
+
+        self.assertTrue(merged.accepted)
+        self.assertEqual(merged.encounter_id, first.encounter_id)
+        self.assertNotEqual(first.encounter_id, second.encounter_id)
+        self.assertIs(get_target(self.char1), self.char3)
+        self.assertIs(get_target(self.char2), self.char1)
+        self.assertIs(get_target(char4), self.char3)
 
     def test_movement_and_final_lifecycle_event_remove_membership(self):
         start_fight(self.char1, self.char2)

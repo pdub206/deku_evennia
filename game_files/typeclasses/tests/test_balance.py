@@ -3,10 +3,15 @@
 import random
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.balance import (BalanceScenario, BalanceValidationError,
-                             CombatantScenario, render_results, run_scenario,
-                             standard_matrix)
-from systems.character_stats import AttackProfile
+from systems.balance import (
+    BalanceScenario,
+    BalanceValidationError,
+    CombatantScenario,
+    render_results,
+    run_scenario,
+    standard_matrix,
+)
+from systems.character_stats import AttackProfile, combat_delay_from_reaction
 from systems.combat_math import critical_probability, hit_probability
 from systems.combat_outcomes import calculate_npc_xp
 
@@ -58,6 +63,8 @@ class TestBalanceHarness(EvenniaTest):
         result = run_scenario(scenario, iterations=1, seed=1)
 
         self.assertEqual(result.stalls, 1)
+        self.assertEqual(result.stall_rate, 1.0)
+        self.assertEqual(result.draw_rate, 0.0)
         self.assertEqual(result.diagnostics, ("round_limit",))
         with self.assertRaises(BalanceValidationError):
             run_scenario(scenario, iterations=0, seed=1)
@@ -80,6 +87,8 @@ class TestBalanceHarness(EvenniaTest):
         identities = {scenario.identity for scenario in matrix}
         self.assertIn("two_pcs_vs_npc", identities)
         self.assertIn("reaction_cadence", identities)
+        self.assertIn("opening_kick", identities)
+        self.assertIn("automatic_flee", identities)
         result = run_scenario(matrix[0], iterations=2, seed=3)
 
         self.assertEqual(
@@ -87,4 +96,25 @@ class TestBalanceHarness(EvenniaTest):
         )
         self.assertTrue(render_results((result,), "csv").startswith("scenario,"))
         self.assertIn("Scenario", render_results((result,), "summary"))
+        self.assertIn("Win% A/B", render_results((result,), "summary"))
         self.assertIn(" | ", render_results((result,), "summary"))
+
+    def test_tactical_cadence_and_automatic_flee_are_explicit_scenarios(self):
+        """The matrix exercises COMBAT-08/09 instead of merely naming them."""
+        harmless = AttackProfile("tap", "Strength", 0, None, 0, 0, "bludgeoning", True)
+        poke = AttackProfile("poke", "Strength", 20, "1d4", 0, 1, "piercing", True)
+        scenario = BalanceScenario(
+            "wimpy",
+            (
+                ((_fighter("PC", hp=20, profile=harmless, wimpy_percent=90),),)
+                + ((_fighter("NPC", profile=poke, is_npc=True),),)
+            ),
+        )
+
+        result = run_scenario(scenario, iterations=50, seed=7)
+
+        self.assertGreater(result.fled[0], 0)
+        self.assertGreater(result.flee_rates[0], 0.0)
+        self.assertIn("fled", result.diagnostics)
+        self.assertEqual(combat_delay_from_reaction(10, 1.0), 0.8)
+        self.assertEqual(combat_delay_from_reaction(-10, 1.0), 1.2)
