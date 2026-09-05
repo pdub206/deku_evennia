@@ -1,6 +1,6 @@
 """Command-level coverage for COMBAT-02 target enrollment."""
 
-from commands.combat import CmdAttack
+from commands.combat import CmdAim, CmdAttack
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.combat import get_target, is_fighting
 
@@ -35,3 +35,11 @@ class TestCmdAttack(EvenniaCommandTest):
         self.call(CmdAttack(), "", "Attack whom?")
         self.call(CmdAttack(), self.char1.key, "You cannot attack yourself.")
         self.assertFalse(is_fighting(self.char1))
+
+    def test_aim_current_target_shorthand_queues_without_an_immediate_hit(self):
+        self.call(CmdAttack(), "Char2", "You begin fighting Char2.")
+        before = self.char2.stats.hp_current
+
+        self.call(CmdAim(), "body", "You prepare to aim Char2 on your next action.")
+
+        self.assertEqual(self.char2.stats.hp_current, before)

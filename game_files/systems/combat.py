@@ -15,17 +15,12 @@ from typing import Any
 from django.conf import settings
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
-from systems.lifecycle import (
-    CharacterAvailability,
-    CharacterLifecycleEvent,
-    LifecycleConsumer,
-    LifecycleError,
-    ServerLifecycleEvent,
-    ServerTransitionPhase,
-    UnavailabilityCause,
-    register_lifecycle_consumer,
-    unregister_lifecycle_consumer,
-)
+from systems.lifecycle import (CharacterAvailability, CharacterLifecycleEvent,
+                               LifecycleConsumer, LifecycleError,
+                               ServerLifecycleEvent, ServerTransitionPhase,
+                               UnavailabilityCause,
+                               register_lifecycle_consumer,
+                               unregister_lifecycle_consumer)
 from systems.pulses import PulseEvent, PulseLane
 
 COMBAT_CONFIG_KEY = "combat_registry"
@@ -53,6 +48,7 @@ class CombatActionResult:
 
     acted: bool = False
     remove_target: bool = False
+    delay_multiplier: float | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +164,7 @@ def stop_encounter(encounter_id: int) -> CombatOperationResult:
     state = _read_state()
     if str(encounter_id) not in state["encounters"]:
         return CombatOperationResult(True, False, encounter_id)
+    _clear_encounter_conditions(state["encounters"][str(encounter_id)])
     del state["encounters"][str(encounter_id)]
     _write_state(state)
     return CombatOperationResult(True, True, encounter_id)
@@ -254,6 +251,88 @@ def schedule_stabilization(actor: Any, target: Any) -> CombatOperationResult:
     return CombatOperationResult(True, changed, encounter_id)
 
 
+def schedule_tactical_action(
+    actor: Any, action: str, target: Any, **arguments: Any
+) -> CombatOperationResult:
+    """Queue one registered tactical action using only stable primitive data."""
+    from systems.tactical_combat import validate_tactical_intent
+
+    actor_id, target_id = _object_id(actor), _object_id(target)
+    if actor_id is None or target_id is None:
+        return CombatOperationResult(False, False, reason="invalid_participant")
+    intent = validate_tactical_intent(action, target_id, arguments)
+    if intent is None:
+        return CombatOperationResult(False, False, reason="invalid_action")
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return CombatOperationResult(False, False, reason="not_fighting")
+    encounter = state["encounters"][str(encounter_id)]
+    if str(target_id) not in encounter["participants"] or actor_id == target_id:
+        return CombatOperationResult(False, False, reason="invalid_target")
+    record = encounter["participants"][str(actor_id)]
+    changed = record.get("pending_intent") != intent
+    record["pending_intent"] = intent
+    _write_state(state)
+    return CombatOperationResult(True, changed, encounter_id)
+
+
+@dataclass(frozen=True)
+class CombatRetargetResult:
+    """The low-level, atomic result of a future rescue attempt."""
+
+    accepted: bool
+    changed: bool
+    reason: str = ""
+    encounter_id: int | None = None
+    attacker_roll: Any | None = None
+    defender_roll: Any | None = None
+
+
+def rescue_retarget(rescuer: Any, protected: Any, enemy: Any) -> CombatRetargetResult:
+    """Contest one enemy's focus without changing encounter membership.
+
+    GROUP-04 owns player-facing selection and eligibility.  This primitive only
+    guarantees that all three live participants remain in the same encounter.
+    """
+    from systems.dice import roll_check
+
+    ids = tuple(_object_id(value) for value in (rescuer, protected, enemy))
+    if any(value is None for value in ids) or len(set(ids)) != 3:
+        return CombatRetargetResult(False, False, "invalid_participant")
+    state = _read_state()
+    _repair_state(state)
+    encounter_ids = tuple(_participant_encounter(state, value) for value in ids)
+    if None in encounter_ids or len(set(encounter_ids)) != 1:
+        return CombatRetargetResult(False, False, "not_same_encounter")
+    encounter_id = encounter_ids[0]
+    encounter = state["encounters"][str(encounter_id)]
+    if not all(
+        _valid_encounter_target(rescuer, value, encounter)
+        for value in (protected, enemy)
+    ):
+        return CombatRetargetResult(False, False, "invalid_participant", encounter_id)
+    if encounter["participants"][str(enemy.id)]["target"] != protected.id:
+        return CombatRetargetResult(
+            False, False, "enemy_not_targeting_protected", encounter_id
+        )
+    attacker_roll = roll_check(rescuer.stats.skill_bonus("Athletics"), 0)
+    defense_bonus = max(
+        enemy.stats.skill_bonus("Athletics"), enemy.stats.skill_bonus("Acrobatics")
+    )
+    defender_roll = roll_check(defense_bonus, 0)
+    if attacker_roll.total < defender_roll.total:
+        return CombatRetargetResult(
+            True, False, "contest_failed", encounter_id, attacker_roll, defender_roll
+        )
+    _set_target(state, encounter_id, enemy.id, rescuer.id)
+    _write_state(state)
+    return CombatRetargetResult(
+        True, True, "", encounter_id, attacker_roll, defender_roll
+    )
+
+
 def process_combat_pulse(event: PulseEvent) -> CombatPulseResult:
     """Consume one combat token before isolated, deterministic due actions."""
     if not isinstance(event, PulseEvent) or event.lane is not PulseLane.COMBAT:
@@ -330,24 +409,45 @@ def _process_encounter(
         ):
             _repair_state(state)
             continue
+        try:
+            from systems.tactical_combat import consume_prone_action
+
+            prone_action = consume_prone_action(actor)
+        except Exception:
+            failures += 1
+            logger.log_trace(
+                f"Combat condition for actor #{actor_id} failed at pulse {event.sequence}."
+            )
+            continue
         # Consume this readiness before invoking extensible code.
         record["ready_at"] = event.sequence + _combat_delay(actor)
         intent = record.get("pending_intent")
         record["pending_intent"] = None
         _write_state(state)
+        if prone_action:
+            actions += 1
+            continue
         if intent is not None:
             try:
                 if intent["kind"] == "flee":
                     from systems.combat_movement import execute_flee_intent
 
                     execute_flee_intent(actor, intent)
-                else:
+                elif intent["kind"] == "stabilize":
                     from systems.injury import attempt_stabilization
 
                     target = _get_character(intent["target"])
                     if target is None:
                         raise CombatError("Stabilization target is missing.")
                     attempt_stabilization(actor, target)
+                else:
+                    from systems.tactical_combat import execute_tactical_intent
+
+                    result = execute_tactical_intent(actor, target, event, intent)
+                    if result.delay_multiplier is not None:
+                        record["ready_at"] = event.sequence + (
+                            _combat_delay(actor) * result.delay_multiplier
+                        )
             except Exception:
                 failures += 1
                 logger.log_trace(
@@ -489,6 +589,7 @@ def _repair_state(state: dict[str, Any]) -> None:
             if int(actor_id) not in valid_ids:
                 participants.pop(actor_id, None)
         if len(participants) < 2:
+            _clear_encounter_conditions(encounter)
             del state["encounters"][encounter_id]
             _close_reward_ledger(int(encounter_id))
             continue
@@ -503,6 +604,7 @@ def _repair_state(state: dict[str, Any]) -> None:
             not _participant_is_valid(_get_character(int(actor_id)), encounter)
             for actor_id in participants
         ):
+            _clear_encounter_conditions(encounter)
             del state["encounters"][encounter_id]
             _close_reward_ledger(int(encounter_id))
 
@@ -637,8 +739,19 @@ def _remove_participant(
 ) -> None:
     """Remove actor and ensure all survivors have deterministic valid targets."""
     participants = state["encounters"][str(encounter_id)]["participants"]
+    actor = _get_character(actor_id)
+    if actor is not None:
+        try:
+            from systems.tactical_combat import clear_combat_conditions
+
+            clear_combat_conditions(actor)
+        except Exception:
+            logger.log_trace(
+                f"Could not clear combat conditions for object #{actor_id}."
+            )
     participants.pop(str(actor_id), None)
     if len(participants) < 2:
+        _clear_encounter_conditions({"participants": participants})
         return
     for survivor_id, record in participants.items():
         if record["target"] == actor_id:
@@ -650,6 +763,22 @@ def _fallback_target(participants: Mapping[str, Any], actor_id: int) -> int:
     return min(
         int(candidate) for candidate in participants if int(candidate) != actor_id
     )
+
+
+def _clear_encounter_conditions(encounter: Mapping[str, Any]) -> None:
+    """Remove effects whose action restriction only has meaning in combat."""
+    for actor_id in encounter.get("participants", {}):
+        actor = _get_character(int(actor_id))
+        if actor is None:
+            continue
+        try:
+            from systems.tactical_combat import clear_combat_conditions
+
+            clear_combat_conditions(actor)
+        except Exception:
+            logger.log_trace(
+                f"Could not clear combat conditions for object #{actor_id}."
+            )
 
 
 def _positive_int(value: Any) -> bool:
@@ -668,18 +797,24 @@ def _positive_int_string(value: Any) -> bool:
 
 
 def _valid_intent(intent: Any) -> bool:
-    """Accept only serializable COMBAT-03/04 one-action intents."""
-    return isinstance(intent, Mapping) and (
-        (
-            set(intent) == {"kind", "exit"}
-            and intent.get("kind") == "flee"
-            and _positive_int(intent.get("exit"))
-        )
-        or (
-            set(intent) == {"kind", "target"}
-            and intent.get("kind") == "stabilize"
-            and _positive_int(intent.get("target"))
-        )
+    """Accept only serializable COMBAT one-action intents."""
+    if not isinstance(intent, Mapping):
+        return False
+    if intent.get("kind") == "tactical":
+        try:
+            from systems.tactical_combat import valid_tactical_intent
+
+            return valid_tactical_intent(intent)
+        except Exception:
+            return False
+    return (
+        set(intent) == {"kind", "exit"}
+        and intent.get("kind") == "flee"
+        and _positive_int(intent.get("exit"))
+    ) or (
+        set(intent) == {"kind", "target"}
+        and intent.get("kind") == "stabilize"
+        and _positive_int(intent.get("target"))
     )
 
 

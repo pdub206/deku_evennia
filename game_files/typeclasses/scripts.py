@@ -16,22 +16,18 @@ from typing import Any
 from django.conf import settings
 from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
-from systems.attacks import resolve_basic_attack
 from systems.combat import process_combat_pulse, set_combat_action_hook
-from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
-from systems.pulses import (
-    PulseEvent,
-    PulseLane,
-    advance_pulse_state,
-    configured_cadences,
-    initial_pulse_state,
-    process_effect_pulse,
-    process_resource_recovery_pulse,
-)
+from systems.injury import \
+    process_recovery_pulse as process_injury_recovery_pulse
+from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
+                            configured_cadences, initial_pulse_state,
+                            process_effect_pulse,
+                            process_resource_recovery_pulse)
+from systems.tactical_combat import resolve_combat_action
 
 # The global script imports this module on boot, making the COMBAT-02 resolver
 # available even before its first server-start callback.
-set_combat_action_hook(resolve_basic_attack)
+set_combat_action_hook(resolve_combat_action)
 
 
 class Script(DefaultScript):
@@ -137,7 +133,7 @@ class GamePulseScript(Script):
     def at_server_start(self) -> None:
         """Restore COMBAT-02's resolver after a hot code reload."""
         super().at_server_start()
-        set_combat_action_hook(resolve_basic_attack)
+        set_combat_action_hook(resolve_combat_action)
 
     def at_repeat(self, **kwargs: Any) -> None:
         """Persist the next tokens, then isolate and dispatch every due lane."""

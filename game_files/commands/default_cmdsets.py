@@ -18,15 +18,15 @@ from commands.account import CmdCharCreate, CmdOOC
 from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
                                CmdNpcs, CmdRooms)
 from commands.change import CmdChange
-from commands.combat import CmdAttack
+from commands.combat import CmdAim, CmdAttack, CmdBackstab, CmdBash, CmdKick
 from commands.combat_movement import CmdFlee
-from commands.injury import CmdInjury, CmdStabilize
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
 from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
                               CmdHome, CmdInventory, CmdJunk, CmdLook, CmdNick,
                               CmdPose, CmdRemove, CmdSetDesc, CmdWear)
+from commands.injury import CmdInjury, CmdStabilize
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
@@ -89,6 +89,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLoadArea)
         self.add(CmdEffects)
         self.add(CmdAttack)
+        self.add(CmdAim)
+        self.add(CmdBackstab)
+        self.add(CmdBash)
+        self.add(CmdKick)
         self.add(CmdFlee)
         self.add(CmdStabilize)
         self.add(CmdInjury)

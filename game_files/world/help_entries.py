@@ -187,6 +187,40 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "tactical combat",
+        "aliases": ["aim", "backstab", "bash", "kick", "tactical actions"],
+        "category": "Combat",
+        "text": """
+            Tactical actions are prepared now and resolve on your next ready
+            combat action. Preparing a new tactical action replaces the one you
+            already prepared. If its target, equipment, position, or other
+            requirement changes before then, the prepared action is spent and
+            does not turn into an ordinary attack.
+
+            |waim <location>|n or |waim <target> <location>|n chooses one supported
+            location: head, neck, body, shoulders, arms, wrists, hands, legs, or
+            feet. Aimed attacks have disadvantage, even when they choose the
+            location successfully.
+
+            |wbackstab [target]|n is a Rogue Sneak Attack. You need a wielded
+            finesse weapon. It adds 1d6 at Rogue level 1 and another 1d6 every
+            two Rogue levels, once per combat round, when your target is unaware
+            of you in a solo fight or is focused on someone else in a larger
+            fight. A miss does not use that round's successful Sneak Attack.
+
+            |wbash [target]|n requires a shield. Your Strength (Athletics) is
+            contested by the target's better Athletics or Acrobatics. A creature
+            more than one size larger cannot be knocked down. A successful bash
+            deals no damage, makes the target prone, and costs its next combat
+            action as it regains its footing. Prone does not stack or refresh.
+
+            |wkick [target]|n is available to everyone and needs no free hand.
+            It attacks with Strength for 1d4 + Strength bludgeoning damage at the
+            body or a leg. Hit or miss, your following combat action is delayed
+            to 150% of your normal current combat delay.
+        """,
+    },
+    {
         "key": "injuries",
         "aliases": ["unconscious", "death saves", "stabilize", "stabilise", "death"],
         "category": "Combat",

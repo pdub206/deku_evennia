@@ -13,16 +13,12 @@ from enum import Enum
 from typing import Any
 
 from systems.action_policy import ActionCategory
+from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult
 from systems.dice import roll, roll_damage_expression
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    announce_transition,
-    apply_damage,
-    injury_record,
-)
+from systems.injury import (InjuryError, InjuryState, announce_transition,
+                            apply_damage, injury_record)
 from systems.pulses import PulseEvent
 
 
@@ -139,8 +135,18 @@ def resolve_basic_attack(
     die_roller: Callable[[int], int] = roll,
     location_selector: HitLocationSelector = select_hit_location,
     emit_messages: bool = True,
+    profile: AttackProfile | None = None,
+    has_advantage: bool = False,
+    has_disadvantage: bool = False,
+    extra_damage_dice: str | None = None,
+    attack_name: str | None = None,
 ) -> AttackResult:
-    """Resolve exactly one revalidated attack and mutate target HP at most once."""
+    """Resolve one revalidated attack through the shared damage pipeline.
+
+    Tactical actions may supply a temporary profile, roll state, location, or
+    extra dice.  They still use this one resolver for hit, critical, armor,
+    injury, and ordinary combat messages.
+    """
     decision = can_attack(attacker, target)
     attacker_id = getattr(attacker, "id", None)
     target_id = getattr(target, "id", None)
@@ -149,7 +155,7 @@ def resolve_basic_attack(
             reason=decision.reason, attacker_id=attacker_id, target_id=target_id
         )
 
-    profile = attacker.stats.attack_profile()
+    profile = profile or attacker.stats.attack_profile()
     target_injury = injury_record(target)
     target_unconscious = target_injury.state in {
         InjuryState.DYING,
@@ -157,8 +163,8 @@ def resolve_basic_attack(
     }
     # Untrained armor imposes disadvantage; finishing an unconscious target
     # grants advantage. The two conditions cancel to a single roll.
-    has_advantage = target_unconscious
-    has_disadvantage = attacker.stats.has_untrained_armor
+    has_advantage = has_advantage or target_unconscious
+    has_disadvantage = has_disadvantage or attacker.stats.has_untrained_armor
     attack_rolls = (
         (die_roller(20), die_roller(20))
         if has_advantage != has_disadvantage
@@ -189,7 +195,7 @@ def resolve_basic_attack(
         "accepted": True,
         "attacker_id": attacker.id,
         "target_id": target.id,
-        "attack_name": profile.name,
+        "attack_name": attack_name or profile.name,
         "attack_rolls": attack_rolls,
         "die_roll": die_roll,
         "attack_bonus": profile.attack_bonus,
@@ -216,6 +222,14 @@ def resolve_basic_attack(
         damage_rolls, dice_total = damage_roll.rolls, damage_roll.total
     else:
         damage_rolls, dice_total = (), 0
+    if extra_damage_dice:
+        extra_roll = roll_damage_expression(
+            extra_damage_dice,
+            multiplier=2 if outcome is AttackOutcome.CRITICAL else 1,
+            roller=die_roller,
+        )
+        damage_rolls += extra_roll.rolls
+        dice_total += extra_roll.total
     damage_total = max(0, dice_total + profile.damage_base + profile.damage_bonus)
     mitigation = target.stats.mitigate_damage(
         damage_total, location, profile.damage_type
