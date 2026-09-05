@@ -20,6 +20,7 @@ from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
 from commands.change import CmdChange
 from commands.combat import CmdAttack
 from commands.combat_movement import CmdFlee
+from commands.injury import CmdInjury, CmdStabilize
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
@@ -89,6 +90,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdEffects)
         self.add(CmdAttack)
         self.add(CmdFlee)
+        self.add(CmdStabilize)
+        self.add(CmdInjury)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

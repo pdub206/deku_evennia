@@ -22,6 +22,7 @@ from systems.lifecycle import (
     LifecycleError,
     ServerLifecycleEvent,
     ServerTransitionPhase,
+    UnavailabilityCause,
     register_lifecycle_consumer,
     unregister_lifecycle_consumer,
 )
@@ -226,6 +227,24 @@ def schedule_flee(actor: Any, exit_id: int) -> CombatOperationResult:
     return CombatOperationResult(True, changed, encounter_id)
 
 
+def schedule_stabilization(actor: Any, target: Any) -> CombatOperationResult:
+    """Queue one COMBAT-04 Medicine attempt for the actor's next action."""
+    actor_id, target_id = _object_id(actor), _object_id(target)
+    if actor_id is None or target_id is None:
+        return CombatOperationResult(False, False, reason="invalid_participant")
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return CombatOperationResult(False, False, reason="not_fighting")
+    intent = {"kind": "stabilize", "target": target_id}
+    record = state["encounters"][str(encounter_id)]["participants"][str(actor_id)]
+    changed = record.get("pending_intent") != intent
+    record["pending_intent"] = intent
+    _write_state(state)
+    return CombatOperationResult(True, changed, encounter_id)
+
+
 def process_combat_pulse(event: PulseEvent) -> CombatPulseResult:
     """Consume one combat token before isolated, deterministic due actions."""
     if not isinstance(event, PulseEvent) or event.lane is not PulseLane.COMBAT:
@@ -308,14 +327,22 @@ def _process_encounter(
         record["pending_intent"] = None
         _write_state(state)
         if intent is not None:
-            from systems.combat_movement import execute_flee_intent
-
             try:
-                execute_flee_intent(actor, intent)
+                if intent["kind"] == "flee":
+                    from systems.combat_movement import execute_flee_intent
+
+                    execute_flee_intent(actor, intent)
+                else:
+                    from systems.injury import attempt_stabilization
+
+                    target = _get_character(intent["target"])
+                    if target is None:
+                        raise CombatError("Stabilization target is missing.")
+                    attempt_stabilization(actor, target)
             except Exception:
                 failures += 1
                 logger.log_trace(
-                    f"Combat flee for actor #{actor_id} failed at pulse {event.sequence}."
+                    f"Combat intent for actor #{actor_id} failed at pulse {event.sequence}."
                 )
             else:
                 actions += 1
@@ -617,12 +644,18 @@ def _positive_int_string(value: Any) -> bool:
 
 
 def _valid_intent(intent: Any) -> bool:
-    """Accept only COMBAT-03's serializable single flee intent."""
-    return (
-        isinstance(intent, Mapping)
-        and set(intent) == {"kind", "exit"}
-        and intent.get("kind") == "flee"
-        and _positive_int(intent.get("exit"))
+    """Accept only serializable COMBAT-03/04 one-action intents."""
+    return isinstance(intent, Mapping) and (
+        (
+            set(intent) == {"kind", "exit"}
+            and intent.get("kind") == "flee"
+            and _positive_int(intent.get("exit"))
+        )
+        or (
+            set(intent) == {"kind", "target"}
+            and intent.get("kind") == "stabilize"
+            and _positive_int(intent.get("target"))
+        )
     )
 
 
@@ -630,6 +663,10 @@ def _on_character_lifecycle(event: CharacterLifecycleEvent) -> None:
     """End combat on final disconnect, OOC transition, or unpuppet."""
     if event.availability is CharacterAvailability.UNAVAILABLE:
         handle_departure(event.character)
+        if event.cause is UnavailabilityCause.OOC:
+            from systems.injury import handle_ooc_departure
+
+            handle_ooc_departure(event.character)
 
 
 def _on_server_lifecycle(event: ServerLifecycleEvent) -> None:

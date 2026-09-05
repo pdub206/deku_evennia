@@ -16,6 +16,13 @@ from systems.action_policy import ActionCategory
 from systems.combat import CombatActionResult
 from systems.dice import roll, roll_damage_expression
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
+from systems.injury import (
+    InjuryError,
+    InjuryState,
+    announce_transition,
+    apply_damage,
+    injury_record,
+)
 from systems.pulses import PulseEvent
 
 
@@ -109,9 +116,11 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "not_colocated")
     if not attacker.actions.check(ActionCategory.COMBAT).allowed:
         return AttackabilityDecision(False, "attacker_ineligible")
-    if not target.actions.check(ActionCategory.COMBAT).allowed:
+    try:
+        target_injury = injury_record(target)
+    except InjuryError:
         return AttackabilityDecision(False, "target_ineligible")
-    if target.stats.hp_current <= 0:
+    if target_injury.state is InjuryState.DEAD:
         return AttackabilityDecision(False, "target_defeated")
     if _is_protected(target):
         return AttackabilityDecision(False, "protected")
@@ -147,9 +156,18 @@ def resolve_basic_attack(
         )
 
     profile = attacker.stats.attack_profile()
+    target_injury = injury_record(target)
+    target_unconscious = target_injury.state in {
+        InjuryState.DYING,
+        InjuryState.INCAPACITATED,
+    }
+    # Untrained armor imposes disadvantage; finishing an unconscious target
+    # grants advantage. The two conditions cancel to a single roll.
+    has_advantage = target_unconscious
+    has_disadvantage = attacker.stats.has_untrained_armor
     attack_rolls = (
         (die_roller(20), die_roller(20))
-        if attacker.stats.has_untrained_armor
+        if has_advantage != has_disadvantage
         else (die_roller(20),)
     )
     if any(
@@ -157,12 +175,16 @@ def resolve_basic_attack(
         for value in attack_rolls
     ):
         raise ValueError("Attack roller returned an invalid d20 result.")
-    die_roll = min(attack_rolls)
+    die_roll = (
+        max(attack_rolls)
+        if has_advantage and not has_disadvantage
+        else min(attack_rolls)
+    )
     total = die_roll + profile.attack_bonus
     armor_class = target.stats.armor_class
     if die_roll == 1:
         outcome = AttackOutcome.MISS
-    elif die_roll == 20:
+    elif die_roll == 20 or target_unconscious:
         outcome = AttackOutcome.CRITICAL
     elif total >= armor_class:
         outcome = AttackOutcome.HIT
@@ -204,7 +226,12 @@ def resolve_basic_attack(
     mitigation = target.stats.mitigate_damage(
         damage_total, location, profile.damage_type
     )
-    resulting_hp = target.stats.take_damage(mitigation.final)
+    injury = apply_damage(
+        target,
+        mitigation.final,
+        critical=outcome is AttackOutcome.CRITICAL,
+        emit_messages=False,
+    )
     result = AttackResult(
         acted=True,
         hit_location=location,
@@ -212,12 +239,13 @@ def resolve_basic_attack(
         damage_total=damage_total,
         mitigation=mitigation,
         final_damage=mitigation.final,
-        resulting_hp=resulting_hp,
-        remove_target=resulting_hp <= 0,
+        resulting_hp=injury.resulting_hp,
+        remove_target=injury.combat_cleanup_required,
         **common,
     )
     if emit_messages:
         render_attack_result(attacker, target, result)
+        announce_transition(target, injury)
     return result
 
 

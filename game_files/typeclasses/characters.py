@@ -17,6 +17,7 @@ from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
 from systems.combat import handle_departure, is_fighting
 from systems.effects import EffectHandler, EffectStorageError
+from systems.injury import InjuryError, imposed_position
 from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 from systems.lifecycle import (
@@ -84,6 +85,15 @@ class Character(ObjectParent, DefaultCharacter):
             yield Position.INCAPACITATED
         if is_fighting(self):
             yield Position.FIGHTING
+        try:
+            injury_position = imposed_position(self)
+        except InjuryError:
+            # Injury data is safety-critical: malformed state prevents action
+            # until a staff member uses the explicit repair operation.
+            yield Position.INCAPACITATED
+        else:
+            if injury_position is not None:
+                yield injury_position
 
     def get_effect_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
         """Yield numeric modifiers supplied by persistent active effects."""

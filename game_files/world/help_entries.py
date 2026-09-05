@@ -186,6 +186,31 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "injuries",
+        "aliases": ["unconscious", "death saves", "stabilize", "stabilise", "death"],
+        "category": "Combat",
+        "text": """
+            At 0 HP, player characters fall unconscious and begin making death
+            saves on each recovery pulse. Roll 10 or higher for a success; three
+            successes leave you stable and unconscious. A 2--9 is a failure, a
+            natural 1 counts as two failures, and a natural 20 restores 1 HP.
+            Three failures means death. Stable characters do not recover on
+            their own, but healing above 0 HP wakes them resting.
+
+            Use |wstabilize <target>|n (or |wstabilise|n) on a dying character in
+            your room. It makes a DC 10 Wisdom (Medicine) check. During combat,
+            this is queued for your next action rather than taking effect at once.
+            Damage to an unconscious character is especially dangerous: a hit is
+            critical. Damage large enough to exceed a character's maximum HP
+            after reaching 0 HP causes immediate death.
+
+            Ordinary NPCs die at 0 HP unless a builder enables their death-save
+            policy. Leaving with |wooc|n at 0 HP is fatal; a disconnect leaves
+            death saves running. Corpses, resurrection, and respawning arrive in
+            later systems.
+        """,
+    },
+    {
         "key": "positions",
         "aliases": ["position", "posture", "resting", "sleeping"],
         "category": "Character",
