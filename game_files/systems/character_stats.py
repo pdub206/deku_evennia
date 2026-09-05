@@ -12,9 +12,15 @@ from numbers import Real
 from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
-                                CARRY_CAPACITY_MULTIPLIER, CLASSES, SKILLS,
-                                SPECIES, ability_modifier)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    CARRY_CAPACITY_MULTIPLIER,
+    CLASSES,
+    SKILLS,
+    SPECIES,
+    ability_modifier,
+)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -31,6 +37,28 @@ _ABILITY_ALIASES = {
 def calculate_max_hp(hp_base: int, level: int, constitution: int) -> int:
     """Calculate maximum HP before equipment and effect modifiers."""
     return max(1, hp_base + level * ability_modifier(constitution))
+
+
+def combat_delay_from_reaction(reaction_modifier: int, base_delay: float) -> float:
+    """Return the canonical Reaction-adjusted combat action delay.
+
+    This pure seam lets offline analysis use the same cadence rule as a live
+    ``CharacterStats`` instance without constructing an Evennia object.
+    """
+    if (
+        isinstance(reaction_modifier, bool)
+        or not isinstance(reaction_modifier, int)
+        or isinstance(base_delay, bool)
+        or not isinstance(base_delay, Real)
+        or base_delay < 0
+    ):
+        raise ValueError("Combat cadence inputs are invalid.")
+    multiplier = 1.0 - reaction_modifier * REACTION_DELAY_STEP
+    multiplier = max(
+        MIN_REACTION_DELAY_MULTIPLIER,
+        min(MAX_REACTION_DELAY_MULTIPLIER, multiplier),
+    )
+    return float(base_delay) * multiplier
 
 
 @dataclass(frozen=True)
@@ -194,8 +222,20 @@ class CharacterStats:
 
     def set_hp(self, hp: int) -> int:
         """Set and return current HP after clamping it to valid bounds."""
+        previous = self.hp_current
         self.owner.db.hp_current = max(0, min(self.hp_max, int(hp)))
-        return self.hp_current
+        current = self.hp_current
+        # COMBAT-09 observes the canonical HP write rather than duplicating
+        # damage/healing paths.  The lazy import keeps stats usable at boot.
+        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
+
+        # A zero-HP injury transition is written by ``apply_damage`` after this
+        # resource write; defer its policy check so a newly dying/dead character
+        # can never queue a flee in that small transition window.
+        if current > 0:
+            reconcile_wimpy(self.owner, previous, current)
+        refresh_combat_prompt(self.owner)
+        return current
 
     def take_damage(self, amount: int) -> int:
         """Apply non-negative damage and return the resulting current HP."""
@@ -243,16 +283,7 @@ class CharacterStats:
 
     def combat_delay(self, base_delay: float) -> float:
         """Scale an attack delay by Reaction, clamped to a subtle +/-20%."""
-        # TODO(COMBAT-01): Use this result as the participant's recurring
-        # attack cadence once the live combat handler schedules actions.
-        if base_delay < 0:
-            raise ValueError("A combat delay cannot be negative.")
-        multiplier = 1.0 - self.reaction_modifier * REACTION_DELAY_STEP
-        multiplier = max(
-            MIN_REACTION_DELAY_MULTIPLIER,
-            min(MAX_REACTION_DELAY_MULTIPLIER, multiplier),
-        )
-        return base_delay * multiplier
+        return combat_delay_from_reaction(self.reaction_modifier, base_delay)
 
     @property
     def passive_perception(self) -> int:

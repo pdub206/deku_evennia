@@ -1,0 +1,60 @@
+{
+  "identity": "example_elemental_body_armor",
+  "max_actions": 1000,
+  "max_rounds": 200,
+  "base_delay": 1.0,
+  "teams": [
+    [
+      {
+        "name": "fire adept",
+        "level": 5,
+        "hp": 36,
+        "armor_class": 13,
+        "profile": {
+          "name": "flame blade",
+          "ability": "Strength",
+          "attack_bonus": 6,
+          "damage_dice": "1d10",
+          "damage_base": 0,
+          "damage_bonus": 3,
+          "damage_type": "fire",
+          "proficient": true
+        }
+      }
+    ],
+    [
+      {
+        "name": "fire-armored elemental",
+        "level": 5,
+        "hp": 42,
+        "armor_class": 15,
+        "is_npc": true,
+        "xp_reward": 180,
+        "mitigation": [
+          {
+            "percentage": 50,
+            "flat": 2,
+            "damage_types": ["fire"],
+            "locations": ["body"]
+          },
+          {
+            "percentage": 15,
+            "flat": 1,
+            "damage_types": ["slashing", "piercing", "bludgeoning"],
+            "locations": ["head", "body", "right arm", "left arm", "right leg", "left leg"]
+          }
+        ],
+        "profile": {
+          "name": "heated fist",
+          "ability": "Strength",
+          "attack_bonus": 6,
+          "damage_dice": "1d8",
+          "damage_base": 0,
+          "damage_bonus": 3,
+          "damage_type": "bludgeoning",
+          "proficient": true
+        }
+      }
+    ]
+  ]
+}

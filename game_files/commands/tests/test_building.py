@@ -688,6 +688,7 @@ class TestEditNewNpc(EvenniaCommandTest):
             "charisma": 8,
             "level": 1,
             "xp": 0,
+            "xp_reward": 0,
             "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,
@@ -723,6 +724,8 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "charisma",
                 "level",
                 "xp",
+                "xp_reward",
+                "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
                 "hp_max",
@@ -748,6 +751,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "active_language elvish")
         self.call(CmdBuildSet(), "skills Arcana, History")
         self.call(CmdBuildSet(), "intelligence 18")
+        self.call(CmdBuildSet(), "corpse_decay_minutes 12.5")
 
         saved = _proto("city_guard")
         self.assertEqual(saved["gender"], "female")
@@ -760,11 +764,13 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["active_language"], "Elvish")
         self.assertEqual(saved["skill_proficiencies"], ["Arcana", "History"])
         self.assertEqual(saved["intelligence"], 18)
+        self.assertEqual(saved["corpse_decay_minutes"], 12.5)
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")
         self.call(CmdBuildSet(), "class commoner", "Invalid value for 'class'")
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
+        self.call(CmdBuildSet(), "xp_reward 1000001", "Invalid value for 'xp_reward'")
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
 

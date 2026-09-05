@@ -26,11 +26,29 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "account",
+        "aliases": ["account controls", "ic", "ooc", "puppet"],
+        "category": "General",
+        "text": """
+            Your account owns exactly one player character. Use |wic <name>|n
+            from the Out-of-Character screen to enter the world and |wooc|n to
+            return to the account screen without disconnecting.
+
+            You may connect several sessions to the same account, but only one
+            session can control your character at a time. A second |wic|n attempt
+            is rejected and does not disconnect or replace the active controller.
+            Other connected sessions remain Out-of-Character.
+        """,
+    },
+    {
         "key": "charcreate",
         "aliases": ["character creation", "chargen"],
         "category": "Character",
         "text": """
             The |wcharcreate|n command opens the character-creation wizard.
+
+            Each account may own exactly one player character. Once creation is
+            complete, you cannot create another character on that account.
 
             Usage:
               charcreate
@@ -72,6 +90,10 @@ HELP_ENTRY_DICTS = [
 
             If you quit chargen mid-way (type |wq|n or |wquit|n inside the menu),
             your progress is saved.  Type |wcharcreate|n again to continue.
+
+            Only one connected session may control your character at a time.
+            Other sessions can remain connected Out-of-Character, but an |wic|n
+            attempt never takes control away from the active session.
 
         """,
     },
@@ -138,6 +160,209 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "attack",
+        "aliases": ["kill", "hit", "combat"],
+        "category": "Combat",
+        "text": """
+            Start a fight with |wattack <target>|n. You can also use |wkill|n or
+            |whit|n. Starting or switching a target does not strike immediately:
+            attacks happen automatically on combat rounds.
+
+            You attack with your wielded weapon, or an unarmed strike when no
+            weapon is wielded. Armor Class determines whether a blow lands.
+            A natural 1 misses, while a natural 20 is a critical and rolls the
+            weapon's damage dice twice. Hits land on a body location; armor worn
+            at that location can reduce matching damage.
+
+            You may only attack an eligible character in the same room. Protected
+            characters, unquelled staff, and no-combat locations cannot be
+            attacked. Player-versus-player combat is enabled everywhere else;
+            there are no consent, level-range, or opt-out rules.
+
+            While fighting, normal exits are blocked. Use |wflee [exit]|n to queue
+            an escape on your next combat action. With no exit, an eligible route
+            is chosen for you. Fleeing never moves immediately, does not guarantee
+            a route will remain available, and does not cause pursuit or an
+            opportunity attack.
+        """,
+    },
+    {
+        "key": "tactical combat",
+        "aliases": ["aim", "backstab", "bash", "kick", "tactical actions"],
+        "category": "Combat",
+        "text": """
+            Tactical actions are prepared now and resolve on your next ready
+            combat action. Preparing a new tactical action replaces the one you
+            already prepared. If its target, equipment, position, or other
+            requirement changes before then, the prepared action is spent and
+            does not turn into an ordinary attack.
+
+            |waim <location>|n or |waim <target> <location>|n chooses one supported
+            location: head, neck, body, shoulders, arms, wrists, hands, legs, or
+            feet. Aimed attacks have disadvantage, even when they choose the
+            location successfully.
+
+            |wbackstab [target]|n is a Rogue Sneak Attack. You need a wielded
+            finesse weapon. It adds 1d6 at Rogue level 1 and another 1d6 every
+            two Rogue levels, once per combat round, when your target is unaware
+            of you in a solo fight or is focused on someone else in a larger
+            fight. A miss does not use that round's successful Sneak Attack.
+
+            |wbash [target]|n requires a shield. Your Strength (Athletics) is
+            contested by the target's better Athletics or Acrobatics. A creature
+            more than one size larger cannot be knocked down. A successful bash
+            deals no damage, makes the target prone, and costs its next combat
+            action as it regains its footing. Prone does not stack or refresh.
+
+            |wkick [target]|n is available to everyone and needs no free hand.
+            It attacks with Strength for 1d4 + Strength bludgeoning damage at the
+            body or a leg. Hit or miss, your following combat action is delayed
+            to 150% of your normal current combat delay.
+        """,
+    },
+    {
+        "key": "consider",
+        "aliases": ["assess", "combat estimate"],
+        "category": "Combat",
+        "text": """
+            Use |wconsider <target>|n to make a quick, non-hostile assessment of
+            a visible character in your room. It neither rolls dice nor starts a
+            fight. The result is a broad estimate — |wtrivial|n, |weasy|n,
+            |weven|n, |wdangerous|n, |wdeadly|n, or |woverwhelming|n — based on
+            both combatants' current health, effective level, equipment,
+            defenses, damage, and combat pace. Conditions and equipment can
+            change the answer. You never see another character's exact numbers.
+
+            A conscious player character you consider is privately notified that
+            you looked them over; nobody else in the room is notified.
+        """,
+    },
+    {
+        "key": "wimpy",
+        "aliases": ["automatic flee", "auto flee"],
+        "category": "Combat",
+        "text": """
+            Use |wwimpy <0-90>|n to choose the HP percentage at which your
+            character automatically queues an ordinary random |wflee|n attempt.
+            |wwimpy 0|n (the default) turns it off. The attempt happens only on
+            your next ready combat action; it never moves you immediately and
+            can still fail if no route remains available.
+
+            Wimpy triggers once when your HP crosses down to the selected value.
+            Healing above that value rearms it. You may always use |wflee|n
+            manually, including after an automatic attempt fails.
+        """,
+    },
+    {
+        "key": "combat prompt",
+        "aliases": ["combatprompt", "health"],
+        "category": "Combat",
+        "text": """
+            While fighting, the combat prompt shows your current and maximum HP,
+            your target's qualitative health, your queued action, and whether
+            wimpy is armed or triggered. Target HP and other private combat
+            numbers are never shown. Use |wcombatprompt on|n or
+            |wcombatprompt off|n; it is on by default and only changes the
+            prompt, never combat events.
+
+            Health descriptions are |wunhurt|n (100%), |whealthy|n (76--99%),
+            |wwounded|n (51--75%), |wbadly wounded|n (26--50%), and |wnear death|n
+            (1--25%). At 0 HP, the display says |wdying|n, |wstable|n, or |wdead|n.
+        """,
+    },
+    {
+        "key": "combat verbosity",
+        "aliases": ["combatverbose", "combat messages"],
+        "category": "Combat",
+        "text": """
+            Use |wcombatverbose compact|n, |wnormal|n, or |wdetailed|n to set
+            your saved combat-message preference. Normal is the default.
+            Compact keeps routine output brief; important damage, tactical,
+            injury, stabilization, and death events still appear. Detailed adds
+            your own attack and damage mechanics, but never another character's
+            Armor Class, modifiers, or private statistics.
+        """,
+    },
+    {
+        "key": "injuries",
+        "aliases": ["unconscious", "death saves", "stabilize", "stabilise", "death"],
+        "category": "Combat",
+        "text": """
+            At 0 HP, player characters fall unconscious and begin making death
+            saves on each recovery pulse. Roll 10 or higher for a success; three
+            successes leave you stable and unconscious. A 2--9 is a failure, a
+            natural 1 counts as two failures, and a natural 20 restores 1 HP.
+            Three failures means death. Stable characters do not recover on
+            their own, but healing above 0 HP wakes them resting.
+
+            Use |wstabilize <target>|n (or |wstabilise|n) on a dying character in
+            your room. It makes a DC 10 Wisdom (Medicine) check. During combat,
+            this is queued for your next action rather than taking effect at once.
+            Damage to an unconscious character is especially dangerous: a hit is
+            critical. Damage large enough to exceed a character's maximum HP
+            after reaching 0 HP causes immediate death.
+
+            Ordinary NPCs die at 0 HP unless a builder enables their death-save
+            policy. Leaving with |wooc|n at 0 HP is fatal; a disconnect leaves
+            death saves running. Corpses remain in the room after a death.
+
+            When your character dies, you return to the account screen. Choose
+            that character again to respawn immediately at the world sanctuary.
+            Respawning restores maximum HP, clears temporary effects, and leaves
+            you resting. It costs no XP, level, banked money, or additional items,
+            but it does not reveal where your corpse is or how long it remains.
+
+            A disconnected character stays in the world for 30 minutes. It can
+            be seen, attacked, and continue fighting normally. Reconnecting in
+            time restores control. Once safely stowed, a stable unconscious
+            character returns to its original room at 1 HP; no corpse is made.
+        """,
+    },
+    {
+        "key": "corpses",
+        "aliases": ["corpse", "loot", "looting"],
+        "category": "Combat",
+        "text": """
+            When a character dies, their possessions remain in a corpse in the
+            room. Use |wlook in <corpse>|n to inspect its visible contents and
+            |wget <item> from <corpse>|n or |wget all from <corpse>|n to take
+            items. If you cannot carry every item, |wget all|n takes what it
+            can and tells you what remains.
+
+            NPC corpses can be looted by anyone. A player character's corpse
+            can only be emptied by that exact character, though everyone may
+            inspect it. Corpses cannot be picked up or moved. NPC corpses decay
+            after about ten minutes and player corpses after about thirty;
+            remaining contents then spill into the room for anyone to take.
+
+            Builders may set an NPC's |wcorpse_decay_minutes|n prototype field
+            to a positive duration in minutes. Player corpse duration is a
+            global game policy.
+
+            NPC templates also have an |wxp_reward|n field. Set it to the
+            non-negative base XP awarded when that NPC is defeated; zero means
+            no XP. This is separate from the NPC's own |wxp|n statistic. NPC
+            carried equipment and inventory are the only loot: changing a
+            template does not replenish an existing NPC's lost items.
+        """,
+    },
+    {
+        "key": "experience from combat",
+        "aliases": ["combat experience", "npc xp", "xp rewards"],
+        "category": "Combat",
+        "text": """
+            Defeating an NPC can award Experience Points. The NPC's authored
+            base reward is adjusted by ten percent for every level it is above
+            or below you, from zero at ten levels below to double at ten levels
+            above. You must be alive, conscious, and in the NPC's room when it
+            dies. The most recent eligible contributor receives the whole award.
+
+            Player-versus-player deaths never award XP. NPC loot is simply what
+            the NPC was still carrying or wearing when it died; equipment or
+            items it lost while alive do not reappear.
+        """,
+    },
+    {
         "key": "positions",
         "aliases": ["position", "posture", "resting", "sleeping"],
         "category": "Character",
@@ -166,6 +391,10 @@ HELP_ENTRY_DICTS = [
 
             Help, account controls, character information, and appropriate staff
             recovery commands remain available regardless of position.
+
+            A fight ends when you are no longer part of its encounter, such as
+            when combat separates you from the other participants. Your chosen
+            posture is restored automatically when fighting ends.
 
         """,
     },
@@ -529,7 +758,8 @@ HELP_ENTRY_DICTS = [
             player character: name, description, gender, species, class, age,
             alignment, background, size, languages, active language, skills,
             all six ability scores, level and XP, proficiency bonus, hit points,
-            hit die, Reaction, Armor Class, passive Perception, and speed.
+            hit die, Reaction, Armor Class, passive Perception, speed, and an
+            optional |wcorpse_decay_minutes|n override for that NPC's corpse.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.

@@ -1,0 +1,341 @@
+"""Player entry point for joining and retargeting basic combat."""
+
+from __future__ import annotations
+
+from commands.command import Command
+from systems.action_policy import ActionCategory
+from systems.attacks import can_attack
+from systems.combat import get_target, schedule_tactical_action, start_fight
+from systems.combat_controls import (
+    estimate_threat,
+    set_combat_prompt,
+    set_combat_verbose,
+    set_wimpy,
+)
+from systems.equipment import HIT_LOCATIONS
+from systems.injury import InjuryError, InjuryState, injury_record
+
+
+class CmdAttack(Command):
+    """Begin attacking a character; later pulse rounds attack automatically.
+
+    Usage:
+      attack <target>
+      kill <target>
+      hit <target>
+
+    Attacking starts or joins a fight but never grants an immediate attack.
+    """
+
+    key = "attack"
+    aliases = ("kill", "hit")
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Validate one visible room target and update combat intent safely."""
+        if not self.args.strip():
+            self.caller.msg("Attack whom?")
+            return
+        query = self.args.strip()
+        own_names = {
+            self.caller.key.casefold(),
+            *(alias.casefold() for alias in self.caller.aliases.all()),
+        }
+        target = (
+            self.caller
+            if query.casefold() in own_names
+            else self.caller.search(query, location=self.caller.location)
+        )
+        if target is None:
+            return
+        decision = can_attack(self.caller, target)
+        if not decision.allowed:
+            self.caller.msg(_attack_denial_message(decision.reason))
+            return
+        current_target = get_target(self.caller)
+        result = start_fight(self.caller, target)
+        if not result.accepted:
+            self.caller.msg(_attack_denial_message(result.reason))
+            return
+        if not result.changed and current_target is target:
+            self.caller.msg(
+                f"You are already fighting {target.get_display_name(self.caller)}."
+            )
+            return
+        self.caller.msg(f"You begin fighting {target.get_display_name(self.caller)}.")
+
+
+class CmdConsider(Command):
+    """Assess a visible character without beginning a fight.
+
+    Usage:
+      consider <target>
+    """
+
+    key = "consider"
+    help_category = "Combat"
+    action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Make a side-effect-free current-stat estimate for one room target."""
+        if not self.args.strip():
+            self.caller.msg("Consider whom?")
+            return
+        target = self.caller.search(self.args.strip(), location=self.caller.location)
+        from typeclasses.characters import Character
+
+        if target is None:
+            return
+        if target is self.caller or not isinstance(target, Character):
+            self.caller.msg("You can only consider another character here.")
+            return
+        try:
+            if injury_record(target).state is InjuryState.DEAD:
+                self.caller.msg("That target cannot fight.")
+                return
+        except InjuryError:
+            self.caller.msg("You cannot assess that target.")
+            return
+        estimate = estimate_threat(self.caller, target)
+        name = target.get_display_name(self.caller)
+        self.caller.msg(f"You judge {name} to be {estimate.band}.")
+        if (
+            _is_player_character(target)
+            and injury_record(target).state is InjuryState.CONSCIOUS
+        ):
+            target.msg(
+                f"{self.caller.get_display_name(target)} looks you over carefully."
+            )
+
+
+class CmdWimpy(Command):
+    """Set the HP percentage at which you automatically try to flee.
+
+    Usage:
+      wimpy <0-90>
+    """
+
+    key = "wimpy"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Validate and save one explicit automatic-flee percentage."""
+        try:
+            value = int(self.args.strip())
+            set_wimpy(self.caller, value)
+        except (TypeError, ValueError):
+            self.caller.msg("Usage: wimpy <0-90>.")
+            return
+        if value:
+            self.caller.msg(f"You will try to flee at {value}% HP or lower.")
+        else:
+            self.caller.msg("Automatic fleeing is disabled.")
+
+
+class CmdCombatPrompt(Command):
+    """Enable or disable the extra combat prompt.
+
+    Usage:
+      combatprompt <on|off>
+    """
+
+    key = "combatprompt"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Persist a prompt-only preference without changing combat state."""
+        value = self.args.strip().lower()
+        if value not in {"on", "off"}:
+            self.caller.msg("Usage: combatprompt <on|off>.")
+            return
+        set_combat_prompt(self.caller, value == "on")
+        self.caller.msg(f"Combat prompt {value}.")
+
+
+class CmdCombatVerbose(Command):
+    """Choose compact, normal, or detailed personal combat messages.
+
+    Usage:
+      combatverbose <compact|normal|detailed>
+    """
+
+    key = "combatverbose"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Persist a presentation preference without changing any combat rules."""
+        try:
+            mode = set_combat_verbose(self.caller, self.args.strip())
+        except ValueError:
+            self.caller.msg("Usage: combatverbose <compact|normal|detailed>.")
+            return
+        self.caller.msg(f"Combat verbosity set to {mode}.")
+
+
+def _is_player_character(character) -> bool:
+    """Use the durable PC/NPC marker rather than transient session state."""
+    value = character.attributes.get("is_player_character")
+    return True if value is None else bool(value)
+
+
+def _attack_denial_message(reason: str) -> str:
+    """Map stable internal policy reasons to safe player-facing feedback."""
+    messages = {
+        "self": "You cannot attack yourself.",
+        "not_character": "You can only attack another character.",
+        "not_colocated": "Your target is not here.",
+        "attacker_ineligible": "You cannot attack right now.",
+        "target_ineligible": "That target cannot fight right now.",
+        "target_defeated": "That target is already down.",
+        "protected": "That target is protected from combat.",
+        "staff_immune": "That target cannot be attacked.",
+        "access_denied": "You cannot attack that target.",
+        "pvp_denied": "Player-versus-player combat is not enabled here.",
+    }
+    return messages.get(reason, "You cannot attack that target.")
+
+
+class _QueuedTacticalCommand(Command):
+    """Shared parser and queue behavior for next-action tactical commands."""
+
+    action_key = ""
+    action_category = ActionCategory.COMBAT
+
+    def _queue(self, target, **arguments: str) -> None:
+        result = schedule_tactical_action(
+            self.caller, self.action_key, target, **arguments
+        )
+        if not result.accepted:
+            messages = {
+                "not_fighting": "You can only do that while fighting.",
+                "invalid_target": "That target is not in your fight.",
+                "invalid_action": "That tactical action is unavailable.",
+            }
+            self.caller.msg(messages.get(result.reason, "You cannot do that now."))
+            return
+        name = target.get_display_name(self.caller)
+        if result.changed:
+            self.caller.msg(
+                f"You prepare to {self.action_key} {name} on your next action."
+            )
+        else:
+            self.caller.msg(f"You are already prepared to {self.action_key} {name}.")
+
+    def _find_target(self, query: str):
+        """Resolve a visible co-located target without accepting ambiguous text."""
+        target = self.caller.search(query, location=self.caller.location)
+        return target
+
+
+class CmdAim(_QueuedTacticalCommand):
+    """Queue a disadvantaged strike at one chosen location.
+
+    Usage:
+      aim <location>
+      aim <target> <location>
+    """
+
+    key = "aim"
+    action_key = "aim"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Parse an unambiguous current-target shorthand or explicit target."""
+        words = self.args.strip().split()
+        if not words:
+            self.caller.msg("Aim where?")
+            return
+        target = None
+        location = ""
+        for split in range(0, len(words)):
+            candidate = " ".join(words[split:]).casefold()
+            if candidate in HIT_LOCATIONS:
+                if split == 0:
+                    target = get_target(self.caller)
+                else:
+                    target = self._find_target(" ".join(words[:split]))
+                location = candidate
+                break
+        if location not in HIT_LOCATIONS:
+            self.caller.msg("Choose a supported hit location.")
+            return
+        if target is None:
+            self.caller.msg("Specify a combat target before choosing that location.")
+            return
+        self._queue(target, location=location)
+
+
+class CmdBackstab(_QueuedTacticalCommand):
+    """Queue a Rogue Sneak Attack attempt.
+
+    Usage:
+      backstab [target]
+    """
+
+    key = "backstab"
+    action_key = "backstab"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Use the current target when no explicit target was supplied."""
+        target = (
+            get_target(self.caller)
+            if not self.args.strip()
+            else self._find_target(self.args.strip())
+        )
+        if target is None:
+            self.caller.msg("Specify a combat target.")
+            return
+        self._queue(target)
+
+
+class CmdBash(_QueuedTacticalCommand):
+    """Queue a shield bash against one combat target.
+
+    Usage:
+      bash [target]
+    """
+
+    key = "bash"
+    action_key = "bash"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Use the current target when no explicit target was supplied."""
+        target = (
+            get_target(self.caller)
+            if not self.args.strip()
+            else self._find_target(self.args.strip())
+        )
+        if target is None:
+            self.caller.msg("Specify a combat target.")
+            return
+        self._queue(target)
+
+
+class CmdKick(_QueuedTacticalCommand):
+    """Queue a Strength-based kick against one combat target.
+
+    Usage:
+      kick [target]
+    """
+
+    key = "kick"
+    action_key = "kick"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Use the current target when no explicit target was supplied."""
+        target = (
+            get_target(self.caller)
+            if not self.args.strip()
+            else self._find_target(self.args.strip())
+        )
+        if target is None:
+            self.caller.msg("Specify a combat target.")
+            return
+        self._queue(target)

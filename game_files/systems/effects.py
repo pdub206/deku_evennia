@@ -174,6 +174,7 @@ class EffectDefinition:
     key: str
     name: str
     duration: int | None = None
+    clears_on_death: bool | None = None
     stacking: StackingPolicy = StackingPolicy.REJECT
     max_stacks: int = 1
     modifiers: Mapping[str, int] = field(default_factory=dict)
@@ -190,6 +191,10 @@ class EffectDefinition:
         if not isinstance(self.stacking, StackingPolicy):
             raise EffectError("An effect stacking policy must use StackingPolicy.")
         _validate_duration(self.duration)
+        if self.clears_on_death is not None and not isinstance(
+            self.clears_on_death, bool
+        ):
+            raise EffectError("An effect death policy must be true, false, or unset.")
         if isinstance(self.max_stacks, bool) or not isinstance(self.max_stacks, int):
             raise EffectError("An effect's maximum stacks must be an integer.")
         if self.max_stacks < 1:
@@ -543,6 +548,28 @@ class EffectHandler:
                 reason=RemovalReason.SOURCE,
                 quiet=quiet,
             )
+            for effect in matches
+        )
+
+    def clear_for_death(self) -> tuple[RemovalResult, ...]:
+        """Remove temporary effects, honoring explicit definition overrides.
+
+        A duration normally identifies an effect as temporary.  Definitions can
+        opt permanent effects into removal or temporary effects out of it with
+        ``clears_on_death`` without adding a second persistence category.
+        """
+        matches = [
+            effect
+            for effect in self.all()
+            if effect.definition is not None
+            and (
+                effect.definition.clears_on_death
+                if effect.definition.clears_on_death is not None
+                else effect.remaining_pulses is not None
+            )
+        ]
+        return tuple(
+            self.remove(effect.instance_id, reason=RemovalReason.ADMIN, quiet=True)
             for effect in matches
         )
 

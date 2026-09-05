@@ -7,12 +7,14 @@ Run from the game/ directory:
 
 from typing import Any
 
-from commands.generic import CmdInventory, CmdJunk, CmdLook, CmdRemove, CmdWear
+from commands.generic import (CmdGet, CmdInventory, CmdJunk, CmdLook,
+                              CmdRemove, CmdWear)
 from evennia import create_object
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import save_prototype, search_prototype
 from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
+from systems.corpses import create_corpse
 from systems.equipment import WEAR_LOCATIONS
 
 
@@ -35,6 +37,28 @@ class TestInventory(EvenniaCommandTest):
         create_object("typeclasses.objects.Item", key="a rock", location=self.char1)
         self.char1.db.position = "sleeping"
         self.call(CmdInventory(), "", "You are asleep")
+
+
+class TestCorpseCommands(EvenniaCommandTest):
+    """Corpse inspection and retrieval reuse the ordinary command seam."""
+
+    def test_look_in_and_get_from_an_npc_corpse(self):
+        """Visible contents can be inspected, then withdrawn by a player."""
+        gem = create_object("typeclasses.objects.Item", key="a gem", location=self.char2)
+        self.char2.db.is_player_character = False
+        corpse = create_corpse(self.char2, "command-npc-death")
+
+        self.call(
+            CmdLook(),
+            f"in {corpse.key}",
+            f"Inside {corpse.key}:\n  a gem",
+        )
+        self.call(
+            CmdGet(),
+            f"gem from {corpse.key}",
+            f"You take a gem from {corpse.key}.",
+        )
+        self.assertIs(gem.location, self.char1)
 
 
 class TestJunk(EvenniaCommandTest):

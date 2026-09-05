@@ -16,10 +16,18 @@ from typing import Any
 from django.conf import settings
 from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
+from systems.combat import process_combat_pulse, set_combat_action_hook
+from systems.injury import \
+    process_recovery_pulse as process_injury_recovery_pulse
 from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
                             configured_cadences, initial_pulse_state,
                             process_effect_pulse,
                             process_resource_recovery_pulse)
+from systems.tactical_combat import resolve_combat_action
+
+# The global script imports this module on boot, making the COMBAT-02 resolver
+# available even before its first server-start callback.
+set_combat_action_hook(resolve_combat_action)
 
 
 class Script(DefaultScript):
@@ -122,6 +130,11 @@ class GamePulseScript(Script):
         self.persistent = True
         self.db.pulse_state = initial_pulse_state()
 
+    def at_server_start(self) -> None:
+        """Restore COMBAT-02's resolver after a hot code reload."""
+        super().at_server_start()
+        set_combat_action_hook(resolve_combat_action)
+
     def at_repeat(self, **kwargs: Any) -> None:
         """Persist the next tokens, then isolate and dispatch every due lane."""
         state, events = advance_pulse_state(self.db.pulse_state, configured_cadences())
@@ -153,10 +166,15 @@ class GamePulseScript(Script):
 
     def at_combat_pulse(self, event: PulseEvent) -> None:
         """Run combat work supplied by COMBAT-01."""
+        process_combat_pulse(event)
 
     def at_recovery_pulse(self, event: PulseEvent) -> None:
-        """Run resource recovery supplied by RULES-04."""
+        """Run normal recovery and COMBAT-04 death saves on one durable token."""
         process_resource_recovery_pulse(event)
+        process_injury_recovery_pulse(event)
+        from systems.respawn import process_linkdead_pulse
+
+        process_linkdead_pulse(event)
 
     def at_mobiles_pulse(self, event: PulseEvent) -> None:
         """Run mobile behavior supplied by MOB-01."""
@@ -167,6 +185,9 @@ class GamePulseScript(Script):
 
     def at_corpses_pulse(self, event: PulseEvent) -> None:
         """Run corpse decay supplied by COMBAT-05."""
+        from systems.corpses import process_corpse_pulse
+
+        process_corpse_pulse(event)
 
     def at_world_time_pulse(self, event: PulseEvent) -> None:
         """Advance the persisted clock supplied by ENV-01."""

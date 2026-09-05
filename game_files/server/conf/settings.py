@@ -38,7 +38,11 @@ SERVERNAME = "game"
 # Account #1 (superuser) still gets a character via initial_setup.py regardless of this flag.
 AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
 AUTO_PUPPET_ON_LOGIN = False
-MAX_NR_CHARACTERS = 5
+MAX_NR_CHARACTERS = 1
+# Accounts may have several connected clients, but WORLD-04 permits only one
+# of them to control the account's sole character at a time.
+MULTISESSION_MODE = 2
+MAX_NR_SIMULTANEOUS_PUPPETS = 1
 CHARGEN_MENU = "world.chargen_menu"
 SERVER_SESSION_CLASS = "server.conf.serversession.ServerSession"
 
@@ -61,11 +65,31 @@ GAME_PULSE_CADENCES = {
     "weather": 300,
     "resets": 60,
 }
+# Combat action clocks are measured in combat-pulse tokens. CharacterStats
+# adjusts this base cadence through its Reaction-derived ``combat_delay`` API.
+GAME_COMBAT_BASE_DELAY = 1.0
+# Ordered upper bounds for COMBAT-09's target-vs-observer live threat ratio.
+# COMBAT-10 calibration targets the upper bounds in the paired simulated target
+# win-rate bands below: trivial <=10%, easy <=25%, even <=55%, dangerous <=75%,
+# deadly <=90%, and overwhelming above 90%. They remain server policy, not
+# player-visible target statistics.
+COMBAT_CONSIDER_THRESHOLDS = (0.25, 0.5, 1.25, 2.0, 4.0)
+COMBAT_CONSIDER_WIN_RATE_BOUNDS = (0.10, 0.25, 0.55, 0.75, 0.90)
+# COMBAT-06 resolves this stable ``area:room_key`` pair at entry. Set it in
+# secret_settings.py for each deployed world; an unset/ambiguous value fails
+# closed for dead-character entry rather than guessing from a mutable home.
+COMBAT_RESPAWN_SANCTUARY = None
+COMBAT_LINKDEAD_MINUTES = 30
 
 # RULES-05 limits recursive carried objects independently of weight.  Builders
 # may override this per character/NPC with ``carry_item_limit`` when needed.
 CARRIED_ITEM_LIMIT = 100
 MAX_CONTAINER_NESTING = 20
+# COMBAT-05 converts these policy durations to durable corpse-lane pulse
+# counts at creation. NPC prototypes may set ``corpse_decay_minutes``; PC
+# duration is deliberately global policy.
+NPC_CORPSE_DECAY_MINUTES = 10
+PC_CORPSE_DECAY_MINUTES = 30
 GLOBAL_SCRIPTS = {
     "game_pulse": {
         "typeclass": "typeclasses.scripts.GamePulseScript",

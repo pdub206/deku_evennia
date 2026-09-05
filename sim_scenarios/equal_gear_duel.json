@@ -1,0 +1,48 @@
+{
+  "identity": "example_equal_gear_duel",
+  "max_actions": 1000,
+  "max_rounds": 200,
+  "base_delay": 1.0,
+  "teams": [
+    [
+      {
+        "name": "player fighter",
+        "level": 3,
+        "hp": 28,
+        "armor_class": 14,
+        "reaction_modifier": 2,
+        "profile": {
+          "name": "longsword",
+          "ability": "Strength",
+          "attack_bonus": 5,
+          "damage_dice": "1d8",
+          "damage_base": 0,
+          "damage_bonus": 2,
+          "damage_type": "slashing",
+          "proficient": true
+        }
+      }
+    ],
+    [
+      {
+        "name": "ordinary guard",
+        "level": 3,
+        "hp": 28,
+        "armor_class": 14,
+        "reaction_modifier": 2,
+        "is_npc": true,
+        "xp_reward": 100,
+        "profile": {
+          "name": "longsword",
+          "ability": "Strength",
+          "attack_bonus": 5,
+          "damage_dice": "1d8",
+          "damage_base": 0,
+          "damage_bonus": 2,
+          "damage_type": "slashing",
+          "proficient": true
+        }
+      }
+    ]
+  ]
+}

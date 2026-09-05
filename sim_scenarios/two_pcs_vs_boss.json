@@ -1,0 +1,83 @@
+{
+  "identity": "example_two_pcs_vs_boss",
+  "max_actions": 2000,
+  "max_rounds": 300,
+  "base_delay": 1.0,
+  "teams": [
+    [
+      {
+        "name": "quick striker",
+        "level": 6,
+        "hp": 42,
+        "armor_class": 15,
+        "reaction_modifier": 8,
+        "uses_death_saves": true,
+        "profile": {
+          "name": "rapier",
+          "ability": "Dexterity",
+          "attack_bonus": 7,
+          "damage_dice": "1d8",
+          "damage_base": 0,
+          "damage_bonus": 4,
+          "damage_type": "piercing",
+          "proficient": true
+        }
+      },
+      {
+        "name": "shield bearer",
+        "level": 6,
+        "hp": 52,
+        "armor_class": 18,
+        "reaction_modifier": -2,
+        "uses_death_saves": true,
+        "mitigation": [
+          {
+            "percentage": 20,
+            "flat": 2,
+            "damage_types": ["slashing", "piercing", "bludgeoning"],
+            "locations": ["head", "neck", "body", "right shoulder", "left shoulder", "right arm", "left arm", "right leg", "left leg"]
+          }
+        ],
+        "profile": {
+          "name": "warhammer",
+          "ability": "Strength",
+          "attack_bonus": 7,
+          "damage_dice": "1d8",
+          "damage_base": 0,
+          "damage_bonus": 4,
+          "damage_type": "bludgeoning",
+          "proficient": true
+        }
+      }
+    ],
+    [
+      {
+        "name": "armored ogre captain",
+        "level": 8,
+        "hp": 105,
+        "armor_class": 16,
+        "reaction_modifier": -4,
+        "is_npc": true,
+        "xp_reward": 600,
+        "mitigation": [
+          {
+            "percentage": 25,
+            "flat": 2,
+            "damage_types": ["slashing", "piercing", "bludgeoning"],
+            "locations": ["head", "neck", "body", "right shoulder", "left shoulder", "right arm", "left arm", "right leg", "left leg"]
+          }
+        ],
+        "profile": {
+          "name": "great axe",
+          "ability": "Strength",
+          "attack_bonus": 8,
+          "damage_dice": "1d12",
+          "damage_base": 0,
+          "damage_bonus": 5,
+          "damage_type": "slashing",
+          "proficient": true
+        }
+      }
+    ]
+  ]
+}

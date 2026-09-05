@@ -21,6 +21,8 @@ from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
 from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
+from systems.corpses import (CorpseError, inspect_corpse, withdraw,
+                             withdraw_many)
 from systems.encumbrance import can_receive, character_load
 from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
                                allowed_wear_locations, wear_phrase)
@@ -39,6 +41,33 @@ class CmdLook(_BaseLook):
     """
 
     action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Add public corpse inspection without changing ordinary look behavior."""
+        prefix = "in "
+        if not self.args.casefold().startswith(prefix):
+            super().func()
+            return
+        target_name = self.args[len(prefix) :].strip()
+        if not target_name:
+            self.msg("Look in what?")
+            return
+        target = self.caller.search(target_name, location=self.caller.location)
+        if not target:
+            return
+        if not target.is_typeclass("typeclasses.objects.Corpse", exact=False):
+            self.msg("You cannot look inside that.")
+            return
+        try:
+            contents = inspect_corpse(target, self.caller)
+        except CorpseError:
+            self.msg("That corpse cannot be inspected right now.")
+            return
+        if not contents:
+            self.msg(f"The corpse of {target.key.removeprefix('corpse of ')} is empty.")
+            return
+        lines = [item.get_display_name(self.caller) for item in contents]
+        self.msg(f"Inside {target.key}:\n" + "\n".join(f"  {line}" for line in lines))
 
 
 class CmdHome(_BaseHome):
@@ -135,6 +164,9 @@ class CmdGet(_BaseGet):
 
     def func(self) -> None:
         """Preflight every selected object so a batch never partially picks up."""
+        if " from " in self.args.casefold():
+            self._get_from_corpse()
+            return
         caller = self.caller
         if not self.args:
             self.msg("Get what?")
@@ -176,6 +208,77 @@ class CmdGet(_BaseGet):
         caller.location.msg_contents(
             f"$You() $conj(pick) up {obj_name}.", from_obj=caller
         )
+
+    def _get_from_corpse(self) -> None:
+        """Withdraw a selected item or every eligible item from one corpse."""
+        item_name, separator, corpse_name = self.args.partition(" from ")
+        if not separator:
+            # Preserve the user's original capitalization when a mixed-case
+            # separator reached us through an unusual client/parser path.
+            index = self.args.casefold().find(" from ")
+            item_name, corpse_name = self.args[:index], self.args[index + 6 :]
+        item_name, corpse_name = item_name.strip(), corpse_name.strip()
+        if not item_name or not corpse_name:
+            self.msg("Usage: get <item> from <corpse>")
+            return
+        caller = self.caller
+        corpse = caller.search(corpse_name, location=caller.location)
+        if not corpse:
+            return
+        if not corpse.is_typeclass("typeclasses.objects.Corpse", exact=False):
+            self.msg("You can only withdraw items from a corpse this way.")
+            return
+        if item_name.casefold() == "all":
+            self._get_all_from_corpse(corpse)
+            return
+        item = caller.search(
+            item_name,
+            location=corpse,
+            stacked=self.number,
+            nofound_string=f"There is no {item_name} in that corpse.",
+            multimatch_string=f"There is more than one {item_name} in that corpse:",
+        )
+        if not item:
+            return
+        if isinstance(item, (list, tuple)):
+            self.msg("Choose one item to remove from the corpse.")
+            return
+        try:
+            result = withdraw(corpse, caller, item)
+        except CorpseError:
+            self.msg("That corpse cannot be looted right now.")
+            return
+        if not result.moved:
+            self.msg(result.message)
+            return
+        caller.location.msg_contents(
+            f"$You() $conj(take) {item.get_display_name(caller)} from {corpse.key}.",
+            from_obj=caller,
+        )
+
+    def _get_all_from_corpse(self, corpse: Any) -> None:
+        """Report every independent bulk-loot outcome in deterministic order."""
+        try:
+            results = withdraw_many(corpse, self.caller)
+        except CorpseError:
+            self.msg("That corpse cannot be looted right now.")
+            return
+        moved = [result.item for result in results if result.moved]
+        failed = [result for result in results if not result.moved]
+        if moved:
+            names = ", ".join(item.get_display_name(self.caller) for item in moved)
+            self.msg(f"You take: {names}.")
+            self.caller.location.msg_contents(
+                f"$You() $conj(search) {corpse.key}.", from_obj=self.caller
+            )
+        if failed:
+            reasons = " ".join(
+                f"{result.item.get_display_name(self.caller)}: {result.message}"
+                for result in failed
+            )
+            self.msg(f"Left behind — {reasons}")
+        if not results:
+            self.msg("That corpse is empty.")
 
 
 class CmdDrop(_BaseDrop):
