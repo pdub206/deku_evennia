@@ -225,6 +225,7 @@ def resolve_basic_attack(
         mitigation.final,
         critical=outcome is AttackOutcome.CRITICAL,
         emit_messages=False,
+        source=attacker,
     )
     result = AttackResult(
         acted=True,

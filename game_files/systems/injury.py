@@ -128,7 +128,13 @@ def imposed_position(owner: Any) -> Position | None:
 
 
 def apply_damage(
-    owner: Any, amount: int, *, critical: bool = False, emit_messages: bool = True
+    owner: Any,
+    amount: int,
+    *,
+    critical: bool = False,
+    emit_messages: bool = True,
+    source: Any | None = None,
+    source_kind: str = "damage",
 ) -> InjuryResult:
     """Apply contextual damage and atomically reconcile HP with injury state."""
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
@@ -144,6 +150,17 @@ def apply_damage(
     if amount == 0:
         return _result(
             True, previous_hp, previous_hp, record, "no_damage", previous=record
+        )
+
+    # Attribution is retained before an otherwise valid source can be removed
+    # by the same combat action.  It intentionally does not affect HP rules.
+    try:
+        from systems.rewards import record_damage
+
+        record_damage(owner, source, source_kind=source_kind)
+    except Exception:
+        logger.log_trace(
+            f"Could not record COMBAT-07 damage attribution for #{getattr(owner, 'id', '?')}."
         )
 
     final_hp = owner.stats.take_damage(amount)
@@ -166,7 +183,7 @@ def apply_damage(
         next_record = _with_failure(record, 2 if critical else 1)
         reason = "death_save_failure"
 
-    _write(owner, next_record)
+    _write(owner, next_record, source=source)
     cleanup = next_record.state in {
         InjuryState.DYING,
         InjuryState.INCAPACITATED,
@@ -425,7 +442,7 @@ def _with_failure(record: InjuryRecord, amount: int) -> InjuryRecord:
     )
 
 
-def _write(owner: Any, record: InjuryRecord) -> None:
+def _write(owner: Any, record: InjuryRecord, *, source: Any | None = None) -> None:
     """Persist the exact validated primitive payload."""
     owner.attributes.add(
         INJURY_ATTRIBUTE,
@@ -443,6 +460,9 @@ def _write(owner: Any, record: InjuryRecord) -> None:
         # idempotent follow-up and isolates a recoverable corpse failure from
         # the irreversible injury transition.
         try:
+            from systems.rewards import resolve_death
+
+            resolve_death(owner, record.death_id or "", source=source)
             from systems.corpses import create_corpse
 
             corpse = create_corpse(owner, record.death_id or "")

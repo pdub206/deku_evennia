@@ -688,6 +688,7 @@ class TestEditNewNpc(EvenniaCommandTest):
             "charisma": 8,
             "level": 1,
             "xp": 0,
+            "xp_reward": 0,
             "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,
@@ -723,6 +724,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "charisma",
                 "level",
                 "xp",
+                "xp_reward",
                 "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
@@ -768,6 +770,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuild(), "new npc City Guard")
         self.call(CmdBuildSet(), "class commoner", "Invalid value for 'class'")
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
+        self.call(CmdBuildSet(), "xp_reward 1000001", "Invalid value for 'xp_reward'")
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
 

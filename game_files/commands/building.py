@@ -541,6 +541,7 @@ class CmdBuild(Command):
             "charisma": 8,
             "level": 1,
             "xp": 0,
+            "xp_reward": 0,
             "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,

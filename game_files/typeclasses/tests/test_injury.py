@@ -69,10 +69,18 @@ class TestInjuryState(EvenniaTest):
         npc = apply_damage(self.char2, 10, emit_messages=False)
         self.assertEqual(npc.state, InjuryState.DEAD)
 
-        self.char2.db.is_player_character = True
-        self.char2.db.hp_current = 10
-        self.char2.attributes.remove("injury_state")
-        massive = apply_damage(self.char2, 20, emit_messages=False)
+        # COMBAT-06 extracts an ordinary NPC after its corpse transaction, so
+        # use a fresh PC to independently exercise massive-damage policy.
+        from evennia import create_object
+
+        character = create_object(
+            "typeclasses.characters.Character",
+            key="massive target",
+            location=self.room1,
+        )
+        character.db.is_player_character = True
+        character.db.hp_current = 10
+        massive = apply_damage(character, 20, emit_messages=False)
         self.assertEqual(massive.reason, "massive_damage")
         self.assertEqual(massive.state, InjuryState.DEAD)
 

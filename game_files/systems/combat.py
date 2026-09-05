@@ -207,6 +207,15 @@ def get_target(actor: Any) -> Any | None:
     return target
 
 
+def get_encounter_id(actor: Any) -> int | None:
+    """Return an actor's current encounter identity without changing combat."""
+    actor_id = _object_id(actor)
+    if actor_id is None:
+        return None
+    state = _read_state()
+    return _participant_encounter(state, actor_id)
+
+
 def schedule_flee(actor: Any, exit_id: int) -> CombatOperationResult:
     """Persist one replacement-safe flee intent for actor's next ready action."""
     if not _positive_int(exit_id):
@@ -481,6 +490,7 @@ def _repair_state(state: dict[str, Any]) -> None:
                 participants.pop(actor_id, None)
         if len(participants) < 2:
             del state["encounters"][encounter_id]
+            _close_reward_ledger(int(encounter_id))
             continue
         seen.update(valid_ids)
         for actor_id, record in participants.items():
@@ -494,6 +504,7 @@ def _repair_state(state: dict[str, Any]) -> None:
             for actor_id in participants
         ):
             del state["encounters"][encounter_id]
+            _close_reward_ledger(int(encounter_id))
 
 
 def _participant_is_valid(actor: Any, encounter: Mapping[str, Any]) -> bool:
@@ -605,7 +616,20 @@ def _merge_encounters(state: dict[str, Any], first_id: int, second_id: int) -> i
         raise CombatError("Cannot merge combat encounters in different rooms.")
     keep["participants"].update(remove["participants"])
     del state["encounters"][str(remove_id)]
+    _close_reward_ledger(remove_id)
     return keep_id
+
+
+def _close_reward_ledger(encounter_id: int) -> None:
+    """Notify the optional reward service when an encounter cannot continue."""
+    try:
+        from systems.rewards import close_encounter_ledger
+
+        close_encounter_ledger(encounter_id)
+    except Exception:
+        logger.log_trace(
+            f"Could not close COMBAT-07 ledger for encounter {encounter_id}."
+        )
 
 
 def _remove_participant(

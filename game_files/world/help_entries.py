@@ -241,6 +241,28 @@ HELP_ENTRY_DICTS = [
             Builders may set an NPC's |wcorpse_decay_minutes|n prototype field
             to a positive duration in minutes. Player corpse duration is a
             global game policy.
+
+            NPC templates also have an |wxp_reward|n field. Set it to the
+            non-negative base XP awarded when that NPC is defeated; zero means
+            no XP. This is separate from the NPC's own |wxp|n statistic. NPC
+            carried equipment and inventory are the only loot: changing a
+            template does not replenish an existing NPC's lost items.
+        """,
+    },
+    {
+        "key": "experience from combat",
+        "aliases": ["combat experience", "npc xp", "xp rewards"],
+        "category": "Combat",
+        "text": """
+            Defeating an NPC can award Experience Points. The NPC's authored
+            base reward is adjusted by ten percent for every level it is above
+            or below you, from zero at ten levels below to double at ten levels
+            above. You must be alive, conscious, and in the NPC's room when it
+            dies. The most recent eligible contributor receives the whole award.
+
+            Player-versus-player deaths never award XP. NPC loot is simply what
+            the NPC was still carrying or wearing when it died; equipment or
+            items it lost while alive do not reappear.
         """,
     },
     {

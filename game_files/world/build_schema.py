@@ -329,6 +329,7 @@ ITEM_FIELDS: dict[str, Field] = {
 _ALIGNMENT_NAMES = tuple(name for name, _abbr, _desc in ALIGNMENTS)
 _ABILITY_DB_NAMES = {name: name.lower() for name in ABILITY_NAMES}
 _PC_LANGUAGES = ("Common", *STANDARD_LANGUAGES)
+MAX_NPC_XP_REWARD = 1_000_000
 
 # NPCs use the Character typeclass and the same canonical stat inputs written by
 # chargen. Builder-facing derived fields target explicit overrides so changing a
@@ -395,6 +396,11 @@ NPC_FIELDS: dict[str, Field] = {
     },
     "level": Field("attr", as_int_range(1, 20), "character level (1-20)"),
     "xp": Field("attr", as_nonneg_int, "experience points (zero or greater)"),
+    "xp_reward": Field(
+        "attr",
+        as_int_range(0, MAX_NPC_XP_REWARD),
+        f"XP awarded for this NPC's defeat (0-{MAX_NPC_XP_REWARD}; zero means no XP)",
+    ),
     "corpse_decay_minutes": Field(
         "attr",
         as_positive_minutes,
