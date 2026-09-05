@@ -16,6 +16,7 @@ from evennia.commands.default.general import CmdLook as _BaseLook
 from evennia.commands.default.general import CmdPose as _BasePose
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
+from systems.encumbrance import can_receive, character_load
 from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
                                allowed_wear_locations, wear_phrase)
 
@@ -77,7 +78,14 @@ class CmdInventory(_BaseInventory):
                 items, caller=caller
             )
         ]
+        load = character_load(caller)
         string = "|wYou are carrying:|n\n" + "\n".join(lines)
+        string += (
+            f"\n|wLoad:|n {load.count}/{load.count_limit} items, "
+            f"{load.weight:g}/{load.weight_limit:g} lb."
+        )
+        if load.overloaded:
+            string += " |r(OVERLOADED)|n"
         caller.msg(text=(string, {"type": "inventory"}))
 
 
@@ -89,6 +97,50 @@ class CmdGet(_BaseGet):
     """
 
     action_category = ActionCategory.MANIPULATE
+
+    def func(self) -> None:
+        """Preflight every selected object so a batch never partially picks up."""
+        caller = self.caller
+        if not self.args:
+            self.msg("Get what?")
+            return
+        objs = caller.search(self.args, location=caller.location, stacked=self.number)
+        if not objs:
+            return
+        objs = utils.make_iter(objs)
+        if len(objs) == 1 and caller == objs[0]:
+            self.msg("You can't get yourself.")
+            return
+        for obj in objs:
+            if not obj.access(caller, "get"):
+                self.msg(obj.db.get_err_msg or "You can't get that.")
+                return
+            if not obj.at_pre_get(caller):
+                return
+        result = can_receive(caller, objs)
+        if not result.allowed:
+            caller.msg(result.message)
+            return
+        moved = []
+        sources = {obj: obj.location for obj in objs}
+        for obj in objs:
+            if obj.move_to(caller, quiet=True, move_type="get", capacity_actor=caller):
+                moved.append(obj)
+                obj.at_get(caller)
+            else:
+                for moved_obj in moved:
+                    moved_obj.move_to(
+                        sources[moved_obj],
+                        quiet=True,
+                        move_type="rollback",
+                        encumbrance_bypass="batch get rollback",
+                    )
+                self.msg("That can't be picked up.")
+                return
+        obj_name = moved[0].get_numbered_name(len(moved), caller, return_string=True)
+        caller.location.msg_contents(
+            f"$You() $conj(pick) up {obj_name}.", from_obj=caller
+        )
 
 
 class CmdDrop(_BaseDrop):
@@ -109,6 +161,60 @@ class CmdGive(_BaseGive):
     """
 
     action_category = ActionCategory.MANIPULATE
+
+    def func(self) -> None:
+        """Preflight aggregate giving so the recipient gets all objects or none."""
+        caller = self.caller
+        if not self.args or not self.rhs:
+            caller.msg("Usage: give <inventory object> = <target>")
+            return
+        to_give = caller.search(
+            self.lhs,
+            location=caller,
+            nofound_string=f"You aren't carrying {self.lhs}.",
+            multimatch_string=f"You carry more than one {self.lhs}:",
+            stacked=self.number,
+        )
+        if not to_give:
+            return
+        target = caller.search(self.rhs)
+        if not target:
+            return
+        to_give = utils.make_iter(to_give)
+        singular, plural = to_give[0].get_numbered_name(len(to_give), caller)
+        if target == caller:
+            caller.msg(
+                f"You keep {plural if len(to_give) > 1 else singular} to yourself."
+            )
+            return
+        for obj in to_give:
+            if not obj.at_pre_give(caller, target):
+                return
+        result = can_receive(target, to_give)
+        if not result.allowed:
+            caller.msg(result.message)
+            return
+        moved = []
+        sources = {obj: obj.location for obj in to_give}
+        for obj in to_give:
+            if obj.move_to(target, quiet=True, move_type="give", capacity_actor=caller):
+                moved.append(obj)
+                obj.at_give(caller, target)
+            else:
+                for moved_obj in moved:
+                    moved_obj.move_to(
+                        sources[moved_obj],
+                        quiet=True,
+                        move_type="rollback",
+                        encumbrance_bypass="batch give rollback",
+                    )
+                caller.msg(
+                    f"You could not give that to {target.get_display_name(caller)}."
+                )
+                return
+        obj_name = to_give[0].get_numbered_name(len(moved), caller, return_string=True)
+        caller.msg(f"You give {obj_name} to {target.get_display_name(caller)}.")
+        target.msg(f"{caller.get_display_name(target)} gives you {obj_name}.")
 
 
 class CmdJunk(Command):

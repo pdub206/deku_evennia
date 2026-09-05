@@ -11,6 +11,7 @@ with a location in the game world (like Characters, Rooms, Exits).
 from typing import Any
 
 from evennia.objects.objects import DefaultObject
+from systems.encumbrance import audit_bypass, can_receive
 from systems.equipment import clear_equipped_state
 
 
@@ -24,6 +25,24 @@ class ObjectParent:
     take precedence.
 
     """
+
+    def at_pre_object_receive(self, arriving_object, source_location, **kwargs) -> bool:
+        """Enforce the one capacity policy for direct gameplay ``move_to`` calls."""
+        bypass_reason = kwargs.get("encumbrance_bypass")
+        if bypass_reason is not None:
+            if not isinstance(bypass_reason, str) or not bypass_reason.strip():
+                return False
+            audit_bypass(arriving_object, self, bypass_reason)
+            return super().at_pre_object_receive(
+                arriving_object, source_location, **kwargs
+            )
+
+        result = can_receive(self, arriving_object)
+        if not result.allowed:
+            actor = kwargs.get("capacity_actor") or arriving_object
+            actor.msg(result.message)
+            return False
+        return super().at_pre_object_receive(arriving_object, source_location, **kwargs)
 
 
 class Object(ObjectParent, DefaultObject):

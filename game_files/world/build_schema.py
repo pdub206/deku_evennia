@@ -16,29 +16,17 @@ player-safe reason on bad input; callers turn that into a friendly message.
 """
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import (
-    ARMOR_CATEGORIES,
-    ATTACK_ABILITIES,
-    DAMAGE_TYPES,
-    MAX_MITIGATION_PERCENT,
-    PHYSICAL_DAMAGE_TYPES,
-    WEAPON_CATEGORIES,
-    WEAR_LOCATIONS,
-)
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ALIGNMENTS,
-    BACKGROUNDS,
-    CLASSES,
-    MAX_AGE,
-    MIN_AGE,
-    SKILLS,
-    SPECIES,
-    STANDARD_LANGUAGES,
-)
+from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
+                               DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
+                               PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
+                               WEAR_LOCATIONS)
+from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
+                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
+                                STANDARD_LANGUAGES)
 
 
 class Field(NamedTuple):
@@ -114,12 +102,13 @@ def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
 def as_weight(raw: str) -> float:
     """A weight in pounds: a number that is zero or greater."""
     try:
-        value = float(raw.strip())
-    except ValueError:
+        value = Decimal(raw.strip())
+    except (InvalidOperation, ValueError):
         raise ValueError("expected a number of pounds.")
-    if value < 0:
-        raise ValueError("weight cannot be negative.")
-    return value
+    if not value.is_finite() or value < 0:
+        raise ValueError("weight must be finite and cannot be negative.")
+    # Match the canonical encumbrance representation at authoring time.
+    return float(value.quantize(Decimal("0.01")))
 
 
 _DICE_RE = re.compile(r"^[1-9]\d*d[1-9]\d*([+-]\d+)?$")

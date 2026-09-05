@@ -16,6 +16,7 @@ from evennia.objects.objects import DefaultCharacter
 from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
 from systems.effects import EffectHandler, EffectStorageError
+from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 from systems.lifecycle import (deliver_character_notices,
                                mark_character_available,
@@ -108,6 +109,11 @@ class Character(ObjectParent, DefaultCharacter):
             decision = self.actions.check(ActionCategory.MOVE)
             if not decision.allowed:
                 self.msg(decision.message)
+                return False
+            if character_load(self).overloaded:
+                self.msg(
+                    "You are too encumbered to move. Drop or give away some items."
+                )
                 return False
         # TODO(INTERACT-03): Apply terrain cost and stats.movement_delay() when
         # travel scheduling is introduced.

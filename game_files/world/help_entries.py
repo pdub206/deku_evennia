@@ -110,6 +110,16 @@ HELP_ENTRY_DICTS = [
             Effective statistics update when your abilities, level, equipment,
             or active conditions change.
 
+            ## Encumbrance
+
+            Your sheet and |winventory|n show carried item count and weight. Your
+            carrying capacity is based on effective Strength and size. A filled
+            container counts as itself plus everything inside it. You may carry
+            exactly your listed limits, but cannot pick up or receive anything
+            that would exceed either one. If a later change leaves you
+            overloaded, drop or give away items until your load is legal; you
+            cannot use normal exits while overloaded.
+
             ## Natural Recovery
 
             While you are in the world, HP recovers automatically every minute

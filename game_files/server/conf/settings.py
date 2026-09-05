@@ -61,6 +61,11 @@ GAME_PULSE_CADENCES = {
     "weather": 300,
     "resets": 60,
 }
+
+# RULES-05 limits recursive carried objects independently of weight.  Builders
+# may override this per character/NPC with ``carry_item_limit`` when needed.
+CARRIED_ITEM_LIMIT = 100
+MAX_CONTAINER_NESTING = 20
 GLOBAL_SCRIPTS = {
     "game_pulse": {
         "typeclass": "typeclasses.scripts.GamePulseScript",

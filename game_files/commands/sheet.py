@@ -6,6 +6,7 @@ import time
 
 from commands.command import Command
 from systems.action_policy import ActionCategory
+from systems.encumbrance import character_load
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
 _GENDER_LABELS = {
@@ -125,7 +126,11 @@ class CmdSheet(Command):
             right = combat_lines[i] if i < len(combat_lines) else ""
             out += f"{left:<28}  {right}\n"
 
-        out += f"  |yCarry Capacity:|n  {stats.carry_capacity} lb.\n"
+        load = character_load(char)
+        out += (
+            f"  |yCarried Load:|n    {load.count}/{load.count_limit} items, "
+            f"{load.weight:g}/{load.weight_limit:g} lb.\n"
+        )
         out += f"  |yLanguages:|n      {', '.join(languages)}\n"
         out += _SEP
 

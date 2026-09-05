@@ -12,15 +12,9 @@ from numbers import Real
 from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    CARRY_CAPACITY_MULTIPLIER,
-    CLASSES,
-    SKILLS,
-    SPECIES,
-    ability_modifier,
-)
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
+                                CARRY_CAPACITY_MULTIPLIER, CLASSES, SKILLS,
+                                SPECIES, ability_modifier)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -372,4 +366,7 @@ class CharacterStats:
         """Return carrying capacity in pounds for effective Strength and size."""
         size = self._attribute("size", "Medium")
         multiplier = CARRY_CAPACITY_MULTIPLIER.get(size, 15.0)
-        return max(0, int(self.ability_score("Strength") * multiplier))
+        base = int(self.ability_score("Strength") * multiplier)
+        # RULES-05 keeps capacity extensible for effects and equipment without
+        # creating a second carrying formula outside the canonical stat API.
+        return max(0, base + self._modifier_total("carry_capacity"))
