@@ -6,7 +6,14 @@ from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.attacks import can_attack
 from systems.combat import get_target, schedule_tactical_action, start_fight
+from systems.combat_controls import (
+    estimate_threat,
+    set_combat_prompt,
+    set_combat_verbose,
+    set_wimpy,
+)
 from systems.equipment import HIT_LOCATIONS
+from systems.injury import InjuryError, InjuryState, injury_record
 
 
 class CmdAttack(Command):
@@ -57,6 +64,122 @@ class CmdAttack(Command):
             )
             return
         self.caller.msg(f"You begin fighting {target.get_display_name(self.caller)}.")
+
+
+class CmdConsider(Command):
+    """Assess a visible character without beginning a fight.
+
+    Usage:
+      consider <target>
+    """
+
+    key = "consider"
+    help_category = "Combat"
+    action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Make a side-effect-free current-stat estimate for one room target."""
+        if not self.args.strip():
+            self.caller.msg("Consider whom?")
+            return
+        target = self.caller.search(self.args.strip(), location=self.caller.location)
+        from typeclasses.characters import Character
+
+        if target is None:
+            return
+        if target is self.caller or not isinstance(target, Character):
+            self.caller.msg("You can only consider another character here.")
+            return
+        try:
+            if injury_record(target).state is InjuryState.DEAD:
+                self.caller.msg("That target cannot fight.")
+                return
+        except InjuryError:
+            self.caller.msg("You cannot assess that target.")
+            return
+        estimate = estimate_threat(self.caller, target)
+        name = target.get_display_name(self.caller)
+        self.caller.msg(f"You judge {name} to be {estimate.band}.")
+        if (
+            _is_player_character(target)
+            and injury_record(target).state is InjuryState.CONSCIOUS
+        ):
+            target.msg(
+                f"{self.caller.get_display_name(target)} looks you over carefully."
+            )
+
+
+class CmdWimpy(Command):
+    """Set the HP percentage at which you automatically try to flee.
+
+    Usage:
+      wimpy <0-90>
+    """
+
+    key = "wimpy"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Validate and save one explicit automatic-flee percentage."""
+        try:
+            value = int(self.args.strip())
+            set_wimpy(self.caller, value)
+        except (TypeError, ValueError):
+            self.caller.msg("Usage: wimpy <0-90>.")
+            return
+        if value:
+            self.caller.msg(f"You will try to flee at {value}% HP or lower.")
+        else:
+            self.caller.msg("Automatic fleeing is disabled.")
+
+
+class CmdCombatPrompt(Command):
+    """Enable or disable the extra combat prompt.
+
+    Usage:
+      combatprompt <on|off>
+    """
+
+    key = "combatprompt"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Persist a prompt-only preference without changing combat state."""
+        value = self.args.strip().lower()
+        if value not in {"on", "off"}:
+            self.caller.msg("Usage: combatprompt <on|off>.")
+            return
+        set_combat_prompt(self.caller, value == "on")
+        self.caller.msg(f"Combat prompt {value}.")
+
+
+class CmdCombatVerbose(Command):
+    """Choose compact, normal, or detailed personal combat messages.
+
+    Usage:
+      combatverbose <compact|normal|detailed>
+    """
+
+    key = "combatverbose"
+    help_category = "Combat"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Persist a presentation preference without changing any combat rules."""
+        try:
+            mode = set_combat_verbose(self.caller, self.args.strip())
+        except ValueError:
+            self.caller.msg("Usage: combatverbose <compact|normal|detailed>.")
+            return
+        self.caller.msg(f"Combat verbosity set to {mode}.")
+
+
+def _is_player_character(character) -> bool:
+    """Use the durable PC/NPC marker rather than transient session state."""
+    value = character.attributes.get("is_player_character")
+    return True if value is None else bool(value)
 
 
 def _attack_denial_message(reason: str) -> str:

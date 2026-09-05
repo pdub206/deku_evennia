@@ -35,23 +35,43 @@ class _CommandHooksMixin:
         if super().at_pre_cmd():
             return True
         if self.action_category is None:
+            self.caller.ndb._command_running = True
             return False
         policy = getattr(self.caller, "actions", None)
         if policy is None:
+            self.caller.ndb._command_running = True
             return False
         decision = policy.check(self.action_category)
         if decision.allowed:
+            # Combat-state hooks can run inside ``func``. Mark that narrow
+            # window so a refresh updates the cached value and this post-hook
+            # emits the one final prompt after command text.
+            self.caller.ndb._command_running = True
             return False
         self.caller.msg(decision.message)
         return True
 
     def at_post_cmd(self):
-        super().at_post_cmd()
-        caller = self.caller
-        ndb = getattr(caller, "ndb", None)
-        prompt = ndb._prompt if ndb is not None else None
-        if prompt:
-            caller.msg(prompt=prompt)
+        try:
+            super().at_post_cmd()
+            caller = self.caller
+            ndb = getattr(caller, "ndb", None)
+            prompt = (
+                ndb._prompt
+                if ndb is not None and ndb._prompt
+                else (
+                    ndb._combat_prompt
+                    if ndb is not None
+                    and ndb._combat_prompt
+                    and caller.sessions.count()
+                    else None
+                )
+            )
+            if prompt:
+                caller.msg(prompt=prompt)
+        finally:
+            if getattr(self.caller, "ndb", None) is not None:
+                self.caller.ndb._command_running = False
 
 
 class Command(_CommandHooksMixin, BaseCommand):
@@ -107,6 +127,16 @@ class CmdNoInput(BaseCommand):
 
     def func(self):
         ndb = getattr(self.caller, "ndb", None)
-        prompt = ndb._prompt if ndb is not None else None
+        prompt = (
+            ndb._prompt
+            if ndb is not None and ndb._prompt
+            else (
+                ndb._combat_prompt
+                if ndb is not None
+                and ndb._combat_prompt
+                and self.caller.sessions.count()
+                else None
+            )
+        )
         if prompt:
             self.caller.msg(prompt=prompt)

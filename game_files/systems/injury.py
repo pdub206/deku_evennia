@@ -73,6 +73,19 @@ class InjuryPulseResult:
     failures: int
 
 
+def _refresh_combat_controls(owner: Any, previous_hp: int, current_hp: int) -> None:
+    """Refresh COMBAT-09 after the injury state reaches its final value."""
+    try:
+        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
+
+        reconcile_wimpy(owner, previous_hp, current_hp)
+        refresh_combat_prompt(owner)
+    except Exception:
+        logger.log_trace(
+            f"Could not refresh COMBAT-09 controls for #{getattr(owner, 'id', '?')}."
+        )
+
+
 def injury_record(owner: Any) -> InjuryRecord:
     """Return the owner's validated injury record, creating a safe default."""
     raw = owner.attributes.get(INJURY_ATTRIBUTE)
@@ -194,6 +207,7 @@ def apply_damage(
     )
     if emit_messages and result.state is not record.state:
         _announce(owner, result)
+    _refresh_combat_controls(owner, previous_hp, final_hp)
     return result
 
 
@@ -220,6 +234,7 @@ def apply_healing(
     result = _result(True, previous_hp, final_hp, next_record, reason, previous=record)
     if emit_messages and reason == "recovered":
         _announce(owner, result)
+    _refresh_combat_controls(owner, previous_hp, final_hp)
     return result
 
 

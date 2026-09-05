@@ -17,8 +17,13 @@ from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult
 from systems.dice import roll, roll_damage_expression
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
-from systems.injury import (InjuryError, InjuryState, announce_transition,
-                            apply_damage, injury_record)
+from systems.injury import (
+    InjuryError,
+    InjuryState,
+    announce_transition,
+    apply_damage,
+    injury_record,
+)
 from systems.pulses import PulseEvent
 
 
@@ -279,13 +284,32 @@ def _message_for_attacker(attacker: Any, target: Any, result: AttackResult) -> s
     """Render the attacker-only view without hidden mechanical values."""
     name = target.get_display_name(attacker)
     if result.outcome is AttackOutcome.MISS:
-        return f"You miss {name}."
-    if result.final_damage == 0:
-        return f"Your blow against {name}'s {result.hit_location} is fully absorbed."
-    verb = "critically strike" if result.outcome is AttackOutcome.CRITICAL else "strike"
-    return (
-        f"You {verb} {name}'s {result.hit_location} for {result.final_damage} damage."
-    )
+        message = f"You miss {name}."
+    elif result.final_damage == 0:
+        message = f"Your blow against {name}'s {result.hit_location} is fully absorbed."
+    else:
+        verb = (
+            "critically strike"
+            if result.outcome is AttackOutcome.CRITICAL
+            else "strike"
+        )
+        message = f"You {verb} {name}'s {result.hit_location} for {result.final_damage} damage."
+    # Detailed mechanics are intentionally limited to the character who made
+    # this roll; target AC and every other character's private stats stay hidden.
+    try:
+        from systems.combat_controls import get_combat_verbose
+
+        if get_combat_verbose(attacker) == "detailed":
+            damage = ", ".join(str(value) for value in result.damage_rolls) or "-"
+            mitigation = result.mitigation.prevented if result.mitigation else 0
+            message += (
+                f" [d20 {result.die_roll} + {result.attack_bonus} = {result.total}; "
+                f"damage rolls {damage}; mitigated {mitigation}; final {result.final_damage}]"
+            )
+    except Exception:
+        # Presentation preferences must never turn a valid attack into a failed one.
+        pass
+    return message
 
 
 def _message_for_target(attacker: Any, target: Any, result: AttackResult) -> str:

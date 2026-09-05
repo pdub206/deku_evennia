@@ -17,15 +17,15 @@ from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
 from systems.combat import handle_departure, is_fighting
 from systems.effects import EffectHandler, EffectStorageError
-from systems.injury import InjuryError, imposed_position
 from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
+from systems.injury import InjuryError, imposed_position
 from systems.lifecycle import (
+    UnavailabilityCause,
     deliver_character_notices,
     mark_character_available,
     mark_character_unavailable,
     resolve_unavailability_cause,
-    UnavailabilityCause,
 )
 
 from .objects import ObjectParent
@@ -118,6 +118,16 @@ class Character(ObjectParent, DefaultCharacter):
         ):
             return False
         return True
+
+    def get_display_desc(self, looker: Any, **kwargs: Any) -> str:
+        """Add COMBAT-09's canonical qualitative health to character looks."""
+        description = super().get_display_desc(looker, **kwargs)
+        from systems.combat_controls import health_description
+
+        health = health_description(self)
+        return (
+            f"{description}\nHealth: {health}." if description else f"Health: {health}."
+        )
 
     def at_pre_move(self, destination, **kwargs) -> bool:
         """Apply the shared movement policy to voluntary traversal only."""

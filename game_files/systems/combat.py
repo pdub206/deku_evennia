@@ -15,12 +15,17 @@ from typing import Any
 from django.conf import settings
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
-from systems.lifecycle import (CharacterAvailability, CharacterLifecycleEvent,
-                               LifecycleConsumer, LifecycleError,
-                               ServerLifecycleEvent, ServerTransitionPhase,
-                               UnavailabilityCause,
-                               register_lifecycle_consumer,
-                               unregister_lifecycle_consumer)
+from systems.lifecycle import (
+    CharacterAvailability,
+    CharacterLifecycleEvent,
+    LifecycleConsumer,
+    LifecycleError,
+    ServerLifecycleEvent,
+    ServerTransitionPhase,
+    UnavailabilityCause,
+    register_lifecycle_consumer,
+    unregister_lifecycle_consumer,
+)
 from systems.pulses import PulseEvent, PulseLane
 
 COMBAT_CONFIG_KEY = "combat_registry"
@@ -96,6 +101,7 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
         if actor_encounter == target_encounter:
             changed = _set_target(state, actor_encounter, actor_id, target_id)
             _write_state(state)
+            _refresh_prompts(actor, target)
             return CombatOperationResult(True, changed, actor_encounter)
         encounter_id = _merge_encounters(state, actor_encounter, target_encounter)
     elif actor_encounter is not None:
@@ -111,6 +117,7 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
     _set_target(state, encounter_id, target_id, actor_id)
     _repair_state(state)
     _write_state(state)
+    _refresh_prompts(actor, target)
     return CombatOperationResult(True, True, encounter_id)
 
 
@@ -134,6 +141,7 @@ def change_target(actor: Any, target: Any) -> CombatOperationResult:
         return CombatOperationResult(False, False, reason="target is not in this fight")
     changed = _set_target(state, encounter_id, actor.id, target.id)
     _write_state(state)
+    _refresh_prompts(actor, target)
     return CombatOperationResult(True, changed, encounter_id)
 
 
@@ -146,9 +154,13 @@ def leave_fight(actor: Any) -> CombatOperationResult:
     encounter_id = _participant_encounter(state, actor_id)
     if encounter_id is None:
         return CombatOperationResult(True, False)
+    participants = tuple(state["encounters"][str(encounter_id)]["participants"])
     _remove_participant(state, encounter_id, actor_id)
     _repair_state(state)
     _write_state(state)
+    _refresh_prompts(
+        *(_get_character(int(participant)) for participant in participants)
+    )
     return CombatOperationResult(True, True, encounter_id)
 
 
@@ -164,9 +176,11 @@ def stop_encounter(encounter_id: int) -> CombatOperationResult:
     state = _read_state()
     if str(encounter_id) not in state["encounters"]:
         return CombatOperationResult(True, False, encounter_id)
+    participants = tuple(state["encounters"][str(encounter_id)]["participants"])
     _clear_encounter_conditions(state["encounters"][str(encounter_id)])
     del state["encounters"][str(encounter_id)]
     _write_state(state)
+    _refresh_prompts(*(_get_character(int(actor_id)) for actor_id in participants))
     return CombatOperationResult(True, True, encounter_id)
 
 
@@ -230,6 +244,7 @@ def schedule_flee(actor: Any, exit_id: int) -> CombatOperationResult:
     changed = record.get("pending_intent") != intent
     record["pending_intent"] = intent
     _write_state(state)
+    _refresh_prompts(actor)
     return CombatOperationResult(True, changed, encounter_id)
 
 
@@ -248,6 +263,7 @@ def schedule_stabilization(actor: Any, target: Any) -> CombatOperationResult:
     changed = record.get("pending_intent") != intent
     record["pending_intent"] = intent
     _write_state(state)
+    _refresh_prompts(actor)
     return CombatOperationResult(True, changed, encounter_id)
 
 
@@ -275,6 +291,7 @@ def schedule_tactical_action(
     changed = record.get("pending_intent") != intent
     record["pending_intent"] = intent
     _write_state(state)
+    _refresh_prompts(actor)
     return CombatOperationResult(True, changed, encounter_id)
 
 
@@ -424,6 +441,7 @@ def _process_encounter(
         intent = record.get("pending_intent")
         record["pending_intent"] = None
         _write_state(state)
+        _refresh_prompts(actor)
         if prone_action:
             actions += 1
             continue
@@ -471,6 +489,7 @@ def _process_encounter(
                 _remove_participant(state, encounter_id, target.id)
                 _repair_state(state)
                 _write_state(state)
+                _refresh_prompts(actor, target)
     return actions, failures
 
 
@@ -779,6 +798,18 @@ def _clear_encounter_conditions(encounter: Mapping[str, Any]) -> None:
             logger.log_trace(
                 f"Could not clear combat conditions for object #{actor_id}."
             )
+
+
+def _refresh_prompts(*actors: Any) -> None:
+    """Best-effort COMBAT-09 prompt refresh after a public state transition."""
+    try:
+        from systems.combat_controls import refresh_combat_prompt
+
+        for actor in actors:
+            if actor is not None:
+                refresh_combat_prompt(actor)
+    except Exception:
+        logger.log_trace("Could not refresh a COMBAT-09 combat prompt.")
 
 
 def _positive_int(value: Any) -> bool:

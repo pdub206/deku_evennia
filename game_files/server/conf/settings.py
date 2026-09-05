@@ -68,6 +68,9 @@ GAME_PULSE_CADENCES = {
 # Combat action clocks are measured in combat-pulse tokens. CharacterStats
 # adjusts this base cadence through its Reaction-derived ``combat_delay`` API.
 GAME_COMBAT_BASE_DELAY = 1.0
+# Ordered upper bounds for COMBAT-09's target-vs-observer live threat ratio.
+# COMBAT-10 will tune these against its deterministic balance simulations.
+COMBAT_CONSIDER_THRESHOLDS = (0.25, 0.5, 1.25, 2.0, 4.0)
 # COMBAT-06 resolves this stable ``area:room_key`` pair at entry. Set it in
 # secret_settings.py for each deployed world; an unset/ambiguous value fails
 # closed for dead-character entry rather than guessing from a mutable home.

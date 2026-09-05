@@ -221,6 +221,69 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "consider",
+        "aliases": ["assess", "combat estimate"],
+        "category": "Combat",
+        "text": """
+            Use |wconsider <target>|n to make a quick, non-hostile assessment of
+            a visible character in your room. It neither rolls dice nor starts a
+            fight. The result is a broad estimate — |wtrivial|n, |weasy|n,
+            |weven|n, |wdangerous|n, |wdeadly|n, or |woverwhelming|n — based on
+            both combatants' current health, effective level, equipment,
+            defenses, damage, and combat pace. Conditions and equipment can
+            change the answer. You never see another character's exact numbers.
+
+            A conscious player character you consider is privately notified that
+            you looked them over; nobody else in the room is notified.
+        """,
+    },
+    {
+        "key": "wimpy",
+        "aliases": ["automatic flee", "auto flee"],
+        "category": "Combat",
+        "text": """
+            Use |wwimpy <0-90>|n to choose the HP percentage at which your
+            character automatically queues an ordinary random |wflee|n attempt.
+            |wwimpy 0|n (the default) turns it off. The attempt happens only on
+            your next ready combat action; it never moves you immediately and
+            can still fail if no route remains available.
+
+            Wimpy triggers once when your HP crosses down to the selected value.
+            Healing above that value rearms it. You may always use |wflee|n
+            manually, including after an automatic attempt fails.
+        """,
+    },
+    {
+        "key": "combat prompt",
+        "aliases": ["combatprompt", "health"],
+        "category": "Combat",
+        "text": """
+            While fighting, the combat prompt shows your current and maximum HP,
+            your target's qualitative health, your queued action, and whether
+            wimpy is armed or triggered. Target HP and other private combat
+            numbers are never shown. Use |wcombatprompt on|n or
+            |wcombatprompt off|n; it is on by default and only changes the
+            prompt, never combat events.
+
+            Health descriptions are |wunhurt|n (100%), |whealthy|n (76--99%),
+            |wwounded|n (51--75%), |wbadly wounded|n (26--50%), and |wnear death|n
+            (1--25%). At 0 HP, the display says |wdying|n, |wstable|n, or |wdead|n.
+        """,
+    },
+    {
+        "key": "combat verbosity",
+        "aliases": ["combatverbose", "combat messages"],
+        "category": "Combat",
+        "text": """
+            Use |wcombatverbose compact|n, |wnormal|n, or |wdetailed|n to set
+            your saved combat-message preference. Normal is the default.
+            Compact keeps routine output brief; important damage, tactical,
+            injury, stabilization, and death events still appear. Detailed adds
+            your own attack and damage mechanics, but never another character's
+            Armor Class, modifiers, or private statistics.
+        """,
+    },
+    {
         "key": "injuries",
         "aliases": ["unconscious", "death saves", "stabilize", "stabilise", "death"],
         "category": "Combat",
