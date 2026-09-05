@@ -22,9 +22,15 @@ several more options for customizing the Guest account system.
 
 """
 
-from evennia.accounts.accounts import DefaultGuest
+from typing import Any
+
+from django.db import transaction
+from evennia.accounts.accounts import CharactersHandler, DefaultGuest
+from evennia.accounts.models import AccountDB
 from evennia.contrib.rpg.character_creator.character_creator import \
     ContribChargenAccount
+from evennia.objects.models import ObjectDB
+from evennia.utils.utils import lazy_property
 
 
 class Account(ContribChargenAccount):
@@ -138,7 +144,107 @@ class Account(ContribChargenAccount):
 
     """
 
-    pass
+    character_limit_message = "Each account may own exactly one character."
+    puppet_busy_message = "That character is already controlled by another session."
+
+    @lazy_property
+    def characters(self) -> "SingleCharacterHandler":
+        """Return the ownership handler that enforces WORLD-04 on direct adds."""
+        return SingleCharacterHandler(self)
+
+    def create_character(
+        self, *args: Any, **kwargs: Any
+    ) -> tuple[Any | None, list[str] | None]:
+        """Create the account's sole PC while serializing competing requests."""
+        if kwargs.pop("world04_admin_override", False):
+            if not self.check_permstring("Developer"):
+                return None, ["Developer permission is required for that operation."]
+            self.ndb._world04_ownership_override = True
+            try:
+                return super().create_character(*args, **kwargs)
+            finally:
+                self.ndb._world04_ownership_override = False
+
+        with transaction.atomic():
+            locked = AccountDB.objects.select_for_update().get(pk=self.pk)
+            if len(locked.characters) != 0:
+                return None, [self.character_limit_message]
+            return super(Account, locked).create_character(*args, **kwargs)
+
+    def at_look(self, target: Any = None, session: Any = None, **kwargs: Any) -> str:
+        """Show character creation only while the account has no owned PC."""
+        appearance = super().at_look(target=target, session=session, **kwargs)
+        if self.characters:
+            appearance = appearance.replace(
+                "  |wcharcreate|n - create new character\n", ""
+            )
+        return appearance
+
+    def puppet_object(self, session: Any, obj: Any) -> None:
+        """Puppet only the sole owned PC and never displace its controller."""
+        return self._puppet_object_exclusive(session, obj, administrative=False)
+
+    def puppet_object_for_admin(self, session: Any, obj: Any) -> None:
+        """Use the explicit Developer-gated path for non-PC repair puppeting."""
+        if not self.check_permstring("Developer"):
+            raise RuntimeError("Developer permission is required for that operation.")
+        return self._puppet_object_exclusive(session, obj, administrative=True)
+
+    def _puppet_object_exclusive(
+        self, session: Any, obj: Any, *, administrative: bool
+    ) -> None:
+        """Validate ownership and live control before Evennia mutates a Session."""
+        if not session or not obj:
+            return super().puppet_object(session, obj)
+
+        with transaction.atomic():
+            AccountDB.objects.select_for_update().get(pk=self.pk)
+            ObjectDB.objects.select_for_update().get(pk=obj.pk)
+
+            owned = list(self.characters)
+            if not administrative and (len(owned) != 1 or owned[0] != obj):
+                raise RuntimeError(
+                    "This account's character ownership is invalid; contact staff."
+                )
+
+            if self.get_puppet(session) == obj:
+                return None
+
+            controllers = [
+                controlling_session
+                for controlling_session in obj.sessions.all()
+                if controlling_session is not session
+            ]
+            if controllers:
+                raise RuntimeError(self.puppet_busy_message)
+
+            # Portal restoration can repopulate the character's SessionHandler
+            # before rebuilding the Session's convenience references.
+            if session in obj.sessions.all():
+                session.puid = obj.id
+                session.puppet = obj
+                return None
+
+            return super().puppet_object(session, obj)
+
+
+class SingleCharacterHandler(CharactersHandler):
+    """Fail closed when ordinary code tries to attach a second owned PC."""
+
+    def add(self, character: Any) -> None:
+        """Attach one character, rejecting malformed or duplicate ownership."""
+        if self.owner.ndb._world04_ownership_override:
+            super().add(character)
+            return
+
+        with transaction.atomic():
+            locked = AccountDB.objects.select_for_update().get(pk=self.owner.pk)
+            current = list(locked.characters)
+            if character in current:
+                return
+            if current:
+                raise RuntimeError(self.owner.character_limit_message)
+            CharactersHandler.add(locked.characters, character)
 
 
 class Guest(DefaultGuest):

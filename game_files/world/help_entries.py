@@ -26,11 +26,29 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "account",
+        "aliases": ["account controls", "ic", "ooc", "puppet"],
+        "category": "General",
+        "text": """
+            Your account owns exactly one player character. Use |wic <name>|n
+            from the Out-of-Character screen to enter the world and |wooc|n to
+            return to the account screen without disconnecting.
+
+            You may connect several sessions to the same account, but only one
+            session can control your character at a time. A second |wic|n attempt
+            is rejected and does not disconnect or replace the active controller.
+            Other connected sessions remain Out-of-Character.
+        """,
+    },
+    {
         "key": "charcreate",
         "aliases": ["character creation", "chargen"],
         "category": "Character",
         "text": """
             The |wcharcreate|n command opens the character-creation wizard.
+
+            Each account may own exactly one player character. Once creation is
+            complete, you cannot create another character on that account.
 
             Usage:
               charcreate
@@ -72,6 +90,10 @@ HELP_ENTRY_DICTS = [
 
             If you quit chargen mid-way (type |wq|n or |wquit|n inside the menu),
             your progress is saved.  Type |wcharcreate|n again to continue.
+
+            Only one connected session may control your character at a time.
+            Other sessions can remain connected Out-of-Character, but an |wic|n
+            attempt never takes control away from the active session.
 
         """,
     },

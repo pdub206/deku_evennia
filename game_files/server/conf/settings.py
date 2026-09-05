@@ -38,7 +38,11 @@ SERVERNAME = "game"
 # Account #1 (superuser) still gets a character via initial_setup.py regardless of this flag.
 AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
 AUTO_PUPPET_ON_LOGIN = False
-MAX_NR_CHARACTERS = 5
+MAX_NR_CHARACTERS = 1
+# Accounts may have several connected clients, but WORLD-04 permits only one
+# of them to control the account's sole character at a time.
+MULTISESSION_MODE = 2
+MAX_NR_SIMULTANEOUS_PUPPETS = 1
 CHARGEN_MENU = "world.chargen_menu"
 SERVER_SESSION_CLASS = "server.conf.serversession.ServerSession"
 

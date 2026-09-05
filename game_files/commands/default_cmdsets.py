@@ -14,42 +14,24 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 """
 
-from commands.account import CmdOOC
-from commands.building import (
-    CmdAreas,
-    CmdBuild,
-    CmdItems,
-    CmdLoadArea,
-    CmdNpcs,
-    CmdRooms,
-)
+from commands.account import CmdCharCreate, CmdOOC
+from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
+                               CmdNpcs, CmdRooms)
 from commands.change import CmdChange
 from commands.combat import CmdAttack
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
-from commands.generic import (
-    CmdAccess,
-    CmdDrop,
-    CmdGet,
-    CmdGive,
-    CmdHelp,
-    CmdHome,
-    CmdInventory,
-    CmdJunk,
-    CmdLook,
-    CmdNick,
-    CmdPose,
-    CmdRemove,
-    CmdSetDesc,
-    CmdWear,
-)
+from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
+                              CmdHome, CmdInventory, CmdJunk, CmdLook, CmdNick,
+                              CmdPose, CmdRemove, CmdSetDesc, CmdWear)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 from evennia import default_cmds
-from evennia.contrib.rpg.character_creator.character_creator import ContribChargenCmdSet
+from evennia.contrib.rpg.character_creator.character_creator import \
+    ContribCmdIC
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -125,7 +107,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         """
         super().at_cmdset_creation()
         # Replace default charcreate/ic with the EvMenu-driven versions.
-        self.add(ContribChargenCmdSet)
+        self.add(ContribCmdIC)
+        self.add(CmdCharCreate)
         # Preserve the default command while identifying deliberate unpuppets.
         self.add(CmdOOC)
 
