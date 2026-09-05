@@ -90,7 +90,7 @@ HELP_ENTRY_DICTS = [
             Six core abilities describe your character's natural talents:
 
               |wStrength (STR)|n     — Physical power; melee attacks, lifting, climbing.
-              |wDexterity (DEX)|n    — Agility; ranged attacks, AC, Stealth, Initiative.
+              |wDexterity (DEX)|n    — Agility; ranged attacks, AC, Stealth, Reaction.
               |wConstitution (CON)|n — Endurance; Hit Points, concentration.
               |wIntelligence (INT)|n — Memory and reasoning; Arcana, History, Investigation.
               |wWisdom (WIS)|n       — Perception and intuition; Insight, Perception, Medicine.
@@ -102,15 +102,70 @@ HELP_ENTRY_DICTS = [
 
               |wHit Points (HP)|n     — Determined at level 1 by class hit die + CON modifier.
               |wArmor Class (AC)|n    — 10 + DEX modifier (base, no armor).
-              |wInitiative|n          — DEX modifier; used to order combat turns.
+              |wReaction|n            — DEX modifier; slightly adjusts attack cadence.
               |wProficiency Bonus|n   — +2 at level 1; increases as you gain levels.
               |wPassive Perception|n  — 10 + WIS (Perception) modifier.
+              |wSpeed|n               — Scales travel time relative to the normal 30 feet.
+
+            Effective statistics update when your abilities, level, equipment,
+            or active conditions change.
+
+            ## Encumbrance
+
+            Your sheet and |winventory|n show carried item count and weight. Your
+            carrying capacity is based on effective Strength and size. A filled
+            container counts as itself plus everything inside it. You may carry
+            exactly your listed limits, but cannot pick up or receive anything
+            that would exceed either one. If a later change leaves you
+            overloaded, drop or give away items until your load is legal; you
+            cannot use normal exits while overloaded.
+
+            ## Natural Recovery
+
+            While you are in the world, HP recovers automatically every minute
+            when you are alive and not fighting. Recovery starts at your level
+            plus Constitution modifier (at least 1), then improves with posture:
+            sitting restores 1.25×, resting 1.5×, and sleeping 2× the standing
+            amount. Fractions round down. You do not recover while incapacitated,
+            dying, dead, at 0 HP, or while your character is offline or stowed.
 
             ## Identity
 
               |wClass|n, |wBackground|n, |wSpecies|n, |wAlignment|n, |wLanguages|n
 
               Level 1 characters start with 0 XP and advance by earning Experience Points.
+
+        """,
+    },
+    {
+        "key": "positions",
+        "aliases": ["position", "posture", "resting", "sleeping"],
+        "category": "Character",
+        "text": """
+            Your position determines which actions you can take. Use |wsit|n,
+            |wrest|n, |wsleep|n, |wstand|n, and |wwake|n to change posture.
+
+            # subtopics
+
+            ## Postures
+
+            |wStanding|n characters can act, handle items, move, and fight.
+            |wSitting|n and |wresting|n characters can look, communicate, handle
+            items, and change posture, but must stand before moving or fighting.
+            |wSleeping|n characters cannot perceive or act; use |wwake|n to wake
+            into a sitting posture.
+
+            ## Restricted States
+
+            Combat, injuries, and conditions can temporarily impose a more
+            restrictive state without changing your chosen posture. While
+            |wfighting|n, you may look, communicate, and use combat actions, but
+            cannot handle items, change posture, or use a normal exit. While
+            |wstunned|n, |wincapacitated|n, |wdying|n, or |wdead|n, you cannot
+            perform in-world actions.
+
+            Help, account controls, character information, and appropriate staff
+            recovery commands remain available regardless of position.
 
         """,
     },
@@ -210,6 +265,25 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "conditions",
+        "aliases": ["effects", "status effects", "buffs", "debuffs"],
+        "category": "Character",
+        "text": """
+            Conditions are lasting effects that can change what your character
+            can do or alter statistics shown by commands such as |wscore|n.
+            They may be permanent or expire after a number of world pulses.
+
+            The game tells you when a visible condition begins, changes,
+            expires, or is removed. Reapplying a condition may be rejected,
+            refresh its duration, replace it, or add a limited number of stacks,
+            depending on that condition's rules.
+
+            Some hostile conditions allow a saving throw when first applied or
+            on later pulses. Others can be removed by an appropriate cure or
+            dispelling effect. Those details depend on the individual condition.
+        """,
+    },
+    {
         "key": "change language",
         "aliases": ["change"],
         "category": "Character",
@@ -268,6 +342,31 @@ HELP_ENTRY_DICTS = [
 
             One item can occupy each equipment location. If a location is already
             occupied, you must free it before wearing another item there.
+
+            # subtopics
+
+            ## Armor
+
+            Primary armor worn on your body determines Armor Class: light armor
+            adds your full Dexterity modifier, medium armor adds at most +2 from
+            Dexterity, and heavy armor does not add Dexterity. A shield adds its
+            defense separately. Armor worn anywhere else never increases Armor
+            Class.
+
+            Locational armor instead reduces damage when its worn location is
+            struck. Head, neck, and body protect those locations directly. Arms,
+            hands, legs, and feet protect both sides; shoulder and wrist items
+            protect only their named side. Percentage reduction is applied before
+            flat reduction and can reduce damage to zero. Ordinary armor protects
+            against bludgeoning, piercing, and slashing unless built otherwise.
+
+            ## Training
+
+            You may equip any armor, shield, or weapon, even without class
+            training, and the equipment command will not stop or warn you.
+            Untrained weapons do not add your proficiency bonus to attacks.
+            Untrained armor still supplies its AC and damage mitigation, but may
+            penalize relevant rolls and spellcasting.
         """,
     },
     {
@@ -397,12 +496,19 @@ HELP_ENTRY_DICTS = [
             Most kinds are classifications ready for future mechanics. These kinds
             currently add their own editable fields:
 
-              |wset type weapon|n     adds |wdamage|n (dice, e.g. 1d8) and
-                                  |wsubtype|n (bludgeoning / piercing / slashing)
-              |wset type armor|n      adds |wbase_ac|n and |wsubtype|n
-                                  (light / medium / heavy / shield)
+              |wset type weapon|n     adds |wdamage|n, damage |wsubtype|n,
+                                  |wweapon_category|n, |wweapon_kind|n, and
+                                  |wattack_ability|n
+              |wset type armor|n      adds |wbase_ac|n, armor |wsubtype|n,
+                                  |wmitigation_flat|n, |wmitigation_percent|n,
+                                  and |wmitigation_types|n
               |wset type container|n  adds |wcapacity|n (max weight it can hold)
               |wset type none|n       back to a plain item (drops those fields)
+
+            Armor mitigation protects the hit location implied by
+            |wwear_locations|n; there is no separate coverage field. Mitigation
+            types default to bludgeoning, piercing, and slashing when left unset.
+            Percentage mitigation is limited to 80.
 
             The header shows what you're editing, e.g.
             |w[build: iron_sword (Weapon prototype)]|n.  Type |wfields|n any time
@@ -423,7 +529,7 @@ HELP_ENTRY_DICTS = [
             player character: name, description, gender, species, class, age,
             alignment, background, size, languages, active language, skills,
             all six ability scores, level and XP, proficiency bonus, hit points,
-            hit die, initiative, Armor Class, passive Perception, and speed.
+            hit die, Reaction, Armor Class, passive Perception, and speed.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.
@@ -454,6 +560,33 @@ HELP_ENTRY_DICTS = [
 
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
+        """,
+    },
+    {
+        "key": "@effects",
+        "aliases": ["@conditions", "effect inspection"],
+        "category": "Staff",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Inspect persistent effects on a character, or explicitly repair
+            malformed persistent effect data.
+
+            Usage:
+              @effects
+              @effects <character or #dbref>
+              @effects/repair <character or #dbref>
+
+            Each entry shows its stable key and instance ID, stacks, remaining
+            pulses or permanence, source, condition flags, numeric modifiers,
+            saving throw, and ordinary removal categories. A missing definition
+            is marked explicitly so staff can diagnose stale persistent data.
+
+            Use |w@effects/repair|n only when data is invalid or an effect's
+            definition is missing. The command quarantines the affected records
+            and logs the staff member who requested the repair before removing
+            them from active effect storage.
+
+            You must have |wBuilder|n permission or higher.
         """,
     },
     {

@@ -1,19 +1,29 @@
 """
 Overrides of common Evennia game commands (look, pose, etc.).
 
-These add game-specific behaviour — currently blocking commands while
-sleeping — without reimplementing the underlying logic.
+These attach game-specific policy or presentation without reimplementing the
+underlying Evennia command logic.
 """
 
 from typing import Any
 
 from commands.command import Command
-from commands.position import _ASLEEP_MSG, _is_sleeping
+from evennia.commands.default.general import CmdAccess as _BaseAccess
+from evennia.commands.default.general import CmdDrop as _BaseDrop
+from evennia.commands.default.general import CmdGet as _BaseGet
+from evennia.commands.default.general import CmdGive as _BaseGive
+from evennia.commands.default.general import CmdHome as _BaseHome
 from evennia.commands.default.general import CmdInventory as _BaseInventory
 from evennia.commands.default.general import CmdLook as _BaseLook
+from evennia.commands.default.general import CmdNick as _BaseNick
 from evennia.commands.default.general import CmdPose as _BasePose
+from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
+from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
-from systems.equipment import WEAR_LOCATIONS, WEAR_SIDES, wear_phrase
+from systems.action_policy import ActionCategory
+from systems.encumbrance import can_receive, character_load
+from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
+                               allowed_wear_locations, wear_phrase)
 
 
 class CmdLook(_BaseLook):
@@ -25,14 +35,40 @@ class CmdLook(_BaseLook):
       look <object>
       look <direction>
 
-    Blocked while sleeping — use |wwake|n to wake up first.
+    Requires a conscious character able to observe their surroundings.
     """
 
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
+    action_category = ActionCategory.OBSERVE
+
+
+class CmdHome(_BaseHome):
+    """Return home only when the shared movement policy permits it."""
+
+    action_category = ActionCategory.MOVE
+
+
+class CmdNick(_BaseNick):
+    """Manage personal input aliases regardless of character position."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+
+class CmdSetDesc(_BaseSetDesc):
+    """Change a character description as an in-world manipulation action."""
+
+    action_category = ActionCategory.MANIPULATE
+
+
+class CmdAccess(_BaseAccess):
+    """Show account and character permissions in every effective state."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+
+class CmdHelp(_BaseHelp):
+    """Keep help available as a state-independent recovery command."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
 
 
 class CmdPose(_BasePose):
@@ -43,14 +79,10 @@ class CmdPose(_BasePose):
       pose <action>
       :<action>
 
-    Blocked while sleeping — use |wwake|n to wake up first.
+    Requires a conscious character able to communicate.
     """
 
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
-        super().func()
+    action_category = ActionCategory.COMMUNICATE
 
 
 class CmdInventory(_BaseInventory):
@@ -61,15 +93,14 @@ class CmdInventory(_BaseInventory):
       inventory
       inv
 
-    Lists what you are carrying by name only.  Use |wlook <item>|n to read an
-    item's description.  Blocked while sleeping.
+    Lists what you are carrying by name only. Use |wlook <item>|n to read an
+    item's description. Requires a position that permits item handling.
     """
+
+    action_category = ActionCategory.MANIPULATE
 
     def func(self) -> None:
         caller = self.caller
-        if _is_sleeping(caller):
-            caller.msg(_ASLEEP_MSG)
-            return
         items = caller.contents
         if not items:
             caller.msg(text=("You are not carrying anything.", {"type": "inventory"}))
@@ -82,8 +113,143 @@ class CmdInventory(_BaseInventory):
                 items, caller=caller
             )
         ]
+        load = character_load(caller)
         string = "|wYou are carrying:|n\n" + "\n".join(lines)
+        string += (
+            f"\n|wLoad:|n {load.count}/{load.count_limit} items, "
+            f"{load.weight:g}/{load.weight_limit:g} lb."
+        )
+        if load.overloaded:
+            string += " |r(OVERLOADED)|n"
         caller.msg(text=(string, {"type": "inventory"}))
+
+
+class CmdGet(_BaseGet):
+    """Pick up an item when the shared action policy allows manipulation.
+
+    Usage:
+      get <item>
+    """
+
+    action_category = ActionCategory.MANIPULATE
+
+    def func(self) -> None:
+        """Preflight every selected object so a batch never partially picks up."""
+        caller = self.caller
+        if not self.args:
+            self.msg("Get what?")
+            return
+        objs = caller.search(self.args, location=caller.location, stacked=self.number)
+        if not objs:
+            return
+        objs = utils.make_iter(objs)
+        if len(objs) == 1 and caller == objs[0]:
+            self.msg("You can't get yourself.")
+            return
+        for obj in objs:
+            if not obj.access(caller, "get"):
+                self.msg(obj.db.get_err_msg or "You can't get that.")
+                return
+            if not obj.at_pre_get(caller):
+                return
+        result = can_receive(caller, objs)
+        if not result.allowed:
+            caller.msg(result.message)
+            return
+        moved = []
+        sources = {obj: obj.location for obj in objs}
+        for obj in objs:
+            if obj.move_to(caller, quiet=True, move_type="get", capacity_actor=caller):
+                moved.append(obj)
+                obj.at_get(caller)
+            else:
+                for moved_obj in moved:
+                    moved_obj.move_to(
+                        sources[moved_obj],
+                        quiet=True,
+                        move_type="rollback",
+                        encumbrance_bypass="batch get rollback",
+                    )
+                self.msg("That can't be picked up.")
+                return
+        obj_name = moved[0].get_numbered_name(len(moved), caller, return_string=True)
+        caller.location.msg_contents(
+            f"$You() $conj(pick) up {obj_name}.", from_obj=caller
+        )
+
+
+class CmdDrop(_BaseDrop):
+    """Drop a carried item when the shared action policy allows manipulation.
+
+    Usage:
+      drop <item>
+    """
+
+    action_category = ActionCategory.MANIPULATE
+
+
+class CmdGive(_BaseGive):
+    """Give an item when the shared action policy allows manipulation.
+
+    Usage:
+      give <item> = <character>
+    """
+
+    action_category = ActionCategory.MANIPULATE
+
+    def func(self) -> None:
+        """Preflight aggregate giving so the recipient gets all objects or none."""
+        caller = self.caller
+        if not self.args or not self.rhs:
+            caller.msg("Usage: give <inventory object> = <target>")
+            return
+        to_give = caller.search(
+            self.lhs,
+            location=caller,
+            nofound_string=f"You aren't carrying {self.lhs}.",
+            multimatch_string=f"You carry more than one {self.lhs}:",
+            stacked=self.number,
+        )
+        if not to_give:
+            return
+        target = caller.search(self.rhs)
+        if not target:
+            return
+        to_give = utils.make_iter(to_give)
+        singular, plural = to_give[0].get_numbered_name(len(to_give), caller)
+        if target == caller:
+            caller.msg(
+                f"You keep {plural if len(to_give) > 1 else singular} to yourself."
+            )
+            return
+        for obj in to_give:
+            if not obj.at_pre_give(caller, target):
+                return
+        result = can_receive(target, to_give)
+        if not result.allowed:
+            caller.msg(result.message)
+            return
+        moved = []
+        sources = {obj: obj.location for obj in to_give}
+        for obj in to_give:
+            if obj.move_to(target, quiet=True, move_type="give", capacity_actor=caller):
+                moved.append(obj)
+                obj.at_give(caller, target)
+            else:
+                for moved_obj in moved:
+                    moved_obj.move_to(
+                        sources[moved_obj],
+                        quiet=True,
+                        move_type="rollback",
+                        encumbrance_bypass="batch give rollback",
+                    )
+                caller.msg(
+                    f"You could not give that to {target.get_display_name(caller)}."
+                )
+                return
+        obj_name = to_give[0].get_numbered_name(len(moved), caller, return_string=True)
+        caller.msg(f"You give {obj_name} to {target.get_display_name(caller)}.")
+        target.msg(f"{caller.get_display_name(target)} gives you {obj_name}.")
 
 
 class CmdJunk(Command):
@@ -187,14 +353,7 @@ class CmdWear(Command):
             caller.msg("You can only wear items.")
             return
 
-        raw_locations = item.db.wear_locations or []
-        if isinstance(raw_locations, str):
-            raw_locations = [raw_locations]
-        locations = [
-            str(location).lower()
-            for location in raw_locations
-            if str(location).lower() in WEAR_LOCATIONS
-        ]
+        locations = list(allowed_wear_locations(item))
         display_name = item.get_display_name(caller)
         if not locations:
             caller.msg(f"You cannot wear {display_name}.")
@@ -211,14 +370,9 @@ class CmdWear(Command):
             )
             return
 
-        occupying_item = next(
-            (
-                carried
-                for carried in caller.contents
-                if carried is not item and carried.db.worn_location == location
-            ),
-            None,
-        )
+        occupying_item = caller.equipment.item_at(location)
+        if occupying_item is item:
+            occupying_item = None
         if occupying_item:
             occupying_name = occupying_item.get_display_name(caller)
             caller.msg(
@@ -226,7 +380,13 @@ class CmdWear(Command):
             )
             return
 
-        item.db.worn_location = location
+        try:
+            caller.equipment.equip(item, location)
+        except EquipmentError:
+            # Every expected failure is reported above; this guards against a
+            # concurrent or externally initiated equipment-state change.
+            caller.msg(f"You cannot wear {display_name} there.")
+            return
         caller.msg(f"You wear {display_name} {wear_phrase(location)}.")
 
     def _choose_location(
@@ -259,10 +419,7 @@ class CmdWear(Command):
         open_locations = [
             location
             for location in locations
-            if not any(
-                carried is not item and carried.db.worn_location == location
-                for carried in caller.contents
-            )
+            if caller.equipment.item_at(location) in (None, item)
         ]
         if len(open_locations) == 1:
             return open_locations[0]
@@ -311,5 +468,5 @@ class CmdRemove(Command):
             return
 
         display_name = item.get_display_name(caller)
-        item.db.worn_location = None
+        caller.equipment.unequip(item)
         caller.msg(f"You remove {display_name}.")

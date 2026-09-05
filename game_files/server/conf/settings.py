@@ -40,11 +40,42 @@ AUTO_CREATE_CHARACTER_WITH_ACCOUNT = False
 AUTO_PUPPET_ON_LOGIN = False
 MAX_NR_CHARACTERS = 5
 CHARGEN_MENU = "world.chargen_menu"
+SERVER_SESSION_CLASS = "server.conf.serversession.ServerSession"
 
 # Base class for Evennia's default and auto-generated (exit/movement) commands.
 # Our MuxCommand adds the persistent-prompt hook so the build editor's prompt
 # stays visible after every command, not just our own. See commands/command.py.
 COMMAND_DEFAULT_CLASS = "commands.command.MuxCommand"
+
+# One one-second heartbeat owns all recurring live-world work. Lane cadences
+# are heartbeat counts, so the effect lane is currently one six-second SRD
+# round while slower systems remain independently tunable.
+GAME_PULSE_INTERVAL_SECONDS = 1
+GAME_PULSE_CADENCES = {
+    "combat": 2,
+    "recovery": 60,
+    "mobiles": 10,
+    "effects": 6,
+    "corpses": 60,
+    "world_time": 60,
+    "weather": 300,
+    "resets": 60,
+}
+
+# RULES-05 limits recursive carried objects independently of weight.  Builders
+# may override this per character/NPC with ``carry_item_limit`` when needed.
+CARRIED_ITEM_LIMIT = 100
+MAX_CONTAINER_NESTING = 20
+GLOBAL_SCRIPTS = {
+    "game_pulse": {
+        "typeclass": "typeclasses.scripts.GamePulseScript",
+        "interval": GAME_PULSE_INTERVAL_SECONDS,
+        "repeats": 0,
+        "start_delay": True,
+        "persistent": True,
+        "desc": "Central scheduler for recurring live-world systems.",
+    }
+}
 
 
 ######################################################################

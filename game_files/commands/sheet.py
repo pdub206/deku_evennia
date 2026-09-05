@@ -5,8 +5,9 @@ Character sheet command — displays identity, ability scores, and combat stats.
 import time
 
 from commands.command import Command
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
-                                CARRY_CAPACITY_MULTIPLIER, ability_modifier)
+from systems.action_policy import ActionCategory
+from systems.encumbrance import character_load
+from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
 _GENDER_LABELS = {
     "male": "Male",
@@ -49,9 +50,11 @@ class CmdSheet(Command):
     key = "score"
     aliases = ["sheet", "sc"]
     help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         char = self.caller
+        stats = char.stats
 
         # --- Identity ---
         name = char.key
@@ -62,9 +65,9 @@ class CmdSheet(Command):
         char_class = char.db.char_class or "Unknown"
         background = char.db.background or "Unknown"
         alignment = char.db.alignment or "Unknown"
-        level = char.db.level or 1
-        xp = char.db.xp or 0
-        prof_bonus = char.db.proficiency_bonus or 2
+        level = stats.level
+        xp = stats.xp
+        prof_bonus = stats.proficiency_bonus
 
         # --- Time played (accumulated + live current session) ---
         total_seconds: float = char.db.time_played or 0.0
@@ -79,32 +82,18 @@ class CmdSheet(Command):
         time_str = _format_time_played(total_seconds)
 
         # --- Ability scores ---
-        ability_db_names = {
-            "Strength": "strength",
-            "Dexterity": "dexterity",
-            "Constitution": "constitution",
-            "Intelligence": "intelligence",
-            "Wisdom": "wisdom",
-            "Charisma": "charisma",
-        }
-        scores: dict[str, int] = {
-            ab: (char.attributes.get(ability_db_names[ab]) or 8) for ab in ABILITY_NAMES
-        }
+        scores = {ability: stats.ability_score(ability) for ability in ABILITY_NAMES}
 
         # --- Combat stats ---
-        hp_cur = char.db.hp_current or 0
-        hp_max = char.db.hp_max or 0
-        ac = char.db.armor_class or 10
-        initiative = char.db.initiative or 0
-        speed = char.db.speed or 30
-        hit_die = char.db.hit_die or 8
-        passive_perc = char.db.passive_perception or 10
+        hp_cur = stats.hp_current
+        hp_max = stats.hp_max
+        ac = stats.armor_class
+        reaction = stats.reaction_modifier
+        speed = stats.speed
+        hit_die = stats.hit_die
+        passive_perc = stats.passive_perception
 
         languages = char.db.languages or ["Common"]
-
-        # --- Carry capacity (SRD p.178): STR × multiplier based on size ---
-        carry_mult = CARRY_CAPACITY_MULTIPLIER.get(size, 15.0)
-        carry_capacity = int(scores["Strength"] * carry_mult)
 
         # --- Render ---
         out = _SEP + "\n"
@@ -125,19 +114,23 @@ class CmdSheet(Command):
         combat_lines = [
             f"|yHP:|n           {hp_cur}/{hp_max}",
             f"|yArmor Class:|n   {ac}",
-            f"|yInitiative:|n    {initiative:+d}",
+            f"|yReaction:|n      {reaction:+d}",
             f"|ySpeed:|n         {speed} ft.",
             f"|yHit Die:|n       d{hit_die}",
             f"|yPassive Perc:|n  {passive_perc}",
         ]
         for i, ab in enumerate(ABILITY_NAMES):
             sc = scores[ab]
-            mod = ability_modifier(sc)
+            mod = stats.ability_modifier(ab)
             left = f"  {ABILITY_SHORT[ab]}: {sc:2d}  ({mod:+d})"
             right = combat_lines[i] if i < len(combat_lines) else ""
             out += f"{left:<28}  {right}\n"
 
-        out += f"  |yCarry Capacity:|n  {carry_capacity} lb.\n"
+        load = character_load(char)
+        out += (
+            f"  |yCarried Load:|n    {load.count}/{load.count_limit} items, "
+            f"{load.weight:g}/{load.weight_limit:g} lb.\n"
+        )
         out += f"  |yLanguages:|n      {', '.join(languages)}\n"
         out += _SEP
 

@@ -247,6 +247,70 @@ class TestWear(EvenniaCommandTest):
 
         self.assertIsNone(helmet.db.worn_location)
 
+    def test_dropping_primary_armor_immediately_restores_unarmored_ac(self):
+        self.char1.db.dexterity = 14
+        armor = self.create_item("chain mail", ["body"])
+        armor.db.type = "armor"
+        armor.db.subtype = "heavy"
+        armor.db.base_ac = 16
+        armor.db.worn_location = "body"
+        self.assertEqual(self.char1.stats.armor_class, 16)
+
+        armor.move_to(self.room1, quiet=True, move_type="drop")
+
+        self.assertIsNone(armor.db.worn_location)
+        self.assertEqual(self.char1.stats.armor_class, 12)
+
+    def test_bulk_unequip_clears_every_benefit_for_death_cleanup(self):
+        armor = self.create_item("chain mail", ["body"])
+        armor.db.type = "armor"
+        armor.db.subtype = "heavy"
+        armor.db.base_ac = 16
+        armor.db.worn_location = "body"
+        sword = self.create_item("a sword", ["wield"])
+        sword.db.type = "weapon"
+        sword.db.damage = "1d8"
+        sword.db.worn_location = "wield"
+
+        changed = self.char1.equipment.unequip_all()
+
+        self.assertEqual(set(changed), {armor, sword})
+        self.assertIsNone(armor.db.worn_location)
+        self.assertIsNone(sword.db.worn_location)
+        self.assertEqual(self.char1.stats.attack_profile().name, "unarmed strike")
+
+    def test_untrained_armor_equips_silently_and_remains_effective(self):
+        self.char1.db.char_class = "Wizard"
+        armor = self.create_item("plate armor", ["body"])
+        armor.db.type = "armor"
+        armor.db.subtype = "heavy"
+        armor.db.base_ac = 18
+
+        self.call(CmdWear(), "plate armor", "You wear plate armor on your body.")
+
+        self.assertEqual(armor.db.worn_location, "body")
+        self.assertEqual(self.char1.stats.armor_class, 18)
+        self.assertTrue(self.char1.stats.has_untrained_armor)
+
+    def test_untrained_weapon_equips_without_a_proficiency_warning(self):
+        self.char1.db.char_class = "Wizard"
+        weapon = self.create_item("a greatsword", ["wield"])
+        weapon.db.type = "weapon"
+        weapon.db.subtype = "slashing"
+        weapon.db.damage = "2d6"
+        weapon.db.weapon_category = "martial"
+        weapon.db.weapon_kind = "greatsword"
+        weapon.db.attack_ability = "strength"
+
+        self.call(
+            CmdWear(),
+            "greatsword",
+            "You wear a greatsword as your weapon.",
+        )
+
+        self.assertEqual(weapon.db.worn_location, "wield")
+        self.assertFalse(self.char1.stats.attack_profile().proficient)
+
     def test_supported_locations_include_diku_and_added_slots(self):
         expected = {
             "right finger",

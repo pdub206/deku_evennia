@@ -14,13 +14,16 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 """
 
+from commands.account import CmdOOC
 from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
                                CmdNpcs, CmdRooms)
 from commands.change import CmdChange
 from commands.command import CmdNoInput
-from commands.communication import CmdSay
-from commands.generic import (CmdInventory, CmdJunk, CmdLook, CmdPose,
-                              CmdRemove, CmdWear)
+from commands.communication import CmdSay, CmdWhisper
+from commands.effects import CmdEffects
+from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
+                              CmdHome, CmdInventory, CmdJunk, CmdLook, CmdNick,
+                              CmdPose, CmdRemove, CmdSetDesc, CmdWear)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
@@ -44,13 +47,22 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         """
         super().at_cmdset_creation()
         # General commands - overrides Evennia's defaults.
+        self.add(CmdHome)
         self.add(CmdLook)
+        self.add(CmdNick)
+        self.add(CmdSetDesc)
         self.add(CmdSay)
         self.add(CmdPose)
         self.add(CmdInventory)
+        self.add(CmdGet)
+        self.add(CmdDrop)
+        self.add(CmdGive)
+        self.add(CmdWhisper)
         self.add(CmdJunk)
         self.add(CmdWear)
         self.add(CmdRemove)
+        self.add(CmdAccess)
+        self.add(CmdHelp)
         # Position system.
         self.add(CmdSit)
         self.add(CmdRest)
@@ -72,6 +84,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdItems)
         self.add(CmdNpcs)
         self.add(CmdLoadArea)
+        self.add(CmdEffects)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
@@ -91,6 +104,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         super().at_cmdset_creation()
         # Replace default charcreate/ic with the EvMenu-driven versions.
         self.add(ContribChargenCmdSet)
+        # Preserve the default command while identifying deliberate unpuppets.
+        self.add(CmdOOC)
 
 
 class UnloggedinCmdSet(default_cmds.UnloggedinCmdSet):

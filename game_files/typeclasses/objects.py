@@ -11,6 +11,8 @@ with a location in the game world (like Characters, Rooms, Exits).
 from typing import Any
 
 from evennia.objects.objects import DefaultObject
+from systems.encumbrance import audit_bypass, can_receive
+from systems.equipment import clear_equipped_state
 
 
 class ObjectParent:
@@ -23,6 +25,24 @@ class ObjectParent:
     take precedence.
 
     """
+
+    def at_pre_object_receive(self, arriving_object, source_location, **kwargs) -> bool:
+        """Enforce the one capacity policy for direct gameplay ``move_to`` calls."""
+        bypass_reason = kwargs.get("encumbrance_bypass")
+        if bypass_reason is not None:
+            if not isinstance(bypass_reason, str) or not bypass_reason.strip():
+                return False
+            audit_bypass(arriving_object, self, bypass_reason)
+            return super().at_pre_object_receive(
+                arriving_object, source_location, **kwargs
+            )
+
+        result = can_receive(self, arriving_object)
+        if not result.allowed:
+            actor = kwargs.get("capacity_actor") or arriving_object
+            actor.msg(result.message)
+            return False
+        return super().at_pre_object_receive(arriving_object, source_location, **kwargs)
 
 
 class Object(ObjectParent, DefaultObject):
@@ -236,9 +256,10 @@ class Item(Object):
     * ``wear_locations`` — equipment slots where the item may be worn; an empty
       list means the item is not wearable.
 
-    Currently implemented type-specific fields: a weapon's
-    ``damage``/``subtype``, armor's ``base_ac``/``subtype``, and a container's
-    ``capacity``. Other types are available as classifications for future use.
+    Currently implemented type-specific fields: a weapon's damage, damage type,
+    training identity, and attack ability; armor's category, base AC, and
+    locational mitigation; and a container's ``capacity``. Other types are
+    available as classifications for future use.
     """
 
     def at_object_creation(self) -> None:
@@ -256,4 +277,4 @@ class Item(Object):
         """Clear equipped state whenever the item changes location."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
-            self.db.worn_location = None
+            clear_equipped_state(self)

@@ -16,10 +16,14 @@ player-safe reason on bad input; callers turn that into a friendly message.
 """
 
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import WEAR_LOCATIONS
+from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
+                               DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
+                               PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
+                               WEAR_LOCATIONS)
 from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
                                 CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
                                 STANDARD_LANGUAGES)
@@ -98,12 +102,13 @@ def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
 def as_weight(raw: str) -> float:
     """A weight in pounds: a number that is zero or greater."""
     try:
-        value = float(raw.strip())
-    except ValueError:
+        value = Decimal(raw.strip())
+    except (InvalidOperation, ValueError):
         raise ValueError("expected a number of pounds.")
-    if value < 0:
-        raise ValueError("weight cannot be negative.")
-    return value
+    if not value.is_finite() or value < 0:
+        raise ValueError("weight must be finite and cannot be negative.")
+    # Match the canonical encumbrance representation at authoring time.
+    return float(value.quantize(Decimal("0.01")))
 
 
 _DICE_RE = re.compile(r"^[1-9]\d*d[1-9]\d*([+-]\d+)?$")
@@ -218,23 +223,59 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         ),
         "subtype": Field(
             "attr",
-            as_choice("bludgeoning", "piercing", "slashing"),
+            as_choice(*PHYSICAL_DAMAGE_TYPES),
             "damage type: bludgeoning, piercing, or slashing",
             target="subtype",
+        ),
+        "weapon_category": Field(
+            "attr",
+            as_choice(*WEAPON_CATEGORIES),
+            "training category: simple or martial",
+            target="weapon_category",
+        ),
+        "weapon_kind": Field(
+            "attr",
+            as_slug,
+            "weapon identity for specific training, e.g. shortsword",
+            target="weapon_kind",
+        ),
+        "attack_ability": Field(
+            "attr",
+            as_choice(*ATTACK_ABILITIES),
+            "ability used for attacks: strength or dexterity",
+            target="attack_ability",
         ),
     },
     "armor": {
         "base_ac": Field(
             "attr",
             as_nonneg_int,
-            "base Armor Class this grants (a shield's bonus)",
+            "primary armor's base AC, or the additive bonus for a shield",
             target="base_ac",
         ),
         "subtype": Field(
             "attr",
-            as_choice("light", "medium", "heavy", "shield"),
+            as_choice(*ARMOR_CATEGORIES),
             "armor category: light, medium, heavy, or shield",
             target="subtype",
+        ),
+        "mitigation_flat": Field(
+            "attr",
+            as_nonneg_int,
+            "flat damage removed when this armor's worn slot is hit",
+            target="mitigation_flat",
+        ),
+        "mitigation_percent": Field(
+            "attr",
+            as_int_range(0, MAX_MITIGATION_PERCENT),
+            f"percentage damage removed at its worn slot (0-{MAX_MITIGATION_PERCENT})",
+            target="mitigation_percent",
+        ),
+        "mitigation_types": Field(
+            "attr",
+            as_choice_list(*DAMAGE_TYPES),
+            "affected damage types; defaults to physical when unset",
+            target="mitigation_types",
         ),
     },
     "container": {
@@ -278,10 +319,9 @@ _ALIGNMENT_NAMES = tuple(name for name, _abbr, _desc in ALIGNMENTS)
 _ABILITY_DB_NAMES = {name: name.lower() for name in ABILITY_NAMES}
 _PC_LANGUAGES = ("Common", *STANDARD_LANGUAGES)
 
-# NPCs use the Character typeclass and the same canonical attributes written by
-# chargen_menu.menunode_end. Operational state such as session timestamps and
-# temporary ``chargen_*`` values is deliberately excluded: those are not part
-# of a player's finished character sheet.
+# NPCs use the Character typeclass and the same canonical stat inputs written by
+# chargen. Builder-facing derived fields target explicit overrides so changing a
+# base ability or level cannot silently leave an ordinary NPC with stale values.
 NPC_FIELDS: dict[str, Field] = {
     "name": Field("key", as_text, "the NPC's name"),
     "desc": Field(
@@ -345,17 +385,36 @@ NPC_FIELDS: dict[str, Field] = {
     "level": Field("attr", as_int_range(1, 20), "character level (1-20)"),
     "xp": Field("attr", as_nonneg_int, "experience points (zero or greater)"),
     "proficiency_bonus": Field(
-        "attr", as_nonneg_int, "proficiency bonus", "proficiency_bonus"
+        "attr",
+        as_nonneg_int,
+        "optional proficiency bonus override",
+        "proficiency_bonus_override",
     ),
-    "hp_max": Field("attr", as_nonneg_int, "maximum hit points", "hp_max"),
+    "hp_base": Field(
+        "attr",
+        as_nonneg_int,
+        "accumulated HP before Constitution",
+        "hp_base",
+    ),
+    "hp_max": Field(
+        "attr", as_nonneg_int, "optional maximum HP override", "hp_max_override"
+    ),
     "hp_current": Field("attr", as_nonneg_int, "current hit points", "hp_current"),
     "hit_die": Field("attr", as_int_range(1, 100), "hit die size, e.g. 10", "hit_die"),
-    "initiative": Field(
-        "attr", as_int_range(-20, 20), "initiative modifier", "initiative"
+    "reaction": Field(
+        "attr",
+        as_int_range(-20, 20),
+        "optional combat Reaction override",
+        "reaction_modifier_override",
     ),
-    "armor_class": Field("attr", as_nonneg_int, "Armor Class", "armor_class"),
+    "armor_class": Field(
+        "attr", as_nonneg_int, "optional Armor Class override", "armor_class_override"
+    ),
     "passive_perception": Field(
-        "attr", as_nonneg_int, "passive Perception", "passive_perception"
+        "attr",
+        as_nonneg_int,
+        "optional passive Perception override",
+        "passive_perception_override",
     ),
     "speed": Field("attr", as_nonneg_int, "movement speed in feet", "speed"),
 }

@@ -30,7 +30,7 @@ class Room(ObjectParent, DefaultRoom):
         for char in characters:
             if char is looker:
                 continue
-            position = char.db.position or "standing"
+            position = char.action_position.value
             name = char.get_display_name(looker, **kwargs)
             lines.append(f"{name} is {position} here.")
         return "\n".join(lines)

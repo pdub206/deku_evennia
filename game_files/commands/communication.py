@@ -6,8 +6,9 @@ produced for listeners who don't understand the speaker's active language.
 Sign language is handled separately from spoken language.
 """
 
-from commands.position import _ASLEEP_MSG, _is_sleeping
 from evennia.commands.default.general import CmdSay as _BaseSay
+from evennia.commands.default.general import CmdWhisper as _BaseWhisper
+from systems.action_policy import ActionCategory
 from systems.language import garble, hand_pronoun, is_sign_language
 
 
@@ -25,11 +26,9 @@ class CmdSay(_BaseSay):
     to switch which language you speak.
     """
 
-    def func(self) -> None:
-        if _is_sleeping(self.caller):
-            self.caller.msg(_ASLEEP_MSG)
-            return
+    action_category = ActionCategory.COMMUNICATE
 
+    def func(self) -> None:
         caller = self.caller
         if not self.args:
             caller.msg("Say what?")
@@ -76,3 +75,13 @@ class CmdSay(_BaseSay):
                     obj.msg(
                         f'{name} says, in an unknown language,\n  "{garble(speech)}"'
                     )
+
+
+class CmdWhisper(_BaseWhisper):
+    """Whisper privately when the shared action policy allows communication.
+
+    Usage:
+      whisper <character> = <message>
+    """
+
+    action_category = ActionCategory.COMMUNICATE

@@ -1,31 +1,19 @@
 """
 Positional state commands: sit, rest, sleep, stand, wake.
 
-Characters always have one of four positions:
+Characters retain one of four voluntary postures:
     standing  (default)
     sitting
     resting
     sleeping
 
-When sleeping, characters cannot look, speak, move, or use game commands.
-They must type |wwake|n to return to a sitting position before acting.
-
-The helpers _position, _is_sleeping, and _ASLEEP_MSG are also imported by
-look.py and say.py, which need to check sleeping state without depending on
-each other.
+Combat, effects, and injury may impose a more restrictive effective position
+without overwriting this posture. The shared action policy validates both the
+command and the transition.
 """
 
 from commands.command import Command
-
-_ASLEEP_MSG = "You are asleep and cannot do that. Type |wwake|n to wake up."
-
-
-def _position(char) -> str:
-    return char.db.position or "standing"
-
-
-def _is_sleeping(char) -> bool:
-    return _position(char) == "sleeping"
+from systems.action_policy import ActionCategory, Position, TransitionOutcome
 
 
 class CmdSit(Command):
@@ -41,17 +29,17 @@ class CmdSit(Command):
 
     key = "sit"
     help_category = "Character"
+    action_category = ActionCategory.CHANGE_POSITION
 
     def func(self) -> None:
         char = self.caller
-        pos = _position(char)
-        if pos == "sitting":
+        result = char.actions.transition(Position.SITTING)
+        if result.outcome is TransitionOutcome.DENIED:
+            char.msg(result.decision.message)
+            return
+        if result.outcome is TransitionOutcome.ALREADY:
             char.msg("You are already sitting.")
             return
-        if pos == "sleeping":
-            char.msg(_ASLEEP_MSG)
-            return
-        char.db.position = "sitting"
         char.msg("You sit down.")
         if char.location:
             char.location.msg_contents(
@@ -72,17 +60,17 @@ class CmdRest(Command):
 
     key = "rest"
     help_category = "Character"
+    action_category = ActionCategory.CHANGE_POSITION
 
     def func(self) -> None:
         char = self.caller
-        pos = _position(char)
-        if pos == "resting":
+        result = char.actions.transition(Position.RESTING)
+        if result.outcome is TransitionOutcome.DENIED:
+            char.msg(result.decision.message)
+            return
+        if result.outcome is TransitionOutcome.ALREADY:
             char.msg("You are already resting.")
             return
-        if pos == "sleeping":
-            char.msg(_ASLEEP_MSG)
-            return
-        char.db.position = "resting"
         char.msg("You lie down and rest.")
         if char.location:
             char.location.msg_contents(
@@ -98,18 +86,22 @@ class CmdSleep(Command):
       sleep
 
     Your character falls asleep. While asleep you cannot see, speak, move,
-    or take any action. Type |wwake|n to wake up.
+    or take in-world actions. Type |wwake|n to wake up.
     """
 
     key = "sleep"
     help_category = "Character"
+    action_category = ActionCategory.CHANGE_POSITION
 
     def func(self) -> None:
         char = self.caller
-        if _position(char) == "sleeping":
+        result = char.actions.transition(Position.SLEEPING)
+        if result.outcome is TransitionOutcome.DENIED:
+            char.msg(result.decision.message)
+            return
+        if result.outcome is TransitionOutcome.ALREADY:
             char.msg("You are already asleep.")
             return
-        char.db.position = "sleeping"
         if char.location:
             char.location.msg_contents(
                 f"{char.key} falls asleep.", exclude=[char], from_obj=char
@@ -130,17 +122,17 @@ class CmdStand(Command):
 
     key = "stand"
     help_category = "Character"
+    action_category = ActionCategory.CHANGE_POSITION
 
     def func(self) -> None:
         char = self.caller
-        pos = _position(char)
-        if pos == "standing":
+        result = char.actions.transition(Position.STANDING)
+        if result.outcome is TransitionOutcome.DENIED:
+            char.msg(result.decision.message)
+            return
+        if result.outcome is TransitionOutcome.ALREADY:
             char.msg("You are already standing.")
             return
-        if pos == "sleeping":
-            char.msg(_ASLEEP_MSG)
-            return
-        char.db.position = "standing"
         char.msg("You stand up.")
         if char.location:
             char.location.msg_contents(
@@ -156,18 +148,22 @@ class CmdWake(Command):
       wake
 
     Wakes your character from sleep, leaving you in a sitting position.
-    This is the only command available while sleeping.
+    State-independent commands remain available while sleeping.
     """
 
     key = "wake"
     help_category = "Character"
+    action_category = ActionCategory.WAKE
 
     def func(self) -> None:
         char = self.caller
-        if _position(char) != "sleeping":
-            char.msg("You can only wake from sleep.")
+        result = char.actions.transition(Position.SITTING, action=ActionCategory.WAKE)
+        if result.outcome is TransitionOutcome.DENIED:
+            char.msg(result.decision.message)
             return
-        char.db.position = "sitting"
+        if result.outcome is TransitionOutcome.ALREADY:
+            char.msg("You are already sitting.")
+            return
         char.msg("You wake up, finding yourself sitting.")
         if char.location:
             char.location.msg_contents(

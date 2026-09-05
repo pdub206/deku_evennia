@@ -9,11 +9,23 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
-                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
-                               CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdNpcs, CmdRooms,
-                               _enter_build_mode, _exit_build_mode)
+from commands.building import (
+    _BUILD_PROMPT,
+    CmdAreas,
+    CmdBuild,
+    CmdBuildArea,
+    CmdBuildDel,
+    CmdBuildDig,
+    CmdBuildDone,
+    CmdBuildFields,
+    CmdBuildSet,
+    CmdItems,
+    CmdLoadArea,
+    CmdNpcs,
+    CmdRooms,
+    _enter_build_mode,
+    _exit_build_mode,
+)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -390,21 +402,45 @@ class TestItemType(EvenniaCommandTest):
     def test_type_fields_hidden_until_type_set(self):
         fields = set(schema_for_prototype(self.proto))
         self.assertIn("type", fields)  # the type field itself is always offered
-        self.assertEqual(fields & {"damage", "subtype", "base_ac", "capacity"}, set())
+        typed_fields = {
+            "damage",
+            "subtype",
+            "weapon_category",
+            "weapon_kind",
+            "attack_ability",
+            "base_ac",
+            "mitigation_flat",
+            "mitigation_percent",
+            "mitigation_types",
+            "capacity",
+        }
+        self.assertEqual(fields & typed_fields, set())
 
     def test_set_type_weapon_reveals_fields(self):
         self.call(CmdBuildSet(), "type weapon")
         self.assertEqual(self.proto["type"], "weapon")
         out = self.call(CmdBuildFields(), "")
-        self.assertIn("damage", out)
-        self.assertIn("subtype", out)
+        for field in (
+            "damage",
+            "subtype",
+            "weapon_category",
+            "weapon_kind",
+            "attack_ability",
+        ):
+            self.assertIn(field, out)
 
     def test_weapon_damage_and_subtype(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "damage 1d8")
         self.call(CmdBuildSet(), "subtype slashing")
+        self.call(CmdBuildSet(), "weapon_category martial")
+        self.call(CmdBuildSet(), "weapon_kind Long Sword")
+        self.call(CmdBuildSet(), "attack_ability strength")
         self.assertEqual(self.proto["damage"], "1d8")
         self.assertEqual(self.proto["subtype"], "slashing")
+        self.assertEqual(self.proto["weapon_category"], "martial")
+        self.assertEqual(self.proto["weapon_kind"], "long_sword")
+        self.assertEqual(self.proto["attack_ability"], "strength")
 
     def test_invalid_damage_rejected(self):
         self.call(CmdBuildSet(), "type weapon")
@@ -422,21 +458,38 @@ class TestItemType(EvenniaCommandTest):
         self.call(CmdBuildSet(), "type armor")
         self.call(CmdBuildSet(), "base_ac 16")
         self.call(CmdBuildSet(), "subtype heavy")
+        self.call(CmdBuildSet(), "mitigation_flat 2")
+        self.call(CmdBuildSet(), "mitigation_percent 10")
+        self.call(CmdBuildSet(), "mitigation_types slashing, fire")
         self.assertEqual(self.proto["base_ac"], 16)
         self.assertEqual(self.proto["subtype"], "heavy")
+        self.assertEqual(self.proto["mitigation_flat"], 2)
+        self.assertEqual(self.proto["mitigation_percent"], 10)
+        self.assertEqual(self.proto["mitigation_types"], ["slashing", "fire"])
         self.call(CmdBuildSet(), "subtype slashing", "Invalid value for 'subtype'")
+        self.call(
+            CmdBuildSet(),
+            "mitigation_percent 81",
+            "Invalid value for 'mitigation_percent'",
+        )
 
     def test_changing_type_clears_old_fields(self):
         self.call(CmdBuildSet(), "type weapon")
         self.call(CmdBuildSet(), "subtype slashing")
         self.call(CmdBuildSet(), "damage 2d6")
+        self.call(CmdBuildSet(), "weapon_category martial")
+        self.call(CmdBuildSet(), "weapon_kind greatsword")
+        self.call(CmdBuildSet(), "attack_ability strength")
         # Switching type must drop the weapon's stale damage/subtype keys.
         self.call(CmdBuildSet(), "type armor")
         self.assertIsNone(self.proto.get("subtype"))
         self.assertIsNone(self.proto.get("damage"))
+        self.assertIsNone(self.proto.get("weapon_category"))
+        self.assertIsNone(self.proto.get("weapon_kind"))
+        self.assertIsNone(self.proto.get("attack_ability"))
         out = self.call(CmdBuildFields(), "")
         self.assertIn("base_ac", out)
-        self.assertNotIn("damage", out)
+        self.assertNotIn("\n  damage ", out)
 
     def test_set_type_container_capacity(self):
         self.call(CmdBuildSet(), "type container")
@@ -635,13 +688,9 @@ class TestEditNewNpc(EvenniaCommandTest):
             "charisma": 8,
             "level": 1,
             "xp": 0,
-            "proficiency_bonus": 2,
-            "hp_max": 9,
+            "hp_base": 10,
             "hp_current": 9,
             "hit_die": 10,
-            "initiative": -1,
-            "armor_class": 9,
-            "passive_perception": 9,
             "speed": 30,
         }
         for name, value in expected.items():
@@ -675,10 +724,11 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "level",
                 "xp",
                 "proficiency_bonus",
+                "hp_base",
                 "hp_max",
                 "hp_current",
                 "hit_die",
-                "initiative",
+                "reaction",
                 "armor_class",
                 "passive_perception",
                 "speed",
@@ -717,6 +767,23 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
+
+    def test_derived_stat_fields_store_explicit_overrides(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "proficiency_bonus 4")
+        self.call(CmdBuildSet(), "hp_base 20")
+        self.call(CmdBuildSet(), "hp_max 30")
+        self.call(CmdBuildSet(), "reaction 3")
+        self.call(CmdBuildSet(), "armor_class 17")
+        self.call(CmdBuildSet(), "passive_perception 15")
+
+        saved = _proto("city_guard")
+        self.assertEqual(saved["proficiency_bonus_override"], 4)
+        self.assertEqual(saved["hp_base"], 20)
+        self.assertEqual(saved["hp_max_override"], 30)
+        self.assertEqual(saved["reaction_modifier_override"], 3)
+        self.assertEqual(saved["armor_class_override"], 17)
+        self.assertEqual(saved["passive_perception_override"], 15)
 
     def test_edit_existing_npc_template(self):
         self.call(CmdBuild(), "new npc City Guard")

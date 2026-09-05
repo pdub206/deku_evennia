@@ -3,7 +3,8 @@ Skills command — displays all skill bonuses for the character.
 """
 
 from commands.command import Command
-from world.chargen_data import ABILITY_SHORT, SKILLS, ability_modifier
+from systems.action_policy import ActionCategory
+from world.chargen_data import ABILITY_SHORT, SKILLS
 
 _SEP = "|x" + "─" * 60 + "|n"
 
@@ -11,15 +12,6 @@ _SEP = "|x" + "─" * 60 + "|n"
 _SKILL_NAMES = list(SKILLS.keys())  # already defined in alphabetical order
 _LEFT_COL = _SKILL_NAMES[:9]
 _RIGHT_COL = _SKILL_NAMES[9:]
-
-_ABILITY_DB = {
-    "Strength": "strength",
-    "Dexterity": "dexterity",
-    "Constitution": "constitution",
-    "Intelligence": "intelligence",
-    "Wisdom": "wisdom",
-    "Charisma": "charisma",
-}
 
 
 class CmdSkills(Command):
@@ -37,19 +29,19 @@ class CmdSkills(Command):
     key = "skills"
     aliases = ["sk"]
     help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         char = self.caller
+        stats = char.stats
         proficiencies: list[str] = char.db.skill_proficiencies or []
-        prof_bonus: int = char.db.proficiency_bonus or 2
+        prof_bonus = stats.proficiency_bonus
 
         def _entry(skill: str) -> str:
             ability = SKILLS[skill]
             abbr = ABILITY_SHORT.get(ability, ability[:3].upper())
-            score: int = char.attributes.get(_ABILITY_DB[ability]) or 8
-            mod = ability_modifier(score)
             is_prof = skill in proficiencies
-            bonus = mod + (prof_bonus if is_prof else 0)
+            bonus = stats.skill_bonus(skill)
             prof_marker = "|g[P]|n" if is_prof else "   "
             bonus_str = f"{bonus:+d}"
             return f"{skill:<18} {abbr}  {prof_marker}  {bonus_str:>3}"

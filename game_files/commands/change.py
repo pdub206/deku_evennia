@@ -10,6 +10,7 @@ touching the command key or help text structure.
 """
 
 from commands.command import Command
+from systems.action_policy import ActionCategory
 
 
 class CmdChange(Command):
@@ -28,6 +29,7 @@ class CmdChange(Command):
 
     key = "change"
     help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
 
     def func(self) -> None:
         args = self.args.strip()
