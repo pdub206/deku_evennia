@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from commands.command import Command, MuxCommand
 from commands.default_cmdsets import CharacterCmdSet
-from commands.generic import CmdDrop, CmdGet, CmdGive, CmdInventory
+from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
+                              CmdHome, CmdInventory, CmdNick, CmdSetDesc)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
@@ -122,6 +123,33 @@ class TestCommandPolicy(EvenniaCommandTest):
             matches = [command for command in cmdset.commands if command.key == key]
             self.assertEqual(len(matches), 1, key)
             self.assertIsInstance(matches[0], command_type)
+
+    def test_character_cmdset_classifies_every_general_player_command(self):
+        """Inherited player commands cannot silently bypass action policy."""
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+        expected = {
+            "home": CmdHome,
+            "nick": CmdNick,
+            "setdesc": CmdSetDesc,
+            "access": CmdAccess,
+            "help": CmdHelp,
+        }
+
+        for key, command_type in expected.items():
+            matches = [command for command in cmdset.commands if command.key == key]
+            self.assertEqual(len(matches), 1, key)
+            self.assertIsInstance(matches[0], command_type)
+            self.assertIsNotNone(matches[0].action_category)
+
+    def test_home_uses_movement_policy(self):
+        self.char1.db.position = "sleeping"
+
+        output = self.call(CmdHome(), "")
+
+        self.assertEqual(
+            output, "You are asleep and cannot do that. Type wake to wake up."
+        )
 
 
 class TestPositionCommands(EvenniaCommandTest):

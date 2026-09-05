@@ -3,7 +3,8 @@
 from commands.default_cmdsets import CharacterCmdSet
 from commands.effects import CmdEffects
 from evennia.utils.test_resources import EvenniaCommandTest
-from systems.effects import (EFFECT_REGISTRY, EffectDefinition, SaveRule,
+from systems.effects import (EFFECT_QUARANTINE_ATTRIBUTE, EFFECT_REGISTRY,
+                             EFFECTS_ATTRIBUTE, EffectDefinition, SaveRule,
                              SaveSuccess, SaveTiming, StackingPolicy)
 
 _INSPECT_EFFECT = EffectDefinition(
@@ -65,4 +66,14 @@ class TestEffectCommand(EvenniaCommandTest):
         output = self.call(CmdEffects(), f"#{self.char2.id}")
 
         self.assertIn("effect data is invalid", output)
+        self.assertIn("@effects/repair", output)
         self.assertNotIn("Traceback", output)
+
+    def test_staff_can_explicitly_repair_invalid_storage(self):
+        self.char2.db.active_effects = "broken"
+
+        output = self.call(CmdEffects(), f"/repair #{self.char2.id}")
+
+        self.assertIn("Repaired", output)
+        self.assertIsNone(self.char2.attributes.get(EFFECTS_ATTRIBUTE))
+        self.assertIsNotNone(self.char2.attributes.get(EFFECT_QUARANTINE_ATTRIBUTE))

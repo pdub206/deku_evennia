@@ -90,6 +90,22 @@ class TestEffectivePosition(EvenniaTest):
         self.assertEqual(resolution.posture, Position.RESTING)
         self.assertEqual(self.char1.db.position, "resting")
 
+    def test_fighting_precedes_every_voluntary_posture(self):
+        """Combat must retain its own action set over a stale posture."""
+        for posture in ("sitting", "resting", "sleeping"):
+            with self.subTest(posture=posture):
+                self.char1.db.position = posture
+                with patch.object(
+                    Character,
+                    "get_imposed_action_positions",
+                    return_value=[Position.FIGHTING],
+                ):
+                    resolution = resolve_position(self.char1)
+                    combat = self.char1.actions.check(ActionCategory.COMBAT)
+
+                self.assertEqual(resolution.position, Position.FIGHTING)
+                self.assertTrue(combat.allowed)
+
     def test_missing_posture_uses_legacy_standing_default(self):
         self.char1.attributes.remove("position")
 

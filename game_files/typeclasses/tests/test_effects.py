@@ -7,12 +7,12 @@ from evennia import create_object
 from evennia.objects.models import ObjectDB
 from evennia.utils.test_resources import EvenniaTest
 from systems.dice import RollResult
-from systems.effects import (EFFECT_REGISTRY, EFFECTS_ATTRIBUTE,
-                             EFFECTS_SCHEMA_VERSION, ApplyOutcome,
-                             EffectDefinition, EffectError, EffectHandler,
-                             EffectMessage, EffectRegistry, EffectStorageError,
-                             RemovalOutcome, RemovalReason, SaveRule,
-                             SaveSuccess, SaveTiming, StackingPolicy)
+from systems.effects import (EFFECT_QUARANTINE_ATTRIBUTE, EFFECT_REGISTRY,
+                             EFFECTS_ATTRIBUTE, EFFECTS_SCHEMA_VERSION,
+                             ApplyOutcome, EffectDefinition, EffectError,
+                             EffectHandler, EffectMessage, EffectRegistry,
+                             EffectStorageError, RemovalOutcome, RemovalReason,
+                             SaveRule, SaveSuccess, SaveTiming, StackingPolicy)
 
 
 def _register(definition: EffectDefinition) -> None:
@@ -102,6 +102,11 @@ _SAVE_PULSE = EffectDefinition(
     ),
     messages={"save": EffectMessage(target="You shake off {effect}.")},
 )
+_CAPACITY = EffectDefinition(
+    key="test.rules03.capacity",
+    name="Capacity",
+    modifiers={"carry_capacity": 25},
+)
 
 for _definition in (
     _PERMANENT,
@@ -113,6 +118,7 @@ for _definition in (
     _INDEPENDENT,
     _SAVE_APPLY,
     _SAVE_PULSE,
+    _CAPACITY,
 ):
     _register(_definition)
 
@@ -235,6 +241,16 @@ class TestEffectHandler(EvenniaTest):
         self.assertEqual(self.char1.stats.armor_class, 10)
         self.assertEqual(self.char1.stats.hp_max, 10)
         self.assertEqual(self.char1.stats.hp_current, 10)
+
+    def test_carry_capacity_modifier_is_a_valid_canonical_effect_hook(self):
+        self.char1.db.strength = 10
+        before = self.char1.stats.carry_capacity
+
+        result = self.char1.effects.add(_CAPACITY.key, quiet=True)
+
+        self.assertEqual(self.char1.stats.carry_capacity, before + 25)
+        self.char1.effects.remove(result.effect.instance_id, quiet=True)
+        self.assertEqual(self.char1.stats.carry_capacity, before)
 
     def test_reject_refresh_replace_and_independent_policies(self):
         rejected_first = self.char1.effects.add(_REJECT.key, quiet=True)
@@ -424,6 +440,45 @@ class TestEffectHandler(EvenniaTest):
 
         with self.assertRaises(EffectStorageError):
             self.char1.effects.all()
+
+    def test_staff_repair_quarantines_malformed_storage(self):
+        self.char1.db.active_effects = {"version": 999, "instances": {}}
+
+        result = self.char1.effects.repair_storage(audited_by=self.char2)
+
+        self.assertTrue(result.repaired)
+        self.assertEqual(result.quarantined, 1)
+        self.assertIsNone(self.char1.attributes.get(EFFECTS_ATTRIBUTE))
+        quarantine = self.char1.attributes.get(EFFECT_QUARANTINE_ATTRIBUTE)
+        self.assertEqual(quarantine["version"], 1)
+        self.assertEqual(quarantine["entries"][-1]["audited_by"], self.char2.dbref)
+
+    def test_staff_repair_quarantines_orphans_and_retains_valid_effects(self):
+        valid = self.char1.effects.add(_PERMANENT.key, quiet=True)
+        stored = self.char1.attributes.get(EFFECTS_ATTRIBUTE)
+        stored["instances"]["orphaned"] = {
+            "key": "test.rules03.deleted",
+            "stacks": 1,
+            "remaining_pulses": None,
+            "source": None,
+            "source_dbref": None,
+            "source_key": None,
+            "source_name": "Unknown",
+            "modifiers": {},
+            "removal_categories": [],
+            "save": None,
+        }
+        self.char1.db.active_effects = stored
+
+        result = self.char1.effects.repair_storage(audited_by=self.char2)
+
+        self.assertTrue(result.repaired)
+        self.assertEqual(result.retained, 1)
+        self.assertEqual(result.quarantined, 1)
+        self.assertIsNotNone(self.char1.effects.get(valid.effect.instance_id))
+        self.assertIsNone(self.char1.effects.get("orphaned"))
+        quarantine = self.char1.attributes.get(EFFECT_QUARANTINE_ATTRIBUTE)
+        self.assertIn("orphaned", quarantine["entries"][-1]["payload"]["instances"])
 
     def test_npc_uses_the_same_effect_and_stat_path(self):
         npc = create_object(

@@ -1,6 +1,6 @@
 """Staff inspection command for persistent character effects."""
 
-from commands.command import Command
+from commands.command import MuxCommand
 from systems.action_policy import ActionCategory
 from systems.effects import ActiveEffect, EffectStorageError
 
@@ -42,18 +42,21 @@ def _effect_lines(effect: ActiveEffect) -> list[str]:
     ]
 
 
-class CmdEffects(Command):
+class CmdEffects(MuxCommand):
     """
-    Inspect persistent effects on a character.
+    Inspect or repair persistent effects on a character.
 
     Usage:
       @effects
       @effects <character or #dbref>
+      @effects/repair <character or #dbref>
 
     Shows each effect's stable key and instance ID, stacks, remaining duration,
     source, condition flags, numeric modifiers, saving throw, and ordinary
     removal categories. This command is restricted to staff with Builder
-    permission or higher and does not modify effects.
+    permission or higher. ``/repair`` is an explicit, audited administrative
+    recovery operation: it quarantines malformed or orphaned records before
+    removing them from active effect storage.
     """
 
     key = "@effects"
@@ -61,9 +64,13 @@ class CmdEffects(Command):
     locks = "cmd:perm(Builder)"
     help_category = "Staff"
     action_category = ActionCategory.STATE_INDEPENDENT
+    switch_options = ("repair",)
 
     def func(self) -> None:
         caller = self.caller
+        if self.switches and any(switch != "repair" for switch in self.switches):
+            caller.msg("Usage: @effects[/repair] [<character or #dbref>]")
+            return
         argument = self.args.strip()
         target = caller.search(argument, global_search=True) if argument else caller
         if target is None:
@@ -71,12 +78,22 @@ class CmdEffects(Command):
         if not hasattr(target, "effects"):
             caller.msg(f"{target.key} cannot have character effects.")
             return
+        if "repair" in self.switches:
+            result = target.effects.repair_storage(audited_by=caller)
+            if not result.repaired:
+                caller.msg(f"{target.key}'s active effect data needs no repair.")
+                return
+            caller.msg(
+                f"Repaired {target.key}'s active effect data: quarantined "
+                f"{result.quarantined} record(s), retained {result.retained}."
+            )
+            return
         try:
             effects = target.effects.all()
         except EffectStorageError:
             caller.msg(
-                f"{target.key}'s effect data is invalid; inspect its "
-                "active_effects Attribute directly."
+                f"{target.key}'s effect data is invalid; use |w@effects/repair "
+                f"{target.dbref}|n to quarantine and repair it."
             )
             return
         if not effects:

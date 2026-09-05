@@ -568,19 +568,25 @@ HELP_ENTRY_DICTS = [
         "category": "Staff",
         "locks": "read:perm(Builder)",
         "text": """
-            Inspect persistent effects on a character without changing them.
+            Inspect persistent effects on a character, or explicitly repair
+            malformed persistent effect data.
 
             Usage:
               @effects
               @effects <character or #dbref>
+              @effects/repair <character or #dbref>
 
             Each entry shows its stable key and instance ID, stacks, remaining
             pulses or permanence, source, condition flags, numeric modifiers,
             saving throw, and ordinary removal categories. A missing definition
             is marked explicitly so staff can diagnose stale persistent data.
 
-            You must have |wBuilder|n permission or higher. Invalid effect data
-            must be inspected through the target's |wactive_effects|n Attribute.
+            Use |w@effects/repair|n only when data is invalid or an effect's
+            definition is missing. The command quarantines the affected records
+            and logs the staff member who requested the repair before removing
+            them from active effect storage.
+
+            You must have |wBuilder|n permission or higher.
         """,
     },
     {

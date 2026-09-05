@@ -8,12 +8,17 @@ underlying Evennia command logic.
 from typing import Any
 
 from commands.command import Command
+from evennia.commands.default.general import CmdAccess as _BaseAccess
 from evennia.commands.default.general import CmdDrop as _BaseDrop
 from evennia.commands.default.general import CmdGet as _BaseGet
 from evennia.commands.default.general import CmdGive as _BaseGive
+from evennia.commands.default.general import CmdHome as _BaseHome
 from evennia.commands.default.general import CmdInventory as _BaseInventory
 from evennia.commands.default.general import CmdLook as _BaseLook
+from evennia.commands.default.general import CmdNick as _BaseNick
 from evennia.commands.default.general import CmdPose as _BasePose
+from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
+from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
 from systems.encumbrance import can_receive, character_load
@@ -34,6 +39,36 @@ class CmdLook(_BaseLook):
     """
 
     action_category = ActionCategory.OBSERVE
+
+
+class CmdHome(_BaseHome):
+    """Return home only when the shared movement policy permits it."""
+
+    action_category = ActionCategory.MOVE
+
+
+class CmdNick(_BaseNick):
+    """Manage personal input aliases regardless of character position."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+
+class CmdSetDesc(_BaseSetDesc):
+    """Change a character description as an in-world manipulation action."""
+
+    action_category = ActionCategory.MANIPULATE
+
+
+class CmdAccess(_BaseAccess):
+    """Show account and character permissions in every effective state."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+
+class CmdHelp(_BaseHelp):
+    """Keep help available as a state-independent recovery command."""
+
+    action_category = ActionCategory.STATE_INDEPENDENT
 
 
 class CmdPose(_BasePose):

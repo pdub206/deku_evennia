@@ -58,10 +58,13 @@ _POSITION_RANK: Mapping[Position, int] = MappingProxyType(
         Position.DYING: 1,
         Position.INCAPACITATED: 2,
         Position.STUNNED: 3,
-        Position.SLEEPING: 4,
-        Position.RESTING: 5,
-        Position.SITTING: 6,
-        Position.FIGHTING: 7,
+        # Fighting is an imposed restriction. It must take precedence over a
+        # voluntary posture so a combatant retains combat actions even if a
+        # stale or pre-combat posture is sitting, resting, or sleeping.
+        Position.FIGHTING: 4,
+        Position.SLEEPING: 5,
+        Position.RESTING: 6,
+        Position.SITTING: 7,
         Position.STANDING: 8,
     }
 )

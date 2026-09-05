@@ -15,17 +15,22 @@ from types import MappingProxyType
 from typing import Any, Mapping
 from uuid import uuid4
 
+from evennia.utils import logger
 from systems.dice import RollResult, roll_check
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT, SKILLS
 
 EFFECTS_ATTRIBUTE = "active_effects"
 EFFECTS_SCHEMA_VERSION = 1
+EFFECT_QUARANTINE_ATTRIBUTE = "quarantined_effects"
+EFFECT_QUARANTINE_SCHEMA_VERSION = 1
+MAX_QUARANTINED_EFFECT_RECORDS = 100
 
 _KEY_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_.-")
 _BASE_MODIFIERS = frozenset(
     {
         "armor_class",
         "attack_bonus",
+        "carry_capacity",
         "damage_bonus",
         "hp_max",
         "passive_perception",
@@ -305,6 +310,16 @@ class RemovalResult:
     outcome: RemovalOutcome
     effect: ActiveEffect | None
     reason: RemovalReason
+
+
+@dataclass(frozen=True)
+class EffectRepairResult:
+    """Summary of an explicit staff repair of persistent effect storage."""
+
+    repaired: bool
+    retained: int
+    quarantined: int
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -590,6 +605,58 @@ class EffectHandler:
                 self._write_records(records)
         return tuple(removed)
 
+    def repair_storage(self, *, audited_by: Any = None) -> EffectRepairResult:
+        """Quarantine malformed or orphaned records through an auditable path.
+
+        Normal reads fail closed and leave data untouched. This method is the
+        deliberately destructive recovery operation used by the staff command:
+        it snapshots bad data under ``quarantined_effects``, removes only the
+        affected active records, and records who requested the repair.
+        """
+        stored = self.owner.attributes.get(self.attribute_key)
+        if stored is None:
+            return EffectRepairResult(False, 0, 0)
+
+        try:
+            records = self._records()
+        except EffectStorageError as err:
+            reason = str(err)
+            self._quarantine(stored, reason, audited_by)
+            self.owner.attributes.remove(self.attribute_key)
+            self._reconcile_stats()
+            self._log_repair(1, 0, audited_by, reason)
+            return EffectRepairResult(True, 0, 1, reason)
+
+        retained: dict[str, dict[str, Any]] = {}
+        quarantined: dict[str, dict[str, Any]] = {}
+        reasons: set[str] = set()
+        for instance_id, record in records.items():
+            try:
+                effect = self._instance(instance_id, record)
+            except EffectStorageError as err:
+                quarantined[instance_id] = record
+                reasons.add(str(err))
+                continue
+            if effect.definition is None:
+                quarantined[instance_id] = record
+                reasons.add("effect definition is missing")
+                continue
+            retained[instance_id] = record
+
+        if not quarantined:
+            return EffectRepairResult(False, len(retained), 0)
+
+        reason = "; ".join(sorted(reasons))
+        self._quarantine(
+            {"version": EFFECTS_SCHEMA_VERSION, "instances": quarantined},
+            reason,
+            audited_by,
+        )
+        self._write_records(retained)
+        self._reconcile_stats()
+        self._log_repair(len(quarantined), len(retained), audited_by, reason)
+        return EffectRepairResult(True, len(retained), len(quarantined), reason)
+
     def _records(self) -> dict[str, dict[str, Any]]:
         """Read and validate a detached copy of persistent instance records."""
         storage = self.owner.attributes.get(self.attribute_key)
@@ -623,6 +690,40 @@ class EffectHandler:
             },
         }
         self.owner.attributes.add(self.attribute_key, payload)
+
+    def _quarantine(self, payload: Any, reason: str, audited_by: Any) -> None:
+        """Append a recoverable snapshot of removed storage for staff review."""
+        stored = self.owner.attributes.get(EFFECT_QUARANTINE_ATTRIBUTE)
+        entries: list[dict[str, Any]] = []
+        if (
+            isinstance(stored, Mapping)
+            and stored.get("version") == EFFECT_QUARANTINE_SCHEMA_VERSION
+            and isinstance(stored.get("entries"), list)
+        ):
+            entries = list(stored["entries"])
+        entries.append(
+            {
+                "payload": payload,
+                "reason": reason,
+                "audited_by": getattr(audited_by, "dbref", None),
+            }
+        )
+        entries = entries[-MAX_QUARANTINED_EFFECT_RECORDS:]
+        self.owner.attributes.add(
+            EFFECT_QUARANTINE_ATTRIBUTE,
+            {"version": EFFECT_QUARANTINE_SCHEMA_VERSION, "entries": entries},
+        )
+
+    def _log_repair(
+        self, quarantined: int, retained: int, audited_by: Any, reason: str
+    ) -> None:
+        """Log an actionable record of a staff-initiated data repair."""
+        actor = getattr(audited_by, "dbref", None) or "unknown"
+        logger.log_info(
+            "Effect repair on object "
+            f"#{self.owner.id} by {actor}: quarantined {quarantined}, "
+            f"retained {retained} ({reason})."
+        )
 
     def _new_record(
         self,
