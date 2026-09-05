@@ -25,6 +25,7 @@ from commands.building import (
 )
 from commands.change import CmdChange
 from commands.combat import CmdAttack
+from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
@@ -105,6 +106,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLoadArea)
         self.add(CmdEffects)
         self.add(CmdAttack)
+        self.add(CmdFlee)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

@@ -110,9 +110,12 @@ class Character(ObjectParent, DefaultCharacter):
 
     def at_pre_move(self, destination, **kwargs) -> bool:
         """Apply the shared movement policy to voluntary traversal only."""
-        if kwargs.get("move_type") == "traverse":
+        move_type = kwargs.get("move_type")
+        if move_type in {"traverse", "combat_flee"}:
             decision = self.actions.check(ActionCategory.MOVE)
-            if not decision.allowed:
+            if move_type == "combat_flee":
+                decision = None
+            if decision is not None and not decision.allowed:
                 self.msg(decision.message)
                 return False
             if character_load(self).overloaded:

@@ -155,6 +155,12 @@ HELP_ENTRY_DICTS = [
             You may only attack an eligible character in the same room. Protected
             characters cannot be attacked. Player-versus-player combat is disabled
             unless an explicit game permission allows it during this interim rule.
+
+            While fighting, normal exits are blocked. Use |wflee [exit]|n to queue
+            an escape on your next combat action. With no exit, an eligible route
+            is chosen for you. Fleeing never moves immediately, does not guarantee
+            a route will remain available, and does not cause pursuit or an
+            opportunity attack.
         """,
     },
     {

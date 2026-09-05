@@ -35,6 +35,17 @@ class Exit(ObjectParent, DefaultExit):
 
     def at_traverse(self, traversing_object, target_location, **kwargs) -> None:
         """Reject direct exit traversal once, before Evennia handles movement."""
+        if kwargs.get("combat_flee"):
+            from systems.combat_movement import combat_flee_active
+
+            token = getattr(traversing_object.ndb, "_combat_flee_token", None)
+            if not combat_flee_active(traversing_object, token):
+                return False
+            return traversing_object.move_to(
+                target_location,
+                move_type="combat_flee",
+                combat_flee_token=token,
+            )
         policy = getattr(traversing_object, "actions", None)
         if policy is not None:
             decision = policy.check(ActionCategory.MOVE)

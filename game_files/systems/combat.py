@@ -206,6 +206,26 @@ def get_target(actor: Any) -> Any | None:
     return target
 
 
+def schedule_flee(actor: Any, exit_id: int) -> CombatOperationResult:
+    """Persist one replacement-safe flee intent for actor's next ready action."""
+    if not _positive_int(exit_id):
+        return CombatOperationResult(False, False, reason="invalid_exit")
+    actor_id = _object_id(actor)
+    if actor_id is None:
+        return CombatOperationResult(False, False, reason="invalid_participant")
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return CombatOperationResult(False, False, reason="not_fighting")
+    record = state["encounters"][str(encounter_id)]["participants"][str(actor_id)]
+    intent = {"kind": "flee", "exit": exit_id}
+    changed = record.get("pending_intent") != intent
+    record["pending_intent"] = intent
+    _write_state(state)
+    return CombatOperationResult(True, changed, encounter_id)
+
+
 def process_combat_pulse(event: PulseEvent) -> CombatPulseResult:
     """Consume one combat token before isolated, deterministic due actions."""
     if not isinstance(event, PulseEvent) or event.lane is not PulseLane.COMBAT:
@@ -284,7 +304,22 @@ def _process_encounter(
             continue
         # Consume this readiness before invoking extensible code.
         record["ready_at"] = event.sequence + _combat_delay(actor)
+        intent = record.get("pending_intent")
+        record["pending_intent"] = None
         _write_state(state)
+        if intent is not None:
+            from systems.combat_movement import execute_flee_intent
+
+            try:
+                execute_flee_intent(actor, intent)
+            except Exception:
+                failures += 1
+                logger.log_trace(
+                    f"Combat flee for actor #{actor_id} failed at pulse {event.sequence}."
+                )
+            else:
+                actions += 1
+            continue
         try:
             result = _action_hook(actor, target, event)
             if not isinstance(result, CombatActionResult):
@@ -342,7 +377,11 @@ def _read_state() -> dict[str, Any]:
             str(encounter_id): {
                 "room": encounter["room"],
                 "participants": {
-                    str(actor_id): dict(participant)
+                    str(actor_id): {
+                        "target": participant["target"],
+                        "ready_at": participant["ready_at"],
+                        "pending_intent": participant.get("pending_intent"),
+                    }
                     for actor_id, participant in encounter["participants"].items()
                 },
             }
@@ -380,12 +419,18 @@ def _valid_state(state: Any) -> bool:
                 participant, Mapping
             ):
                 return False
-            if set(participant) != {"target", "ready_at"}:
+            if set(participant) not in (
+                {"target", "ready_at"},
+                {"target", "ready_at", "pending_intent"},
+            ):
                 return False
             if not _positive_int(participant["target"]):
                 return False
             ready_at = participant["ready_at"]
             if isinstance(ready_at, bool) or not isinstance(ready_at, (int, float)):
+                return False
+            intent = participant.get("pending_intent")
+            if intent is not None and not _valid_intent(intent):
                 return False
     return all(int(encounter_id) < state["next_id"] for encounter_id in encounters)
 
@@ -505,6 +550,7 @@ def _add_participant(state: dict[str, Any], encounter_id: int, actor_id: int) ->
     participants[str(actor_id)] = {
         "target": actor_id,
         "ready_at": state["last_pulse"] + 1,
+        "pending_intent": None,
     }
     return True
 
@@ -568,6 +614,16 @@ def _nonnegative_int(value: Any) -> bool:
 def _positive_int_string(value: Any) -> bool:
     """Return whether value is a canonical positive-integer mapping key."""
     return isinstance(value, str) and value.isdigit() and _positive_int(int(value))
+
+
+def _valid_intent(intent: Any) -> bool:
+    """Accept only COMBAT-03's serializable single flee intent."""
+    return (
+        isinstance(intent, Mapping)
+        and set(intent) == {"kind", "exit"}
+        and intent.get("kind") == "flee"
+        and _positive_int(intent.get("exit"))
+    )
 
 
 def _on_character_lifecycle(event: CharacterLifecycleEvent) -> None:
