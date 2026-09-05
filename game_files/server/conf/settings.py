@@ -73,6 +73,11 @@ GAME_COMBAT_BASE_DELAY = 1.0
 # may override this per character/NPC with ``carry_item_limit`` when needed.
 CARRIED_ITEM_LIMIT = 100
 MAX_CONTAINER_NESTING = 20
+# COMBAT-05 converts these policy durations to durable corpse-lane pulse
+# counts at creation. NPC prototypes may set ``corpse_decay_minutes``; PC
+# duration is deliberately global policy.
+NPC_CORPSE_DECAY_MINUTES = 10
+PC_CORPSE_DECAY_MINUTES = 30
 GLOBAL_SCRIPTS = {
     "game_pulse": {
         "typeclass": "typeclasses.scripts.GamePulseScript",

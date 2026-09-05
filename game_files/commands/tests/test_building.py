@@ -723,6 +723,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "charisma",
                 "level",
                 "xp",
+                "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
                 "hp_max",
@@ -748,6 +749,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "active_language elvish")
         self.call(CmdBuildSet(), "skills Arcana, History")
         self.call(CmdBuildSet(), "intelligence 18")
+        self.call(CmdBuildSet(), "corpse_decay_minutes 12.5")
 
         saved = _proto("city_guard")
         self.assertEqual(saved["gender"], "female")
@@ -760,6 +762,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["active_language"], "Elvish")
         self.assertEqual(saved["skill_proficiencies"], ["Arcana", "History"])
         self.assertEqual(saved["intelligence"], 18)
+        self.assertEqual(saved["corpse_decay_minutes"], 12.5)
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")

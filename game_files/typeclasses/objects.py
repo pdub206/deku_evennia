@@ -278,3 +278,42 @@ class Item(Object):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
             clear_equipped_state(self)
+
+
+class Corpse(Object):
+    """A persistent, immovable, withdrawal-only COMBAT-05 container.
+
+    Corpse rules live in :mod:`systems.corpses`; these hooks make the same
+    boundary hold for ordinary commands and direct object movement.
+    """
+
+    def at_object_creation(self) -> None:
+        """Make the specialized container visibly distinct and non-takeable."""
+        super().at_object_creation()
+        self.db.desc = "A corpse lies here."
+        self.locks.add("get:false();give:false();drop:false()")
+
+    def at_pre_get(self, getter: Any, **kwargs: Any) -> bool:
+        """Keep corpses in their original room until staff explicitly relocate them."""
+        getter.msg("You cannot pick up a corpse.")
+        return False
+
+    def at_pre_move(self, destination: Any, **kwargs: Any) -> bool:
+        """Deny ordinary movement so a corpse cannot hide or reset its lifetime."""
+        if kwargs.get("corpse_system") or kwargs.get("corpse_staff_relocation"):
+            return super().at_pre_move(destination, **kwargs)
+        return False
+
+    def at_pre_object_receive(
+        self, arriving_object: Any, source_location: Any, **kwargs: Any
+    ) -> bool:
+        """Accept physical contents only during the audited death transfer."""
+        if not kwargs.get("corpse_transfer"):
+            return False
+        return True
+
+    def at_pre_object_leave(
+        self, leaving_object: Any, destination: Any, **kwargs: Any
+    ) -> bool:
+        """Allow only service-mediated withdrawal or expiry spilling."""
+        return bool(kwargs.get("corpse_withdrawal") or kwargs.get("corpse_decay"))

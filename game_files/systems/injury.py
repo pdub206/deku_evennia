@@ -438,6 +438,19 @@ def _write(owner: Any, record: InjuryRecord) -> None:
             "death_id": record.death_id,
         },
     )
+    if record.state is InjuryState.DEAD:
+        # Death identity is the cross-system contract: COMBAT-05 owns the
+        # idempotent follow-up and isolates a recoverable corpse failure from
+        # the irreversible injury transition.
+        try:
+            from systems.corpses import create_corpse
+
+            create_corpse(owner, record.death_id or "")
+        except Exception:
+            logger.log_trace(
+                f"Corpse creation failed for object #{getattr(owner, 'id', '?')} "
+                f"after final death."
+            )
 
 
 def _result(

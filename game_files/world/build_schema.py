@@ -111,6 +111,17 @@ def as_weight(raw: str) -> float:
     return float(value.quantize(Decimal("0.01")))
 
 
+def as_positive_minutes(raw: str) -> float:
+    """A finite positive duration stored as fractional minutes when needed."""
+    try:
+        value = Decimal(raw.strip())
+    except (InvalidOperation, ValueError):
+        raise ValueError("expected a positive number of minutes.")
+    if not value.is_finite() or value <= 0:
+        raise ValueError("duration must be finite and greater than zero.")
+    return float(value.quantize(Decimal("0.01")))
+
+
 _DICE_RE = re.compile(r"^[1-9]\d*d[1-9]\d*([+-]\d+)?$")
 
 
@@ -384,6 +395,11 @@ NPC_FIELDS: dict[str, Field] = {
     },
     "level": Field("attr", as_int_range(1, 20), "character level (1-20)"),
     "xp": Field("attr", as_nonneg_int, "experience points (zero or greater)"),
+    "corpse_decay_minutes": Field(
+        "attr",
+        as_positive_minutes,
+        "corpse duration in minutes (default is the global NPC policy)",
+    ),
     "proficiency_bonus": Field(
         "attr",
         as_nonneg_int,

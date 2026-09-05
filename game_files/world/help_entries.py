@@ -206,8 +206,29 @@ HELP_ENTRY_DICTS = [
 
             Ordinary NPCs die at 0 HP unless a builder enables their death-save
             policy. Leaving with |wooc|n at 0 HP is fatal; a disconnect leaves
-            death saves running. Corpses, resurrection, and respawning arrive in
-            later systems.
+            death saves running. Corpses remain in the room after a death.
+        """,
+    },
+    {
+        "key": "corpses",
+        "aliases": ["corpse", "loot", "looting"],
+        "category": "Combat",
+        "text": """
+            When a character dies, their possessions remain in a corpse in the
+            room. Use |wlook in <corpse>|n to inspect its visible contents and
+            |wget <item> from <corpse>|n or |wget all from <corpse>|n to take
+            items. If you cannot carry every item, |wget all|n takes what it
+            can and tells you what remains.
+
+            NPC corpses can be looted by anyone. A player character's corpse
+            can only be emptied by that exact character, though everyone may
+            inspect it. Corpses cannot be picked up or moved. NPC corpses decay
+            after about ten minutes and player corpses after about thirty;
+            remaining contents then spill into the room for anyone to take.
+
+            Builders may set an NPC's |wcorpse_decay_minutes|n prototype field
+            to a positive duration in minutes. Player corpse duration is a
+            global game policy.
         """,
     },
     {
@@ -606,7 +627,8 @@ HELP_ENTRY_DICTS = [
             player character: name, description, gender, species, class, age,
             alignment, background, size, languages, active language, skills,
             all six ability scores, level and XP, proficiency bonus, hit points,
-            hit die, Reaction, Armor Class, passive Perception, and speed.
+            hit die, Reaction, Armor Class, passive Perception, speed, and an
+            optional |wcorpse_decay_minutes|n override for that NPC's corpse.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.
