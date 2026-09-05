@@ -196,7 +196,8 @@ class TestCharacterLifecycle(EvenniaTest):
             )
 
         self.assertEqual(result.failures, 1)
-        self.assertEqual(result.dispatched, 2)
+        # COMBAT-01's registered cleanup consumer also receives the event.
+        self.assertEqual(result.dispatched, 3)
         self.assertEqual(len(received), 1)
         log_trace.assert_called_once()
 
@@ -397,7 +398,8 @@ class TestServerLifecycle(EvenniaTest):
                 boot_id="dangling-boot",
             )
 
-        self.assertEqual(result.dispatched, 2)
+        # COMBAT-01 validates its persistent registry during recovery too.
+        self.assertEqual(result.dispatched, 3)
         self.assertEqual(result.failures, 1)
         self.assertEqual(len(received), 1)
         log_trace.assert_called_once()

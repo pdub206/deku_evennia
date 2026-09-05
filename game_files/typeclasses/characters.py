@@ -15,13 +15,16 @@ from typing import Any
 from evennia.objects.objects import DefaultCharacter
 from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
+from systems.combat import handle_departure, is_fighting
 from systems.effects import EffectHandler, EffectStorageError
 from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
-from systems.lifecycle import (deliver_character_notices,
-                               mark_character_available,
-                               mark_character_unavailable,
-                               resolve_unavailability_cause)
+from systems.lifecycle import (
+    deliver_character_notices,
+    mark_character_available,
+    mark_character_unavailable,
+    resolve_unavailability_cause,
+)
 
 from .objects import ObjectParent
 
@@ -79,6 +82,8 @@ class Character(ObjectParent, DefaultCharacter):
             # Invalid effect data must fail closed while leaving staff recovery
             # commands available through the state-independent action category.
             yield Position.INCAPACITATED
+        if is_fighting(self):
+            yield Position.FIGHTING
 
     def get_effect_stat_modifier_sources(self) -> Iterable[Mapping[str, int]]:
         """Yield numeric modifiers supplied by persistent active effects."""
@@ -118,6 +123,19 @@ class Character(ObjectParent, DefaultCharacter):
         # TODO(INTERACT-03): Apply terrain cost and stats.movement_delay() when
         # travel scheduling is introduced.
         return True
+
+    def at_post_move(
+        self, source_location: Any | None, move_type: str = "move", **kwargs: Any
+    ) -> None:
+        """Repair combat immediately after any forced relocation or extraction."""
+        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if source_location is not self.location:
+            handle_departure(self)
+
+    def at_object_delete(self) -> bool | None:
+        """Remove combat references before Evennia extracts this character."""
+        handle_departure(self)
+        return super().at_object_delete()
 
     def get_display_things(self, looker: Any, **kwargs: Any) -> str:
         """Show worn equipment, without exposing the rest of the inventory."""

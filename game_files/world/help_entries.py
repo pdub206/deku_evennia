@@ -167,6 +167,10 @@ HELP_ENTRY_DICTS = [
             Help, account controls, character information, and appropriate staff
             recovery commands remain available regardless of position.
 
+            A fight ends when you are no longer part of its encounter, such as
+            when combat separates you from the other participants. Your chosen
+            posture is restored automatically when fighting ends.
+
         """,
     },
     {

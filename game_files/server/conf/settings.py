@@ -61,6 +61,9 @@ GAME_PULSE_CADENCES = {
     "weather": 300,
     "resets": 60,
 }
+# Combat action clocks are measured in combat-pulse tokens. CharacterStats
+# adjusts this base cadence through its Reaction-derived ``combat_delay`` API.
+GAME_COMBAT_BASE_DELAY = 1.0
 
 # RULES-05 limits recursive carried objects independently of weight.  Builders
 # may override this per character/NPC with ``carry_item_limit`` when needed.
