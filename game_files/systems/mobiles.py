@@ -226,6 +226,18 @@ def _process_one(npc: Any, event: PulseEvent, injected_selector: Any) -> MobileO
     state["last_consumed_token"] = event.sequence
     state["next_eligible_token"] = event.sequence + 1
     _write_state(npc, state)  # Never replay work after selector/executor failure.
+    # MOB-03 owns the optional non-combat action layer.  It runs before the
+    # behavior registry and consumes this token even when no action is eligible,
+    # so a duplicate pulse cannot start a second encounter or take two items.
+    from systems.mobile_policy import perform_autonomous_decision
+
+    policy = perform_autonomous_decision(npc)
+    if policy.allowed:
+        return MobileOutcome(
+            npc_id, "acted", policy.reason, behavior_key, policy.reason
+        )
+    if policy.reason == "malformed_mobile_policy":
+        return MobileOutcome(npc_id, "skipped", policy.reason, behavior_key)
     behavior = _BEHAVIORS.get(behavior_key)
     if behavior is None:
         return MobileOutcome(npc_id, "failed", "unknown_behavior", behavior_key)

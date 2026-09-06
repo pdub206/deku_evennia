@@ -780,10 +780,20 @@ HELP_ENTRY_DICTS = [
             hit die, Reaction, Armor Class, passive Perception, speed, and an
             optional |wcorpse_decay_minutes|n override for that NPC's corpse.
             Use |wset behavior idle|n to choose its initial autonomous profile.
-            Idle is safe and has no visible action. Combat, aggression flags,
-            wandering, reset/spawn policy, followers, and special behavior are
-            introduced by their own game systems; this setting only supplies an
-            initial profile to newly spawned copies.
+            MOB flags are set independently on the template: |wsentinel|n stops
+            ordinary wandering; |wscavenger|n picks up at most one accessible,
+            loose room item per mobile decision; |waggressive|n starts a normal
+            fight with one detectable legal target; and |wstay_in_area|n limits
+            later autonomous navigation to the NPC's authored area. Set each
+            boolean flag with |wset <field> on|n or |woff|n. |wwimpy|n is the
+            NPC-only 0–90% flee threshold, while |wdetection|n lists extra
+            senses (hearing, sight, smell).
+
+            |wprotected|n makes an NPC an illegal combat target. |wnoncombatant|n
+            includes that protection and also prevents the NPC from initiating,
+            joining, assisting, or retaliating in combat. Use protected for a
+            target that may still take part in scripted combat; use noncombatant
+            for someone who must never enter an encounter.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.

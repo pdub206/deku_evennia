@@ -15,17 +15,12 @@ from typing import Any
 from django.conf import settings
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
-from systems.lifecycle import (
-    CharacterAvailability,
-    CharacterLifecycleEvent,
-    LifecycleConsumer,
-    LifecycleError,
-    ServerLifecycleEvent,
-    ServerTransitionPhase,
-    UnavailabilityCause,
-    register_lifecycle_consumer,
-    unregister_lifecycle_consumer,
-)
+from systems.lifecycle import (CharacterAvailability, CharacterLifecycleEvent,
+                               LifecycleConsumer, LifecycleError,
+                               ServerLifecycleEvent, ServerTransitionPhase,
+                               UnavailabilityCause,
+                               register_lifecycle_consumer,
+                               unregister_lifecycle_consumer)
 from systems.pulses import PulseEvent, PulseLane
 
 COMBAT_CONFIG_KEY = "combat_registry"
@@ -694,6 +689,14 @@ def _valid_pair_reason(actor: Any, target: Any) -> str:
         or actor.location != target.location
     ):
         return "participants must be in the same room"
+    # Encounter creation/joining must use the same target and actor policy as
+    # commands and scheduled attacks.  The local import avoids the module-level
+    # attacks -> combat dependency cycle.
+    from systems.attacks import can_attack
+
+    decision = can_attack(actor, target)
+    if not decision.allowed:
+        return decision.reason
     return ""
 
 

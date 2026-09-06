@@ -95,6 +95,11 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "self")
     if attacker.location is None or attacker.location != target.location:
         return AttackabilityDecision(False, "not_colocated")
+    from systems.mobile_policy import is_protected, may_enter_combat
+
+    entry = may_enter_combat(attacker)
+    if not entry.allowed:
+        return AttackabilityDecision(False, entry.reason)
     if not attacker.actions.check(ActionCategory.COMBAT).allowed:
         return AttackabilityDecision(False, "attacker_ineligible")
     try:
@@ -103,7 +108,7 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "target_ineligible")
     if target_injury.state is InjuryState.DEAD:
         return AttackabilityDecision(False, "target_defeated")
-    if _is_protected(target):
+    if is_protected(target):
         return AttackabilityDecision(False, "protected")
     if _is_staff_immune(target):
         return AttackabilityDecision(False, "staff_immune")
@@ -300,8 +305,10 @@ def _is_player_character(character: Any) -> bool:
 
 
 def _is_protected(character: Any) -> bool:
-    """Honor the early protection seam used by future mobile policy."""
-    return bool(character.db.protected or character.db.noncombatant)
+    """Retain the historical helper while delegating to MOB-03 policy."""
+    from systems.mobile_policy import is_protected
+
+    return is_protected(character)
 
 
 def _is_staff_immune(character: Any) -> bool:

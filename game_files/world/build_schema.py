@@ -21,34 +21,22 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import (
-    ARMOR_CATEGORIES,
-    ATTACK_ABILITIES,
-    DAMAGE_TYPES,
-    MAX_MITIGATION_PERCENT,
-    PHYSICAL_DAMAGE_TYPES,
-    WEAPON_CATEGORIES,
-    WEAR_LOCATIONS,
-)
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ALIGNMENTS,
-    BACKGROUNDS,
-    CLASSES,
-    MAX_AGE,
-    MIN_AGE,
-    SKILLS,
-    SPECIES,
-    STANDARD_LANGUAGES,
-)
+from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
+                               DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
+                               PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
+                               WEAR_LOCATIONS)
+from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
+                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
+                                STANDARD_LANGUAGES)
 
 
 class Field(NamedTuple):
     """One editable field on a buildable object.
 
     Attributes:
-        kind: ``"key"`` (the object's name), ``"attr"`` (a ``db`` attribute) or
-            ``"tag"`` (a tag in a category).
+        kind: ``"key"`` (the object's name), ``"attr"`` (a ``db`` attribute),
+            ``"tag"`` (a tag in a category), or ``"policy"`` (one member of
+            MOB-03's versioned mobile-policy Attribute).
         validate: Turns raw player text into the stored value, or raises
             ``ValueError`` with a short reason.
         blurb: Human description shown by ``fields``.
@@ -212,6 +200,13 @@ def as_mob_combat_profile(raw: str) -> dict[str, Any]:
         return validate_combat_profile(value)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
+
+
+def as_mobile_detection(raw: str) -> list[str]:
+    """Validate explicit MOB-03 sensory capabilities as a primitive list."""
+    from systems.mobile_policy import DETECTION_CAPABILITIES
+
+    return as_choice_list(*sorted(DETECTION_CAPABILITIES))(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +445,42 @@ NPC_FIELDS: dict[str, Field] = {
         as_mob_combat_profile,
         "JSON combat profile: target policy, tactical weights/cooldowns, and NPC wimpy",
         "mob_combat_profile",
+    ),
+    "sentinel": Field(
+        "policy", as_choice("on", "off"), "on prevents ordinary autonomous wandering"
+    ),
+    "scavenger": Field(
+        "policy",
+        as_choice("on", "off"),
+        "on lets this NPC pick up one loose room item per mobile decision",
+    ),
+    "aggressive": Field(
+        "policy",
+        as_choice("on", "off"),
+        "on lets this NPC start one fight with a detectable legal target",
+    ),
+    "stay_in_area": Field(
+        "policy",
+        as_choice("on", "off"),
+        "on constrains later autonomous navigation to this NPC's authored area",
+    ),
+    "wimpy": Field(
+        "policy",
+        as_int_range(0, 90),
+        "NPC flee threshold as a percent of maximum HP (0-90)",
+    ),
+    "detection": Field(
+        "policy",
+        as_mobile_detection,
+        "extra senses: hearing, sight, and/or smell (comma-separated)",
+    ),
+    "protected": Field(
+        "policy", as_choice("on", "off"), "on makes this NPC an illegal combat target"
+    ),
+    "noncombatant": Field(
+        "policy",
+        as_choice("on", "off"),
+        "on protects this NPC and prevents it from ever entering combat",
     ),
     "corpse_decay_minutes": Field(
         "attr",

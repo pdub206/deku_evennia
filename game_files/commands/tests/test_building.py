@@ -9,23 +9,11 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (
-    _BUILD_PROMPT,
-    CmdAreas,
-    CmdBuild,
-    CmdBuildArea,
-    CmdBuildDel,
-    CmdBuildDig,
-    CmdBuildDone,
-    CmdBuildFields,
-    CmdBuildSet,
-    CmdItems,
-    CmdLoadArea,
-    CmdNpcs,
-    CmdRooms,
-    _enter_build_mode,
-    _exit_build_mode,
-)
+from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
+                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
+                               CmdBuildFields, CmdBuildSet, CmdItems,
+                               CmdLoadArea, CmdNpcs, CmdRooms,
+                               _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -701,6 +689,20 @@ class TestEditNewNpc(EvenniaCommandTest):
             proto["mob_combat_profile"],
             {"version": 1, "target_policy": "current", "tactics": [], "wimpy": 0},
         )
+        self.assertEqual(
+            proto["mobile_policy"],
+            {
+                "version": 1,
+                "sentinel": False,
+                "scavenger": False,
+                "aggressive": False,
+                "stay_in_area": False,
+                "wimpy": 0,
+                "detection": [],
+                "protected": False,
+                "noncombatant": False,
+            },
+        )
 
     def test_fields_clone_finished_pc_sheet(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -732,6 +734,14 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "xp_reward",
                 "behavior",
                 "combat_profile",
+                "sentinel",
+                "scavenger",
+                "aggressive",
+                "stay_in_area",
+                "wimpy",
+                "detection",
+                "protected",
+                "noncombatant",
                 "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
@@ -759,6 +769,9 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "active_language elvish")
         self.call(CmdBuildSet(), "skills Arcana, History")
         self.call(CmdBuildSet(), "intelligence 18")
+        self.call(CmdBuildSet(), "aggressive on")
+        self.call(CmdBuildSet(), "wimpy 35")
+        self.call(CmdBuildSet(), "detection sight, hearing")
         self.call(
             CmdBuildSet(),
             'combat_profile {"version": 1, "target_policy": "lowest_id", "tactics": [], "wimpy": 35}',
@@ -780,6 +793,9 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["mobile_behavior_profile"], "idle")
         self.assertEqual(saved["mob_combat_profile"]["target_policy"], "lowest_id")
         self.assertEqual(saved["mob_combat_profile"]["wimpy"], 35)
+        self.assertTrue(saved["mobile_policy"]["aggressive"])
+        self.assertEqual(saved["mobile_policy"]["wimpy"], 35)
+        self.assertEqual(saved["mobile_policy"]["detection"], ["sight", "hearing"])
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")

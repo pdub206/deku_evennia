@@ -20,34 +20,19 @@ from commands.command import Command
 from django.conf import settings
 from evennia import CmdSet, create_object
 from evennia.objects.models import ObjectDB
-from evennia.prototypes.prototypes import (
-    PROTOTYPE_TAG_CATEGORY,
-    delete_prototype,
-    save_prototype,
-    search_prototype,
-)
+from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
+                                           delete_prototype, save_prototype,
+                                           search_prototype)
 from evennia.prototypes.spawner import spawn
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
-from systems.areas import (
-    area_index,
-    area_of,
-    assign_area,
-    export_area,
-    load_area,
-    room_key_of,
-    rooms_in_area,
-)
-from world.build_schema import (
-    ITEM_TYPES,
-    TYPE_FIELDS,
-    as_slug,
-    schema_for,
-    schema_for_prototype,
-)
+from systems.areas import (area_index, area_of, assign_area, export_area,
+                           load_area, room_key_of, rooms_in_area)
+from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
+                                schema_for_prototype)
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
 # exits two-way and to alias n/s/e/w/u/d like Evennia's own tunnel command.
@@ -191,6 +176,12 @@ def _field_value(target, name: str, field) -> str:
         if field.kind == "type":
             return target.get("type") or "|x(generic item)|n"
         value = target.get("key" if field.kind == "key" else (field.target or name))
+        if field.kind == "policy":
+            from systems.mobile_policy import policy_value
+
+            value = policy_value(target, field.target or name)
+            if isinstance(value, bool):
+                value = "on" if value else "off"
         return _crop(value) if value not in (None, "") else "|x(unset)|n"
     if field.kind == "key":
         return target.key
@@ -199,6 +190,11 @@ def _field_value(target, name: str, field) -> str:
     if field.kind == "attr":
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "policy":
+        from systems.mobile_policy import policy_value
+
+        value = policy_value(target, field.target or name)
+        return _crop("on" if value is True else "off" if value is False else value)
     if field.kind == "tag":
         tags = target.tags.get(category=field.target or name, return_list=True)
         return ", ".join(tags) if tags else "|x(unset)|n"
@@ -275,6 +271,20 @@ def _apply_field(target, name: str, field, value) -> None:
             target["key"] = value
         elif field.kind == "type":
             _set_prototype_type(target, value)
+        elif field.kind == "policy":
+            from systems.mobile_policy import (MOBILE_POLICY_ATTRIBUTE,
+                                               default_mobile_policy,
+                                               validate_mobile_policy)
+
+            profile = validate_mobile_policy(
+                target.get(MOBILE_POLICY_ATTRIBUTE, default_mobile_policy())
+            )
+            profile[field.target or name] = (
+                value == "on"
+                if isinstance(value, str) and value in {"on", "off"}
+                else value
+            )
+            target[MOBILE_POLICY_ATTRIBUTE] = validate_mobile_policy(profile)
         else:  # attr
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -285,6 +295,12 @@ def _apply_field(target, name: str, field, value) -> None:
         _set_item_type(target, value)
     elif field.kind == "attr":
         target.attributes.add(field.target or name, value)
+    elif field.kind == "policy":
+        from systems.mobile_policy import set_mobile_policy_value
+
+        if isinstance(value, str) and value in {"on", "off"}:
+            value = value == "on"
+        set_mobile_policy_value(target, field.target or name, value)
     elif field.kind == "tag":
         if name == "area":
             assign_area(target, value)
@@ -567,6 +583,17 @@ class CmdBuild(Command):
                 "target_policy": "current",
                 "tactics": [],
                 "wimpy": 0,
+            },
+            "mobile_policy": {
+                "version": 1,
+                "sentinel": False,
+                "scavenger": False,
+                "aggressive": False,
+                "stay_in_area": False,
+                "wimpy": 0,
+                "detection": [],
+                "protected": False,
+                "noncombatant": False,
             },
         }
         save_prototype(proto)

@@ -12,22 +12,16 @@ from copy import deepcopy
 from typing import Any
 
 from systems.attacks import can_attack, resolve_basic_attack
-from systems.combat import (
-    CombatActionResult,
-    change_target,
-    get_encounter_id,
-    is_fighting,
-    schedule_flee,
-    schedule_tactical_action,
-    start_fight,
-)
+from systems.combat import (CombatActionResult, change_target,
+                            get_encounter_id, is_fighting, schedule_flee,
+                            schedule_tactical_action, start_fight)
 from systems.combat_movement import choose_flee_exit
 from systems.injury import InjuryError, InjuryState, injury_record
+from systems.mobile_policy import (MOBILE_POLICY_ATTRIBUTE, MobilePolicyError,
+                                   mobile_policy)
 from systems.pulses import PulseEvent
-from systems.tactical_combat import (
-    execute_tactical_intent,
-    validate_tactical_intent,
-)
+from systems.tactical_combat import (execute_tactical_intent,
+                                     validate_tactical_intent)
 
 MOB_COMBAT_PROFILE_ATTRIBUTE = "mob_combat_profile"
 MOB_COMBAT_STATE_ATTRIBUTE = "mob_combat_state"
@@ -165,11 +159,20 @@ def reconcile_mob_wimpy(npc: Any, previous_hp: int, current_hp: int) -> None:
     if _is_player_character(npc):
         return
     try:
+        # MOB-03 owns new NPC wimpy configuration.  Old live copies without a
+        # policy retain their MOB-02 value until a builder next edits them.
         profile = combat_profile(npc)
         state = _state(npc)
     except (MobCombatError, AttributeError, TypeError):
         return
-    threshold = profile["wimpy"]
+    try:
+        threshold = (
+            profile["wimpy"]
+            if npc.attributes.get(MOBILE_POLICY_ATTRIBUTE) is None
+            else mobile_policy(npc)["wimpy"]
+        )
+    except (MobilePolicyError, AttributeError, TypeError):
+        return
     if not threshold:
         return
     boundary = npc.stats.hp_max * threshold / 100
