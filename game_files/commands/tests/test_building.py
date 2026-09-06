@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
                                CmdBuildDel, CmdBuildDig, CmdBuildDone,
                                CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdNpcs, CmdRooms,
+                               CmdLoadArea, CmdNpcs, CmdRooms, CmdSpawn,
                                _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
@@ -23,6 +23,7 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
+from systems.mob_spawning import mobile_spawn_identity
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
 
@@ -652,6 +653,15 @@ class TestEditNewNpc(EvenniaCommandTest):
         )
         self.assertIsNone(spawned[0].account)
         self.assertEqual(spawned[0].db.position, "standing")
+        self.assertEqual(mobile_spawn_identity(spawned[0]).prototype_key, "city_guard")
+
+    def test_plain_spawn_of_an_npc_uses_the_mobile_spawn_service(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdSpawn(), "city_guard", "Spawned City Guard.")
+
+        spawned = [obj for obj in self.room1.contents if obj.key == "City Guard"]
+        self.assertEqual(len(spawned), 2)
+        self.assertEqual(mobile_spawn_identity(spawned[-1]).prototype_key, "city_guard")
 
     def test_npc_defaults_match_finished_character_attributes(self):
         self.call(CmdBuild(), "new npc City Guard")

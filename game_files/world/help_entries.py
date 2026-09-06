@@ -807,6 +807,16 @@ HELP_ENTRY_DICTS = [
             Changes persist immediately and affect copies spawned afterwards.
             A live NPC can be edited directly with |wedit <name>|n or
             |wedit #<dbref>|n for a one-off change that leaves its template alone.
+            Each template-created copy records its source template permanently;
+            older NPCs made directly remain explicitly untemplated. Killing or
+            editing a live NPC never replaces, heals, moves, or re-equips it.
+            Reset-managed populations are authored as named placements in an
+            area's |wMOBILES|n data. A placement has a desired population and
+            room/area ceilings; it is considered full even when one of its NPCs
+            has wandered away. Resets, when enabled for an area, create only the
+            missing fresh copies and never alter survivors. Manual |w@spawn|n
+            copies have a source template but do not create a reset placement or
+            change any population ceiling.
 
             ## Areas and Export
 

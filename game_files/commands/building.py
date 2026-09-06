@@ -16,14 +16,16 @@ Rooms, item templates, and NPC templates all share this editing context; the
 field schema decides what each target exposes.
 """
 
+from typing import Any
+
 from commands.command import Command
 from django.conf import settings
 from evennia import CmdSet, create_object
+from evennia.commands.default.building import CmdSpawn as EvenniaCmdSpawn
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
                                            delete_prototype, save_prototype,
                                            search_prototype)
-from evennia.prototypes.spawner import spawn
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
@@ -31,6 +33,7 @@ from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
 from systems.areas import (area_index, area_of, assign_area, export_area,
                            load_area, room_key_of, rooms_in_area)
+from systems.mob_spawning import spawn_mobile
 from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
                                 schema_for_prototype)
 
@@ -597,7 +600,15 @@ class CmdBuild(Command):
             },
         }
         save_prototype(proto)
-        (npc,) = spawn({**proto, "location": caller.location}, caller=caller)
+        result = spawn_mobile(key, caller.location, caller=caller)
+        if result.status != "created":
+            caller.msg(
+                f"Created NPC prototype |y{key}|n, but could not spawn it: "
+                f"{result.reason}."
+            )
+            _enter_build_mode(caller, proto)
+            return
+        npc = result.npc
         _enter_build_mode(caller, proto)
         caller.msg(
             f"Created NPC prototype |y{key}|n and spawned |y{npc.key}|n "
@@ -816,6 +827,33 @@ def _live_item_type_label(item) -> str:
 def _live_item_line(item) -> str:
     """One untemplated live-item row, identified by an editable dbref."""
     return f"  |C#{item.id}|n — {item.key}"
+
+
+class CmdSpawn(EvenniaCmdSpawn):
+    """Route ordinary NPC template copies through MOB-05's spawn service.
+
+    The parent command still owns its complete expert interface (prototype
+    dictionaries, OLC, save/update, and non-NPC objects).  Only an exact plain
+    NPC prototype key gains the project-owned identity record.
+    """
+
+    def func(self) -> Any:
+        if (
+            not self.switches
+            and self.args.strip()
+            and not self.args.lstrip().startswith("{")
+        ):
+            prototype = _find_npc_prototype(self.args.strip())
+            if prototype is not None:
+                result = spawn_mobile(
+                    prototype["prototype_key"], self.caller.location, caller=self.caller
+                )
+                if result.status == "created":
+                    self.msg("Spawned %s." % result.npc.get_display_name(self.caller))
+                else:
+                    self.msg(f"NPC spawn failed: {result.reason}.")
+                return
+        yield from super().func()
 
 
 class CmdItems(Command):
