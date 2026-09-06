@@ -9,23 +9,11 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (
-    _BUILD_PROMPT,
-    CmdAreas,
-    CmdBuild,
-    CmdBuildArea,
-    CmdBuildDel,
-    CmdBuildDig,
-    CmdBuildDone,
-    CmdBuildFields,
-    CmdBuildSet,
-    CmdItems,
-    CmdLoadArea,
-    CmdNpcs,
-    CmdRooms,
-    _enter_build_mode,
-    _exit_build_mode,
-)
+from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
+                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
+                               CmdBuildFields, CmdBuildSet, CmdItems,
+                               CmdLoadArea, CmdMobile, CmdNpcs, CmdRooms,
+                               CmdSpawn, _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -35,6 +23,7 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
+from systems.mob_spawning import mobile_spawn_identity
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
 
@@ -664,6 +653,15 @@ class TestEditNewNpc(EvenniaCommandTest):
         )
         self.assertIsNone(spawned[0].account)
         self.assertEqual(spawned[0].db.position, "standing")
+        self.assertEqual(mobile_spawn_identity(spawned[0]).prototype_key, "city_guard")
+
+    def test_plain_spawn_of_an_npc_uses_the_mobile_spawn_service(self):
+        self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdSpawn(), "city_guard", "Spawned City Guard.")
+
+        spawned = [obj for obj in self.room1.contents if obj.key == "City Guard"]
+        self.assertEqual(len(spawned), 2)
+        self.assertEqual(mobile_spawn_identity(spawned[-1]).prototype_key, "city_guard")
 
     def test_npc_defaults_match_finished_character_attributes(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -696,6 +694,26 @@ class TestEditNewNpc(EvenniaCommandTest):
         }
         for name, value in expected.items():
             self.assertEqual(proto[name], value, name)
+        self.assertEqual(proto["mobile_behavior_profile"], "idle")
+        self.assertEqual(
+            proto["mob_combat_profile"],
+            {"version": 1, "target_policy": "current", "tactics": [], "wimpy": 0},
+        )
+        self.assertEqual(
+            proto["mobile_policy"],
+            {
+                "version": 1,
+                "sentinel": False,
+                "scavenger": False,
+                "aggressive": False,
+                "stay_in_area": False,
+                "wimpy": 0,
+                "detection": [],
+                "protected": False,
+                "noncombatant": False,
+            },
+        )
+        self.assertEqual(proto["mobile_specials"], {"version": 1, "behaviors": []})
 
     def test_fields_clone_finished_pc_sheet(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -725,6 +743,17 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "level",
                 "xp",
                 "xp_reward",
+                "behavior",
+                "specials",
+                "combat_profile",
+                "sentinel",
+                "scavenger",
+                "aggressive",
+                "stay_in_area",
+                "wimpy",
+                "detection",
+                "protected",
+                "noncombatant",
                 "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
@@ -740,6 +769,11 @@ class TestEditNewNpc(EvenniaCommandTest):
 
     def test_set_npc_fields_persists_canonical_values(self):
         self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "behavior idle")
+        self.call(
+            CmdBuildSet(),
+            'specials {"version": 1, "behaviors": [{"key": "guard", "config": {}}]}',
+        )
         self.call(CmdBuildSet(), "gender female")
         self.call(CmdBuildSet(), "species elf")
         self.call(CmdBuildSet(), "class wizard")
@@ -751,6 +785,13 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "active_language elvish")
         self.call(CmdBuildSet(), "skills Arcana, History")
         self.call(CmdBuildSet(), "intelligence 18")
+        self.call(CmdBuildSet(), "aggressive on")
+        self.call(CmdBuildSet(), "wimpy 35")
+        self.call(CmdBuildSet(), "detection sight, hearing")
+        self.call(
+            CmdBuildSet(),
+            'combat_profile {"version": 1, "target_policy": "lowest_id", "tactics": [], "wimpy": 35}',
+        )
         self.call(CmdBuildSet(), "corpse_decay_minutes 12.5")
 
         saved = _proto("city_guard")
@@ -765,12 +806,27 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["skill_proficiencies"], ["Arcana", "History"])
         self.assertEqual(saved["intelligence"], 18)
         self.assertEqual(saved["corpse_decay_minutes"], 12.5)
+        self.assertEqual(saved["mobile_behavior_profile"], "idle")
+        self.assertEqual(saved["mob_combat_profile"]["target_policy"], "lowest_id")
+        self.assertEqual(saved["mob_combat_profile"]["wimpy"], 35)
+        self.assertTrue(saved["mobile_policy"]["aggressive"])
+        self.assertEqual(
+            saved["mobile_specials"],
+            {"version": 1, "behaviors": [{"key": "guard", "config": {}}]},
+        )
+        self.assertEqual(saved["mobile_policy"]["wimpy"], 35)
+        self.assertEqual(saved["mobile_policy"]["detection"], ["sight", "hearing"])
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")
         self.call(CmdBuildSet(), "class commoner", "Invalid value for 'class'")
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
         self.call(CmdBuildSet(), "xp_reward 1000001", "Invalid value for 'xp_reward'")
+        self.call(
+            CmdBuildSet(),
+            "combat_profile not-json",
+            "Invalid value for 'combat_profile'",
+        )
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
 
@@ -835,6 +891,37 @@ class TestNpcsListing(EvenniaCommandTest):
     def test_npcs_empty_state(self):
         self.char1.permissions.add("Builder")
         self.call(CmdNpcs(), "", "There are no NPC templates yet")
+
+
+class TestMobileDiagnosticsCommand(EvenniaCommandTest):
+    """The Builder command is registered and rejects player-character targets."""
+
+    def test_live_npc_and_player_rejection(self):
+        self.char1.permissions.add("Builder")
+        npc = create_object(
+            "typeclasses.characters.Character", key="Mobile report", location=self.room1
+        )
+        npc.db.is_player_character = False
+
+        report = self.call(CmdMobile(), f"#{npc.id}")
+
+        self.assertIn("Mobile diagnostic", report)
+        self.call(
+            CmdMobile(), f"#{self.char1.id}", "Only live NPCs have mobile diagnostics."
+        )
+
+    def test_mobile_command_registered(self):
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+        self.assertTrue(
+            any(isinstance(command, CmdMobile) for command in cmdset.commands)
+        )
+
+    def test_mobile_area_switch_uses_fresh_population_snapshot(self):
+        self.char1.permissions.add("Builder")
+        report = self.call(CmdMobile(), "/area nowhere")
+        self.assertIn("Mobile population", report)
+        self.assertIn('"area_key":"nowhere"', report)
 
 
 class TestEditPrompt(EvenniaCommandTest):

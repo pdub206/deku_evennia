@@ -20,8 +20,10 @@ from commands.building import (
     CmdBuild,
     CmdItems,
     CmdLoadArea,
+    CmdMobile,
     CmdNpcs,
     CmdRooms,
+    CmdSpawn,
 )
 from commands.change import CmdChange
 from commands.combat import (
@@ -57,6 +59,7 @@ from commands.generic import (
 )
 from commands.injury import CmdInjury, CmdStabilize
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
+from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 from evennia import default_cmds
@@ -114,6 +117,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRooms)
         self.add(CmdItems)
         self.add(CmdNpcs)
+        self.add(CmdMobile)
+        self.add(CmdSpawn)
         self.add(CmdLoadArea)
         self.add(CmdEffects)
         self.add(CmdAttack)
@@ -128,6 +133,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdFlee)
         self.add(CmdStabilize)
         self.add(CmdInjury)
+        self.add(CmdOrder)
+        self.add(CmdPet)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

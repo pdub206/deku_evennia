@@ -16,18 +16,37 @@ from typing import Any
 from django.conf import settings
 from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
-from systems.combat import process_combat_pulse, set_combat_action_hook
-from systems.injury import \
-    process_recovery_pulse as process_injury_recovery_pulse
-from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
-                            configured_cadences, initial_pulse_state,
-                            process_effect_pulse,
-                            process_resource_recovery_pulse)
+from systems.combat import (
+    CombatActionResult,
+    process_combat_pulse,
+    set_combat_action_hook,
+)
+from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
+from systems.mob_combat import resolve_mob_combat_action
+from systems.pulses import (
+    PulseEvent,
+    PulseLane,
+    advance_pulse_state,
+    configured_cadences,
+    initial_pulse_state,
+    process_effect_pulse,
+    process_resource_recovery_pulse,
+)
 from systems.tactical_combat import resolve_combat_action
+
 
 # The global script imports this module on boot, making the COMBAT-02 resolver
 # available even before its first server-start callback.
-set_combat_action_hook(resolve_combat_action)
+def resolve_game_combat_action(
+    actor: Any, target: Any, event: PulseEvent
+) -> CombatActionResult:
+    """Route NPC decisions through MOB-02 and retain PC combat behavior."""
+    if getattr(actor.db, "is_player_character", None) is False:
+        return resolve_mob_combat_action(actor, target, event)
+    return resolve_combat_action(actor, target, event)
+
+
+set_combat_action_hook(resolve_game_combat_action)
 
 
 class Script(DefaultScript):
@@ -133,7 +152,7 @@ class GamePulseScript(Script):
     def at_server_start(self) -> None:
         """Restore COMBAT-02's resolver after a hot code reload."""
         super().at_server_start()
-        set_combat_action_hook(resolve_combat_action)
+        set_combat_action_hook(resolve_game_combat_action)
 
     def at_repeat(self, **kwargs: Any) -> None:
         """Persist the next tokens, then isolate and dispatch every due lane."""
@@ -178,6 +197,9 @@ class GamePulseScript(Script):
 
     def at_mobiles_pulse(self, event: PulseEvent) -> None:
         """Run mobile behavior supplied by MOB-01."""
+        from systems.mobiles import process_mobile_pulse
+
+        process_mobile_pulse(event)
 
     def at_effects_pulse(self, event: PulseEvent) -> None:
         """Advance persistent timed effects for PCs and NPCs."""

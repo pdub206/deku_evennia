@@ -67,11 +67,15 @@ class InjuryPulseResult:
 def _refresh_combat_controls(owner: Any, previous_hp: int, current_hp: int) -> None:
     """Refresh COMBAT-09 after the injury state reaches its final value."""
     try:
-        from systems.combat_controls import (reconcile_wimpy,
-                                             refresh_combat_prompt)
+        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
 
         reconcile_wimpy(owner, previous_hp, current_hp)
         refresh_combat_prompt(owner)
+        # MOB-02 uses its own NPC-only profile and latch. Keeping it here
+        # observes every canonical damage/healing path without duplicating one.
+        from systems.mob_combat import reconcile_mob_wimpy
+
+        reconcile_mob_wimpy(owner, previous_hp, current_hp)
     except Exception:
         logger.log_trace(
             f"Could not refresh COMBAT-09 controls for #{getattr(owner, 'id', '?')}."
@@ -191,6 +195,21 @@ def apply_damage(
     reason = prediction.reason
 
     _write(owner, next_record, source=source)
+    # Combat is a distinct event from injury/death, so encounter specials can
+    # observe a legal hit without taking ownership of the damage transaction.
+    try:
+        from systems.mobile_specials import SpecialEvent, dispatch_specials
+
+        combat_event = SpecialEvent(
+            "combat", actor=source, target=owner, data={"damage": amount}
+        )
+        dispatch_specials(owner, combat_event)
+        if source is not None and source is not owner:
+            dispatch_specials(source, combat_event)
+    except Exception:
+        logger.log_trace(
+            f"MOB-06 combat event failed for object #{getattr(owner, 'id', '?')}."
+        )
     cleanup = next_record.state in {
         InjuryState.DYING,
         InjuryState.INCAPACITATED,
@@ -202,6 +221,15 @@ def apply_damage(
     if emit_messages and result.state is not record.state:
         _announce(owner, result)
     _refresh_combat_controls(owner, previous_hp, final_hp)
+    if result.accepted and amount:
+        try:
+            from systems.mob_combat import retaliate
+
+            retaliate(owner, source)
+        except Exception:
+            logger.log_trace(
+                f"Could not start MOB-02 retaliation for #{getattr(owner, 'id', '?')}."
+            )
     return result
 
 
@@ -464,6 +492,21 @@ def _write(owner: Any, record: InjuryRecord, *, source: Any | None = None) -> No
             "death_id": record.death_id,
         },
     )
+    # This is notification-only; handlers retain ordinary action, combat, and
+    # room policies, and a failing special cannot interrupt injury persistence.
+    try:
+        from systems.mobile_specials import SpecialEvent, dispatch_specials
+
+        dispatch_specials(
+            owner,
+            SpecialEvent(
+                "death" if record.state is InjuryState.DEAD else "injury", target=owner
+            ),
+        )
+    except Exception:
+        logger.log_trace(
+            f"MOB-06 injury event failed for object #{getattr(owner, 'id', '?')}."
+        )
     if record.state is InjuryState.DEAD:
         # Death identity is the cross-system contract: COMBAT-05 owns the
         # idempotent follow-up and isolates a recoverable corpse failure from

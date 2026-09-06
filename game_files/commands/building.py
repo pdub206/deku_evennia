@@ -16,14 +16,17 @@ Rooms, item templates, and NPC templates all share this editing context; the
 field schema decides what each target exposes.
 """
 
-from commands.command import Command
+import json
+from typing import Any
+
+from commands.command import Command, MuxCommand
 from django.conf import settings
 from evennia import CmdSet, create_object
+from evennia.commands.default.building import CmdSpawn as EvenniaCmdSpawn
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
                                            delete_prototype, save_prototype,
                                            search_prototype)
-from evennia.prototypes.spawner import spawn
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
@@ -31,6 +34,13 @@ from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
 from systems.areas import (area_index, area_of, assign_area, export_area,
                            load_area, room_key_of, rooms_in_area)
+from systems.mob_spawning import spawn_mobile
+from systems.mobile_diagnostics import (MobileDiagnosticError,
+                                        clear_mobile_failure,
+                                        mobile_compact_summary,
+                                        mobile_diagnostic_snapshot,
+                                        mobile_population_snapshot,
+                                        mobile_template_snapshot)
 from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
                                 schema_for_prototype)
 
@@ -176,6 +186,12 @@ def _field_value(target, name: str, field) -> str:
         if field.kind == "type":
             return target.get("type") or "|x(generic item)|n"
         value = target.get("key" if field.kind == "key" else (field.target or name))
+        if field.kind == "policy":
+            from systems.mobile_policy import policy_value
+
+            value = policy_value(target, field.target or name)
+            if isinstance(value, bool):
+                value = "on" if value else "off"
         return _crop(value) if value not in (None, "") else "|x(unset)|n"
     if field.kind == "key":
         return target.key
@@ -184,6 +200,11 @@ def _field_value(target, name: str, field) -> str:
     if field.kind == "attr":
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "policy":
+        from systems.mobile_policy import policy_value
+
+        value = policy_value(target, field.target or name)
+        return _crop("on" if value is True else "off" if value is False else value)
     if field.kind == "tag":
         tags = target.tags.get(category=field.target or name, return_list=True)
         return ", ".join(tags) if tags else "|x(unset)|n"
@@ -204,6 +225,14 @@ def _render_show(target) -> str:
             lines.append(f"  |yexits|n    {joined}")
         else:
             lines.append("  |yexits|n    |x(none)|n")
+    if (
+        not _is_prototype(target)
+        and getattr(getattr(target, "db", None), "is_player_character", None) is False
+    ):
+        try:
+            lines.append(f"  |ymobile|n   {mobile_compact_summary(target)}")
+        except MobileDiagnosticError:
+            lines.append("  |ymobile|n   |x(diagnostics unavailable)|n")
     return "\n".join(lines) if lines else "  |x(nothing editable yet)|n"
 
 
@@ -260,6 +289,20 @@ def _apply_field(target, name: str, field, value) -> None:
             target["key"] = value
         elif field.kind == "type":
             _set_prototype_type(target, value)
+        elif field.kind == "policy":
+            from systems.mobile_policy import (MOBILE_POLICY_ATTRIBUTE,
+                                               default_mobile_policy,
+                                               validate_mobile_policy)
+
+            profile = validate_mobile_policy(
+                target.get(MOBILE_POLICY_ATTRIBUTE, default_mobile_policy())
+            )
+            profile[field.target or name] = (
+                value == "on"
+                if isinstance(value, str) and value in {"on", "off"}
+                else value
+            )
+            target[MOBILE_POLICY_ATTRIBUTE] = validate_mobile_policy(profile)
         else:  # attr
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -270,6 +313,12 @@ def _apply_field(target, name: str, field, value) -> None:
         _set_item_type(target, value)
     elif field.kind == "attr":
         target.attributes.add(field.target or name, value)
+    elif field.kind == "policy":
+        from systems.mobile_policy import set_mobile_policy_value
+
+        if isinstance(value, str) and value in {"on", "off"}:
+            value = value == "on"
+        set_mobile_policy_value(target, field.target or name, value)
     elif field.kind == "tag":
         if name == "area":
             assign_area(target, value)
@@ -546,9 +595,36 @@ class CmdBuild(Command):
             "hp_current": 9,
             "hit_die": 10,
             "speed": 30,
+            "mobile_behavior_profile": "idle",
+            "mobile_specials": {"version": 1, "behaviors": []},
+            "mob_combat_profile": {
+                "version": 1,
+                "target_policy": "current",
+                "tactics": [],
+                "wimpy": 0,
+            },
+            "mobile_policy": {
+                "version": 1,
+                "sentinel": False,
+                "scavenger": False,
+                "aggressive": False,
+                "stay_in_area": False,
+                "wimpy": 0,
+                "detection": [],
+                "protected": False,
+                "noncombatant": False,
+            },
         }
         save_prototype(proto)
-        (npc,) = spawn({**proto, "location": caller.location}, caller=caller)
+        result = spawn_mobile(key, caller.location, caller=caller)
+        if result.status != "created":
+            caller.msg(
+                f"Created NPC prototype |y{key}|n, but could not spawn it: "
+                f"{result.reason}."
+            )
+            _enter_build_mode(caller, proto)
+            return
+        npc = result.npc
         _enter_build_mode(caller, proto)
         caller.msg(
             f"Created NPC prototype |y{key}|n and spawned |y{npc.key}|n "
@@ -769,6 +845,33 @@ def _live_item_line(item) -> str:
     return f"  |C#{item.id}|n — {item.key}"
 
 
+class CmdSpawn(EvenniaCmdSpawn):
+    """Route ordinary NPC template copies through MOB-05's spawn service.
+
+    The parent command still owns its complete expert interface (prototype
+    dictionaries, OLC, save/update, and non-NPC objects).  Only an exact plain
+    NPC prototype key gains the project-owned identity record.
+    """
+
+    def func(self) -> Any:
+        if (
+            not self.switches
+            and self.args.strip()
+            and not self.args.lstrip().startswith("{")
+        ):
+            prototype = _find_npc_prototype(self.args.strip())
+            if prototype is not None:
+                result = spawn_mobile(
+                    prototype["prototype_key"], self.caller.location, caller=self.caller
+                )
+                if result.status == "created":
+                    self.msg("Spawned %s." % result.npc.get_display_name(self.caller))
+                else:
+                    self.msg(f"NPC spawn failed: {result.reason}.")
+                return
+        yield from super().func()
+
+
 class CmdItems(Command):
     """
     List item prototypes and any untemplated live items in the game.
@@ -919,6 +1022,131 @@ class CmdNpcs(Command):
             for proto in sorted(protos, key=lambda data: data.get("prototype_key", ""))
         ]
         self.caller.msg("\n".join(lines))
+
+
+class CmdMobile(MuxCommand):
+    """Inspect a live NPC, authored NPC template, or fresh area population.
+
+    Usage:
+      @mobile <npc or #dbref>
+      @mobile/template <prototype key>
+      @mobile/area <area key>
+      @mobile/placement <area key>:<placement key>
+      @mobile/clear <npc or #dbref>
+
+    This Builder-only diagnostic command never repairs, moves, resets, or
+    otherwise changes a mobile.  ``/clear`` is the sole exception: it removes
+    MOB-08's retained failure record and writes an audit-log entry.
+    """
+
+    key = "@mobile"
+    aliases = ["@mob"]
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+    switch_options = ("template", "area", "placement", "clear")
+
+    def func(self) -> None:
+        if len(self.switches) > 1 or any(
+            switch not in self.switch_options for switch in self.switches
+        ):
+            self.caller.msg("Usage: @mobile[/template|area|placement|clear] <target>")
+            return
+        switch = self.switches[0] if self.switches else ""
+        argument = self.args.strip()
+        if switch == "template":
+            self._template(argument)
+        elif switch in {"area", "placement"}:
+            self._population(switch, argument)
+        elif switch == "clear":
+            self._clear(argument)
+        else:
+            self._live(argument)
+
+    def _live(self, argument: str) -> None:
+        if not argument:
+            self.caller.msg("Usage: @mobile <npc or #dbref>")
+            return
+        target = self.caller.search(argument, global_search=True)
+        if target is None:
+            return
+        try:
+            snapshot = mobile_diagnostic_snapshot(target)
+        except MobileDiagnosticError as err:
+            self.caller.msg(str(err))
+            return
+        self.caller.msg(_render_mobile_snapshot(snapshot))
+
+    def _template(self, argument: str) -> None:
+        try:
+            snapshot = mobile_template_snapshot(argument)
+        except MobileDiagnosticError as err:
+            self.caller.msg(str(err))
+            return
+        self.caller.msg(_render_mobile_snapshot(snapshot))
+
+    def _population(self, switch: str, argument: str) -> None:
+        area, separator, placement = argument.partition(":")
+        if not area or (switch == "placement" and (not separator or not placement)):
+            usage = (
+                "@mobile/area <area key>"
+                if switch == "area"
+                else "@mobile/placement <area key>:<placement key>"
+            )
+            self.caller.msg(f"Usage: {usage}")
+            return
+        try:
+            snapshot = mobile_population_snapshot(area)
+        except Exception:
+            self.caller.msg("That area has no readable mobile population snapshot.")
+            return
+        if switch == "placement":
+            snapshot = {
+                "version": snapshot["version"],
+                "area_key": snapshot["area_key"],
+                "placement_key": placement,
+                "count": snapshot["placement_counts"].get(placement, 0),
+            }
+        self.caller.msg("|wMobile population|n\n" + _diagnostic_json(snapshot))
+
+    def _clear(self, argument: str) -> None:
+        if not argument:
+            self.caller.msg("Usage: @mobile/clear <npc or #dbref>")
+            return
+        target = self.caller.search(argument, global_search=True)
+        if target is None:
+            return
+        try:
+            cleared = clear_mobile_failure(target, audited_by=self.caller)
+        except MobileDiagnosticError as err:
+            self.caller.msg(str(err))
+            return
+        self.caller.msg(
+            "Cleared retained mobile failure."
+            if cleared
+            else "This NPC has no retained mobile failure."
+        )
+
+
+def _diagnostic_json(value: dict[str, Any]) -> str:
+    """Keep Builder output bounded and deterministic while preserving keys."""
+    rendered = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return rendered if len(rendered) <= 4000 else rendered[:3997] + "..."
+
+
+def _render_mobile_snapshot(snapshot: dict[str, Any]) -> str:
+    """Render labelled, machine-readable MOB-08 sections in stable order."""
+    identity = snapshot["identity"]
+    label = identity.get("dbref") or identity.get("prototype_key", "unknown")
+    lines = [f"|wMobile diagnostic|n {snapshot['kind']} {label}"]
+    sections = snapshot.get("sections", snapshot.get("authored", {}))
+    for name in sorted(sections):
+        lines.append(f"|y{name}|n {_diagnostic_json(sections[name])}")
+    if snapshot.get("findings"):
+        lines.append("|yfindings|n " + _diagnostic_json(snapshot["findings"]))
+    if snapshot.get("runtime"):
+        lines.append(f"|yruntime|n {snapshot['runtime']}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,18 @@ def combat_flee_active(actor: Any, token: Any) -> bool:
 
 def flee_exit_decision(actor: Any, exit_obj: Any) -> FleeExitDecision:
     """Check an exit's normal traversal eligibility without moving."""
+    if getattr(getattr(actor, "db", None), "is_player_character", None) is False:
+        # MOB-04 owns NPC route eligibility.  Flee may ignore sentinel, but it
+        # must still observe area boundaries, locks, and room admission.
+        from systems.mobile_navigation import exit_eligibility
+
+        navigation = exit_eligibility(
+            actor, exit_obj, purpose="flee", allow_fighting=True
+        )
+        return FleeExitDecision(
+            navigation.status == "moved", exit_obj if navigation.status == "moved" else None,
+            navigation.reason or "invalid_route",
+        )
     from typeclasses.exits import Exit
 
     if (

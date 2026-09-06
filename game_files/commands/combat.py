@@ -6,12 +6,8 @@ from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.attacks import can_attack
 from systems.combat import get_target, schedule_tactical_action, start_fight
-from systems.combat_controls import (
-    estimate_threat,
-    set_combat_prompt,
-    set_combat_verbose,
-    set_wimpy,
-)
+from systems.combat_controls import (estimate_threat, set_combat_prompt,
+                                     set_combat_verbose, set_wimpy)
 from systems.equipment import HIT_LOCATIONS
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -192,6 +188,8 @@ def _attack_denial_message(reason: str) -> str:
         "target_ineligible": "That target cannot fight right now.",
         "target_defeated": "That target is already down.",
         "protected": "That target is protected from combat.",
+        "noncombatant": "That character cannot enter combat.",
+        "malformed_mobile_policy": "That character cannot enter combat right now.",
         "staff_immune": "That target cannot be attacked.",
         "access_denied": "You cannot attack that target.",
         "pvp_denied": "Player-versus-player combat is not enabled here.",

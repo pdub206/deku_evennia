@@ -52,4 +52,11 @@ class Exit(ObjectParent, DefaultExit):
             if not decision.allowed:
                 traversing_object.msg(decision.message)
                 return
+        if kwargs.get("mobile_navigation"):
+            # MOB-04 already selected a legal exit, but movement still uses the
+            # ordinary traversal mode so action, encumbrance, and room hooks
+            # receive exactly the same contract as player travel.
+            return traversing_object.move_to(
+                target_location, move_type="traverse", use_destination=False
+            )
         super().at_traverse(traversing_object, target_location, **kwargs)

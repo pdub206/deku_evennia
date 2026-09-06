@@ -26,6 +26,101 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "pets",
+        "aliases": ["pet", "followers", "order", "charm"],
+        "category": "Character",
+        "text": """
+            A pet has a durable owner, while charm is temporary control. Either
+            may let you issue an |worder|n while the creature is in your room:
+            |worder <pet> <action>|n. The available actions are |wfollow|n,
+            |wstay|n, and |wflee|n; for example, |worder hound follow|n.
+            Orders never run arbitrary commands, speech, building tools, or
+            movement. Flee is queued for the pet's next combat action.
+
+            Use |wpet <pet> follow|n or |wpet <pet> stay|n for the same direct
+            control, and |wpet <pet> release|n to end durable ownership.
+            Pets are acquired or charmed only by an ability or encounter that
+            explicitly permits it. Following uses normal exits and movement rules. A pet will not
+            teleport, reveal hidden routes, bypass a locked door, or cross an
+            area boundary it is not allowed to cross. If you disconnect, it
+            stops following but remains yours; reconnecting never moves it to
+            you automatically. Releasing a pet ends ownership and control but
+            does not destroy it or its possessions. Damage dealt by a pet is
+            credited to its responsible owner or controller at the time of the
+            damage.
+        """,
+    },
+    {
+        "key": "NPC special behaviors",
+        "aliases": ["npc specials", "mobile specials", "mob specials"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            NPC templates can have registered special behaviors through the
+            |wspecials|n builder field. The value is JSON with version 1 and a
+            |wbehaviors|n list. Every list entry has only a registered |wkey|n
+            and a primitive |wconfig|n mapping; it can never contain Python,
+            commands, callbacks, live objects, or an arbitrary lock string.
+
+            Specials have code-owned priorities and run in that deterministic
+            order. A special may decline an event; only one may take an action
+            for a given mobile decision or event, and declared conflicts are
+            reported as blocked rather than silently replacing another special.
+            Unknown, unavailable, malformed, or duplicate stored entries fail
+            closed without preventing the other valid entries from running.
+
+            Built-in |wguard|n and |wscavenger|n behaviors delegate to the
+            existing legal combat and pickup rules. |wspeaker|n needs a trigger
+            and response and replies through ordinary language-aware speech.
+            |wunique_trigger|n is a small message trigger with an optional
+            once-only primitive state. Shopkeeper, trainer, caster, and healer
+            assignments remain deferred until their owning services are added.
+
+            Template changes affect future spawned copies only. Edit a live NPC
+            for a deliberate one-off. Builder permission is required to assign
+            or edit any special configuration.
+        """,
+    },
+    {
+        "key": "NPC pet control",
+        "aliases": ["npc ownership", "npc charm", "pet locks"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Pet ownership and charm are opt-in NPC capabilities. An NPC must
+            grant the appropriate |wpet|n, |wcharm|n, |wtransfer|n, and
+            |worder|n locks; control is denied when a lock is absent. Content
+            such as a taming encounter or a charm effect uses the shared
+            relationship service to acquire or bind control.
+
+            A controlled NPC may receive only registered orders: |wfollow|n,
+            |wstay|n, and |wflee|n. Player text is never forwarded to an NPC's
+            normal command handler. Durable ownership persists through normal
+            disconnects; transient following and queued combat work do not.
+            The |w@mobile|n diagnostic shows ownership, charm source, follow
+            state, and retained safe failure information for a live NPC.
+        """,
+    },
+    {
+        "key": "NPC combat profiles",
+        "aliases": ["npc combat", "mobile combat", "mob combat"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            NPCs retaliate only after they take hostile damage; they do not begin
+            fights on their own. Their |wcombat_profile|n builder field is JSON
+            containing a target policy, an allowlisted weighted list of registered
+            tactical actions with primitive arguments and cooldowns, and an NPC
+            |wwimpy|n percentage from 0 through 90.
+
+            New NPC templates use the safe basic-attack profile: current target,
+            no tactics, and wimpy 0. Invalid profiles are rejected. A wimpy NPC
+            makes one normal flee attempt when it crosses its threshold, then must
+            heal above it before another automatic attempt. Pursuit and navigation
+            are not part of this profile.
+        """,
+    },
+    {
         "key": "account",
         "aliases": ["account controls", "ic", "ooc", "puppet"],
         "category": "General",
@@ -760,11 +855,44 @@ HELP_ENTRY_DICTS = [
             all six ability scores, level and XP, proficiency bonus, hit points,
             hit die, Reaction, Armor Class, passive Perception, speed, and an
             optional |wcorpse_decay_minutes|n override for that NPC's corpse.
+            Use |wset behavior idle|n to keep an NPC still, or |wset behavior
+            wander|n to let it take one legal exit per mobile decision. Wandering
+            never opens or searches exits and respects ordinary exit locks and
+            room limits. A sentinel does not wander. A stay-in-area wanderer (or
+            fleeing NPC) remains within rooms carrying the same authored area
+            tag; an untagged boundary leaves it with no route. NPCs that lose a
+            combat target may pursue through legal routes, but stop when the
+            target is lost, hidden, protected, unreachable, outside the allowed
+            area, or the short pursuit limit is reached.
+            MOB flags are set independently on the template: |wsentinel|n stops
+            ordinary wandering; |wscavenger|n picks up at most one accessible,
+            loose room item per mobile decision; |waggressive|n starts a normal
+            fight with one detectable legal target; and |wstay_in_area|n limits
+            later autonomous navigation to the NPC's authored area. Set each
+            boolean flag with |wset <field> on|n or |woff|n. |wwimpy|n is the
+            NPC-only 0–90% flee threshold, while |wdetection|n lists extra
+            senses (hearing, sight, smell).
+
+            |wprotected|n makes an NPC an illegal combat target. |wnoncombatant|n
+            includes that protection and also prevents the NPC from initiating,
+            joining, assisting, or retaliating in combat. Use protected for a
+            target that may still take part in scripted combat; use noncombatant
+            for someone who must never enter an encounter.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.
             A live NPC can be edited directly with |wedit <name>|n or
             |wedit #<dbref>|n for a one-off change that leaves its template alone.
+            Each template-created copy records its source template permanently;
+            older NPCs made directly remain explicitly untemplated. Killing or
+            editing a live NPC never replaces, heals, moves, or re-equips it.
+            Reset-managed populations are authored as named placements in an
+            area's |wMOBILES|n data. A placement has a desired population and
+            room/area ceilings; it is considered full even when one of its NPCs
+            has wandered away. Resets, when enabled for an area, create only the
+            missing fresh copies and never alter survivors. Manual |w@spawn|n
+            copies have a source template but do not create a reset placement or
+            change any population ceiling.
 
             ## Areas and Export
 
@@ -790,6 +918,37 @@ HELP_ENTRY_DICTS = [
 
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
+        """,
+    },
+    {
+        "key": "@mobile",
+        "aliases": ["@mob", "mobile diagnostics"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Inspect a mobile's current runtime state and safe MOB subsystem
+            diagnostics. This command is for Builders and higher.
+
+            Usage:
+              @mobile <npc or #dbref>
+              @mobile/template <prototype key>
+              @mobile/area <area key>
+              @mobile/placement <area key>:<placement key>
+              @mobile/clear <npc or #dbref>
+
+            A live NPC report distinguishes its durable source identity from
+            mutable runtime state. |ymanaged|n copies belong to a named reset
+            placement; |yunmanaged|n copies came from a template but have no
+            reset placement; |yuntemplated|n legacy NPCs have neither identity.
+            Area and placement reports use a fresh count of live NPC identity,
+            never names, sessions, or a cached list.
+
+            Sections marked unavailable have malformed or temporarily missing
+            source data; inspection leaves them unchanged. The retained last
+            failure contains stable subsystem/reason keys, repeats, and a
+            recovery marker. A later success marks it recovered but keeps it
+            visible. Use |w@mobile/clear|n only after following the repair
+            workflow owned by the named MOB subsystem; clearing is audited.
         """,
     },
     {
