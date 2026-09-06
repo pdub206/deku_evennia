@@ -1620,7 +1620,14 @@ def menunode_end(caller: Any, **kwargs):
     bg_data = BACKGROUNDS.get(bg, {})
     bg_skill_profs: list[str] = bg_data.get("skill_proficiencies", [])
     class_skill_profs: list[str] = list(char.db.chargen_skill_proficiencies or [])
-    char.db.skill_proficiencies = sorted(set(bg_skill_profs + class_skill_profs))
+    # Chosen class skills use the same durable ADV-03 provenance as choices
+    # made after leveling; chargen is simply the one trainer-free exception.
+    from systems.training import record_chargen_choice
+
+    record_chargen_choice(char, cls_name, class_skill_profs)
+    char.db.skill_proficiencies = sorted(
+        set(bg_skill_profs + list(char.db.skill_proficiencies or []))
+    )
 
     # Clean up all temporary chargen attributes.
     for attr in [

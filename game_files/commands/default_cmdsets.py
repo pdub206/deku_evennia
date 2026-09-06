@@ -62,6 +62,7 @@ from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
+from commands.training import CmdPractice, CmdTrain
 from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
@@ -107,6 +108,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSheet)
         self.add(CmdSkills)
         self.add(CmdChange)
+        self.add(CmdPractice)
+        self.add(CmdTrain)
         # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
         # which otherwise runs no command and so wouldn't refresh it.
         self.add(CmdNoInput)

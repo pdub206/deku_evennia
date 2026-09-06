@@ -125,7 +125,7 @@ def award_xp(
             for threshold in XP_THRESHOLDS[old_level:new_level]
             if threshold <= new_xp
         )
-        grants = _apply_levels(character, old_level, new_level)
+        grants, pending_choices = _apply_levels(character, old_level, new_level)
         character.db.xp = new_xp
         character.db.level = new_level
         _preserve_missing_hp(character, missing_hp)
@@ -136,7 +136,7 @@ def award_xp(
             new_level,
             crossed,
             tuple(grants),
-            (),
+            pending_choices,
             new_level == MAX_LEVEL,
             True,
             "awarded" if amount else "zero_award",
@@ -177,13 +177,20 @@ def initialize_level_one(character: Any, *, class_key: str, hp_base: int) -> Non
             "fingerprint": CLASS_PROGRESSION.fingerprint,
             "grants": list(definition.grants_at(1).automatic_feature_keys),
         }
+        # ADV-03 owns the durable record; ADV-01 only creates earned choice
+        # entitlements and deliberately never selects an option itself.
+        from systems.training import initialize_choice_entitlements
+
+        initialize_choice_entitlements(character, definition.key, 1)
         _write_ledger(character, _new_ledger())
 
 
-def _apply_levels(character: Any, old_level: int, new_level: int) -> list[str]:
-    """Apply the registry-defined fixed HP grant for each crossed level."""
+def _apply_levels(
+    character: Any, old_level: int, new_level: int
+) -> tuple[list[str], tuple[str, ...]]:
+    """Apply HP and create registry-defined choice entitlements per level."""
     if new_level <= old_level:
-        return []
+        return [], ()
     try:
         definition = CLASS_PROGRESSION.class_for(character.attributes.get("char_class"))
     except RegistryValidationError as err:
@@ -191,7 +198,17 @@ def _apply_levels(character: Any, old_level: int, new_level: int) -> list[str]:
     constitution = character.stats.ability_modifier("Constitution")
     gain = max(1, definition.fixed_hp_gain + constitution)
     character.db.hp_base = character.stats.hp_base + gain * (new_level - old_level)
-    return tuple(f"hp_level_{level}" for level in range(old_level + 1, new_level + 1))
+    from systems.training import initialize_choice_entitlements
+
+    pending: list[str] = []
+    for level in range(old_level + 1, new_level + 1):
+        choices = definition.grants_at(level).choice_keys
+        initialize_choice_entitlements(character, definition.key, level)
+        pending.extend(choices)
+    return (
+        [f"hp_level_{level}" for level in range(old_level + 1, new_level + 1)],
+        tuple(pending),
+    )
 
 
 def _preserve_missing_hp(character: Any, missing_hp: int) -> None:

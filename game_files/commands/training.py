@@ -1,0 +1,159 @@
+"""Player commands for ADV-03's class-choice training loop."""
+
+from __future__ import annotations
+
+from commands.command import Command
+from systems.action_policy import ActionCategory
+from systems.training import (
+    TrainingError,
+    find_trainer,
+    practice_view,
+    resolve_training,
+)
+
+
+class CmdPractice(Command):
+    """Review learned class options and choices awaiting training.
+
+    Usage:
+      practice
+
+    This is read-only and works anywhere. It shows automatic class gains,
+    known skill proficiencies, class resources, spell-access limits, and any
+    selections you still need to make through an eligible trainer.
+    """
+
+    key = "practice"
+    aliases = ["practise"]
+    help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        if self.args.strip():
+            self.caller.msg("Usage: practice")
+            return
+        try:
+            view = practice_view(self.caller)
+        except TrainingError as err:
+            self.caller.msg(str(err))
+            return
+        lines = ["|wPractice|n"]
+        lines.append(
+            "Known proficiencies: "
+            + (
+                ", ".join(view.known_proficiencies)
+                if view.known_proficiencies
+                else "None"
+            )
+        )
+        lines.append(
+            "Automatic class features: "
+            + (
+                ", ".join(view.automatic_features)
+                if view.automatic_features
+                else "None"
+            )
+        )
+        lines.append(
+            "Class resources: "
+            + (
+                ", ".join(f"{key} ({maximum})" for key, maximum in view.resources)
+                if view.resources
+                else "None"
+            )
+        )
+        lines.append(
+            "Spell access: "
+            + (
+                ", ".join(
+                    f"{key} (cantrips {cantrips}, known {known}, max spell level {maximum})"
+                    for key, cantrips, known, maximum in view.spell_access
+                )
+                if view.spell_access
+                else "None"
+            )
+        )
+        if view.pending_choices:
+            lines.append("Pending choices:")
+            for item in view.pending_choices:
+                lines.append(
+                    f"  {item['choice_key']}: choose {item['count'] - len(item['selected'])} from "
+                    f"{', '.join(_options(item['choice_key']))}"
+                )
+        else:
+            lines.append("Pending choices: None")
+        self.caller.msg("\n".join(lines))
+
+
+class CmdTrain(Command):
+    """Resolve one pending class choice through a nearby trainer.
+
+    Usage:
+      train
+      train <choice> = <option>
+      train <choice> = <option> at <trainer>
+
+    With no arguments, this is a read-only shortcut for ``practice``. Training
+    a choice requires one qualified nearby NPC; XP levels and automatic class
+    gains never require a trainer.
+    """
+
+    key = "train"
+    help_category = "Character"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        raw = self.args.strip()
+        if not raw:
+            try:
+                view = practice_view(self.caller)
+            except TrainingError as err:
+                self.caller.msg(str(err))
+                return
+            self.caller.msg(_practice_summary(view))
+            return
+        parsed = _parse_training(raw)
+        if parsed is None:
+            self.caller.msg("Usage: train <choice> = <option> [at <trainer>]")
+            return
+        decision = self.caller.actions.check(ActionCategory.MANIPULATE)
+        if not decision.allowed:
+            self.caller.msg(decision.message)
+            return
+        choice, option, trainer_name = parsed
+        try:
+            trainer = find_trainer(self.caller, trainer_name)
+            result = resolve_training(self.caller, choice, option, trainer)
+        except TrainingError as err:
+            self.caller.msg(str(err))
+            return
+        if result.applied:
+            self.caller.msg(f"You train |w{result.option}|n through {trainer.key}.")
+
+
+def _parse_training(raw: str) -> tuple[str, str, str | None] | None:
+    """Parse the deliberately small, unambiguous training grammar."""
+    if raw.count("=") != 1:
+        return None
+    choice, option_part = (part.strip() for part in raw.split("=", 1))
+    option, marker, trainer = option_part.rpartition(" at ")
+    if not marker:
+        option, trainer = option_part, None
+    if not choice or not option.strip() or (marker and not trainer.strip()):
+        return None
+    return choice, option.strip(), trainer.strip() if trainer else None
+
+
+def _options(choice_key: str) -> tuple[str, ...]:
+    """Read legal options from ADV-02 rather than duplicating command data."""
+    from systems.progression import CLASS_PROGRESSION
+
+    return CLASS_PROGRESSION.choices[choice_key].legal_options
+
+
+def _practice_summary(view) -> str:
+    """Keep ``train`` without arguments a concise read-only listing."""
+    if not view.pending_choices:
+        return "No training choices are pending. Use |wpractice|n for your full record."
+    entries = ", ".join(item["choice_key"] for item in view.pending_choices)
+    return f"Pending training choices: {entries}. Use |wpractice|n for details."

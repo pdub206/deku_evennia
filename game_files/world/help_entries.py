@@ -62,6 +62,53 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "practice",
+        "aliases": ["training choices", "train", "class training"],
+        "category": "Character",
+        "text": """
+            Use |wpractice|n to review your known skill proficiencies,
+            automatic class features, class resources, spell access, and any
+            choices still awaiting training. It is read-only and works
+            anywhere. |wtrain|n with no arguments gives a short list of your
+            pending choices.
+
+            XP raises your level, hit points, and automatic class benefits
+            immediately. A trainer never holds an earned level hostage.
+            Training is only for a listed class choice. To make one, use
+            |wtrain <choice> = <option>|n, or name an NPC explicitly with
+            |wtrain <choice> = <option> at <trainer>|n. The trainer must be
+            nearby, offer your class and that choice, and be willing to train
+            you. There is currently no generic practice-point pool or fee.
+
+            Some spellcasting classes will later distinguish spells known,
+            prepared spells, and spellbooks. Until their spell rules are
+            released, |wpractice|n only reports the class access you have
+            earned; it cannot teach unregistered spells.
+        """,
+    },
+    {
+        "key": "trainer profiles",
+        "aliases": ["adv-03", "npc trainers", "training service"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            A trainer is an NPC with a validated versioned trainer profile.
+            The profile names only registered class keys and ADV-02 choice
+            keys, plus inclusive minimum and maximum level bands and an
+            ordinary service-access lock. It contains no Python, callbacks,
+            player-selected import paths, implicit practice points, or
+            arbitrary costs.
+
+            A profile is opt-in: an NPC without one is not a trainer. Keep
+            training locks ordinary and player-facing; never expose private
+            lock expressions in room text or command feedback. The service
+            validates the profile, NPC location, class, level, pending
+            entitlement, and lock both before and inside its transaction.
+            Current builder UI support is intentionally deferred with MOB-06;
+            configure profiles through reviewed content tooling only.
+        """,
+    },
+    {
         "key": "pets",
         "aliases": ["pet", "followers", "order", "charm"],
         "category": "Character",
