@@ -12,13 +12,23 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from systems.attacks import (AttackOutcome, AttackResult, can_attack,
-                             resolve_basic_attack)
+from systems.attacks import (
+    AttackOutcome,
+    AttackResult,
+    can_attack,
+    resolve_basic_attack,
+)
 from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult, get_encounter_id, get_target
-from systems.dice import RollResult, roll_check
-from systems.effects import (EFFECT_REGISTRY, ApplyOutcome, EffectDefinition,
-                             RemovalReason, StackingPolicy)
+from systems.checks import CheckRequest, CheckResult, resolve_opposed_check
+from systems.dice import RollResult
+from systems.effects import (
+    EFFECT_REGISTRY,
+    ApplyOutcome,
+    EffectDefinition,
+    RemovalReason,
+    StackingPolicy,
+)
 from systems.equipment import HIT_LOCATIONS
 from systems.pulses import PulseEvent
 
@@ -46,8 +56,8 @@ class TacticalActionResult(CombatActionResult):
     actor_id: int | None = None
     target_id: int | None = None
     attack: AttackResult | None = None
-    attacker_roll: RollResult | None = None
-    defender_roll: RollResult | None = None
+    attacker_roll: RollResult | CheckResult | None = None
+    defender_roll: RollResult | CheckResult | None = None
     effect_applied: str | None = None
     retargeted: bool = False
 
@@ -294,12 +304,24 @@ def _bash(
         return TacticalActionResult(reason="shield_required", **common)
     if _size_rank(target) > _size_rank(actor) + 1:
         return TacticalActionResult(reason="target_too_large", **common)
-    attacker_roll = roll_check(actor.stats.skill_bonus("Athletics"), 0)
-    defender_bonus = max(
-        target.stats.skill_bonus("Athletics"), target.stats.skill_bonus("Acrobatics")
+    defense_skill = (
+        "Athletics"
+        if target.stats.skill_bonus("Athletics")
+        >= target.stats.skill_bonus("Acrobatics")
+        else "Acrobatics"
     )
-    defender_roll = roll_check(defender_bonus, 0)
-    if attacker_roll.total < defender_roll.total:
+    contest = resolve_opposed_check(
+        CheckRequest(actor, "Strength", 5, skill="Athletics", action_key="bash"),
+        CheckRequest(
+            target,
+            "Strength" if defense_skill == "Athletics" else "Dexterity",
+            5,
+            skill=defense_skill,
+            action_key="bash_defense",
+        ),
+    )
+    attacker_roll, defender_roll = contest.actor, contest.opponent
+    if not contest.actor_wins:
         return TacticalActionResult(
             reason="contest_failed",
             attacker_roll=attacker_roll,

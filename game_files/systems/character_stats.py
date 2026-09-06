@@ -13,9 +13,14 @@ from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
 from systems.progression import CLASSES
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
-                                CARRY_CAPACITY_MULTIPLIER, SKILLS, SPECIES,
-                                ability_modifier)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    CARRY_CAPACITY_MULTIPLIER,
+    SKILLS,
+    SPECIES,
+    ability_modifier,
+)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -222,8 +227,7 @@ class CharacterStats:
         current = self.hp_current
         # COMBAT-09 observes the canonical HP write rather than duplicating
         # damage/healing paths.  The lazy import keeps stats usable at boot.
-        from systems.combat_controls import (reconcile_wimpy,
-                                             refresh_combat_prompt)
+        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
 
         # A zero-HP injury transition is written by ``apply_damage`` after this
         # resource write; defer its policy check so a newly dying/dead character
@@ -283,13 +287,17 @@ class CharacterStats:
 
     @property
     def passive_perception(self) -> int:
-        """Return passive Perception, including skill proficiency."""
+        """Return ADV-04's canonical passive Perception score."""
         override = self._attribute("passive_perception_override")
-        if override is not None:
-            base = int(override)
-        else:
-            base = 10 + self.skill_bonus("Perception")
-        return base + self._modifier_total("passive_perception")
+        from systems.checks import passive_check
+
+        return passive_check(
+            self.owner,
+            ability="Wisdom",
+            skill="Perception",
+            action_key="passive_perception",
+            override=int(override) if override is not None else None,
+        ).total
 
     def skill_bonus(self, skill: str) -> int:
         """Return the effective bonus for a named skill."""

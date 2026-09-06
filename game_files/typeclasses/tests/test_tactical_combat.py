@@ -1,5 +1,6 @@
 """Focused COMBAT-08 regression coverage for queued physical tactics."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from evennia import create_object
@@ -159,9 +160,13 @@ class TestPhysicalTactics(EvenniaTest):
                 ("worn_location", "shield"),
             ),
         )
-        rolls = iter((RollResult(20, 0, 20, 0, True), RollResult(1, 0, 1, 0, True)))
+        contest = SimpleNamespace(
+            actor=RollResult(20, 0, 20, 0, True),
+            opponent=RollResult(1, 0, 1, 0, True),
+            actor_wins=True,
+        )
         with patch(
-            "systems.tactical_combat.roll_check", side_effect=lambda *_: next(rolls)
+            "systems.tactical_combat.resolve_opposed_check", return_value=contest
         ):
             result = _bash(self.char1, self.char2, self.event, {})
 

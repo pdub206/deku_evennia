@@ -26,6 +26,7 @@ from commands.building import (
     CmdSpawn,
 )
 from commands.change import CmdChange
+from commands.checks import CmdCheck
 from commands.combat import (
     CmdAim,
     CmdAttack,
@@ -136,6 +137,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdFlee)
         self.add(CmdStabilize)
         self.add(CmdInjury)
+        self.add(CmdCheck)
         self.add(CmdOrder)
         self.add(CmdPet)
 

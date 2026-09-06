@@ -16,6 +16,7 @@ from evennia.utils import logger
 from systems.action_policy import Position
 from systems.combat_outcomes import InjuryState, predict_damage_transition
 from systems.dice import roll
+from systems.checks import CheckRequest, CheckResult, resolve_check
 from systems.pulses import PulseEvent, PulseLane
 
 INJURY_ATTRIBUTE = "injury_state"
@@ -53,6 +54,7 @@ class InjuryResult:
     reason: str = ""
     combat_cleanup_required: bool = False
     death_id: str | None = None
+    check: CheckResult | None = None
 
 
 @dataclass(frozen=True)
@@ -282,15 +284,17 @@ def attempt_stabilization(
         return _result(
             False, previous_hp, previous_hp, record, "invalid_target", previous=record
         )
-    die_roll = die_roller(20)
-    if (
-        isinstance(die_roll, bool)
-        or not isinstance(die_roll, int)
-        or not 1 <= die_roll <= 20
-    ):
-        raise InjuryError("Medicine roller returned an invalid d20 result.")
-    total = die_roll + healer.stats.skill_bonus("Medicine")
-    if total >= 10:
+    check = resolve_check(
+        CheckRequest(
+            healer,
+            "Wisdom",
+            10,
+            skill="Medicine",
+            action_key="stabilize",
+        ),
+        roller=die_roller,
+    )
+    if check.success:
         next_record = InjuryRecord(
             InjuryState.INCAPACITATED, last_recovery=record.last_recovery
         )
@@ -307,15 +311,17 @@ def attempt_stabilization(
         next_record.state,
         next_record.successes,
         next_record.failures,
-        die_roll,
-        total,
+        check.die_result,
+        check.total,
         reason,
         next_record.state is InjuryState.DEAD,
         next_record.death_id,
+        check,
     )
     if emit_messages:
         healer.msg(
-            f"Medicine check: d20 {die_roll} + {healer.stats.skill_bonus('Medicine')} = {total}."
+            f"Medicine check: d20 {check.die_result} + "
+            f"{check.total - check.die_result} = {check.total}."
         )
         _announce(target, result)
     return result

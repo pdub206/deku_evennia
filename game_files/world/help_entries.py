@@ -26,6 +26,42 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "checks",
+        "aliases": ["ability checks", "skill checks", "advantage", "dc"],
+        "category": "Character",
+        "text": """
+            When an uncertain action matters, the game may call for an ability
+            check. Roll a d20 and add the relevant ability modifier. A skill or
+            tool you are proficient with adds your proficiency bonus once;
+            expertise doubles that proficiency contribution.
+
+            A Difficulty Class (DC) is the number the total must meet or beat.
+            Some actions oppose another character's check instead. Ties usually
+            preserve the current situation. Passive checks use 10 plus the same
+            bonuses, which lets a character notice things without rolling.
+
+            Advantage rolls two d20s and uses the higher result; disadvantage
+            uses the lower. If both apply, they cancel. A natural 1 or 20 on an
+            ability check is not an automatic failure or success.
+        """,
+    },
+    {
+        "key": "check diagnostics",
+        "aliases": ["@check", "builder checks", "adv-04"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Builders can test a visible character's calculation with
+            |w@check <target> = <ability>[/<skill>] <dc>|n. DCs are bounded
+            from 5 to 30. This command rolls only a diagnostic check: it does
+            not carry out an action, reveal hidden targets, bypass a lock, or
+            apply any consequence.
+
+            Builder-authored action DC fields must use the same 5–30 range.
+            Do not store arbitrary player-entered DC text in prototypes.
+        """,
+    },
+    {
         "key": "class progression",
         "aliases": ["classes", "class features", "level features"],
         "category": "Character",

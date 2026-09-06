@@ -120,15 +120,17 @@ def d20() -> int:
     return roll(20)
 
 
-def advantage() -> int:
+def advantage(*, roller: Callable[[int], int] | None = None) -> int:
     """Roll 2d20 and return the higher result."""
-    a, b = roll(20), roll(20)
+    roller = roll if roller is None else roller
+    a, b = roller(20), roller(20)
     return max(a, b)
 
 
-def disadvantage() -> int:
+def disadvantage(*, roller: Callable[[int], int] | None = None) -> int:
     """Roll 2d20 and return the lower result."""
-    a, b = roll(20), roll(20)
+    roller = roll if roller is None else roller
+    a, b = roller(20), roller(20)
     return min(a, b)
 
 
@@ -164,6 +166,7 @@ def roll_check(
     *,
     has_advantage: bool = False,
     has_disadvantage: bool = False,
+    roller: Callable[[int], int] | None = None,
 ) -> RollResult:
     """
     Roll a d20 check against a Difficulty Class.
@@ -181,13 +184,21 @@ def roll_check(
     Returns:
         A RollResult describing the die face, total, and whether it succeeded.
     """
+    roller = roll if roller is None else roller
     cancelled = has_advantage and has_disadvantage
     if cancelled or (not has_advantage and not has_disadvantage):
-        die_roll = d20()
+        die_roll = roller(20)
     elif has_advantage:
-        die_roll = advantage()
+        die_roll = advantage(roller=roller)
     else:
-        die_roll = disadvantage()
+        die_roll = disadvantage(roller=roller)
+
+    if (
+        isinstance(die_roll, bool)
+        or not isinstance(die_roll, int)
+        or not 1 <= die_roll <= 20
+    ):
+        raise ValueError("Check roller returned an invalid d20 result.")
 
     total = die_roll + bonus
     return RollResult(

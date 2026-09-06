@@ -31,6 +31,7 @@ _BASE_MODIFIERS = frozenset(
         "armor_class",
         "attack_bonus",
         "carry_capacity",
+        "check_bonus",
         "damage_bonus",
         "hp_max",
         "passive_perception",
@@ -961,6 +962,16 @@ def _is_modifier_name(name: str) -> bool:
         return detail in _ABILITY_KEYS
     if prefix == "skill":
         return detail in _SKILL_KEYS
+    if prefix == "check":
+        # ADV-04 consumes a bounded action key or ``ability:<name>``.  Effects
+        # remain declarative: they can alter a named check, never supply code.
+        if detail.startswith("ability:"):
+            return detail.removeprefix("ability:") in _ABILITY_KEYS
+        try:
+            _validate_key(detail, "check action")
+        except EffectError:
+            return False
+        return True
     if prefix == "recovery":
         # Resources own the semantics; RULES-04 only requires a stable resource
         # key so effects can provide numeric recovery bonuses or penalties.
