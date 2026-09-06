@@ -176,6 +176,16 @@ def as_choice_list(*options: str) -> Callable[[str], list[str]]:
     return validate
 
 
+def as_mobile_behavior_profile(raw: str) -> str:
+    """Validate an NPC's code-owned initial mobile behavior profile."""
+    from systems.mobiles import behavior_profile_keys
+
+    value = raw.strip().lower()
+    if value not in behavior_profile_keys():
+        raise ValueError(f"must be one of: {', '.join(behavior_profile_keys())}.")
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Per-type field schemas.
 # ---------------------------------------------------------------------------
@@ -400,6 +410,12 @@ NPC_FIELDS: dict[str, Field] = {
         "attr",
         as_int_range(0, MAX_NPC_XP_REWARD),
         f"XP awarded for this NPC's defeat (0-{MAX_NPC_XP_REWARD}; zero means no XP)",
+    ),
+    "behavior": Field(
+        "attr",
+        as_mobile_behavior_profile,
+        "initial autonomous behavior profile (currently idle)",
+        "mobile_behavior_profile",
     ),
     "corpse_decay_minutes": Field(
         "attr",

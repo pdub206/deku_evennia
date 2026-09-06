@@ -696,6 +696,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         }
         for name, value in expected.items():
             self.assertEqual(proto[name], value, name)
+        self.assertEqual(proto["mobile_behavior_profile"], "idle")
 
     def test_fields_clone_finished_pc_sheet(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -725,6 +726,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "level",
                 "xp",
                 "xp_reward",
+                "behavior",
                 "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
@@ -740,6 +742,7 @@ class TestEditNewNpc(EvenniaCommandTest):
 
     def test_set_npc_fields_persists_canonical_values(self):
         self.call(CmdBuild(), "new npc City Guard")
+        self.call(CmdBuildSet(), "behavior idle")
         self.call(CmdBuildSet(), "gender female")
         self.call(CmdBuildSet(), "species elf")
         self.call(CmdBuildSet(), "class wizard")
@@ -765,6 +768,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["skill_proficiencies"], ["Arcana", "History"])
         self.assertEqual(saved["intelligence"], 18)
         self.assertEqual(saved["corpse_decay_minutes"], 12.5)
+        self.assertEqual(saved["mobile_behavior_profile"], "idle")
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")

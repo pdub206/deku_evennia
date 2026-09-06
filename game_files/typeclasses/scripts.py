@@ -178,6 +178,9 @@ class GamePulseScript(Script):
 
     def at_mobiles_pulse(self, event: PulseEvent) -> None:
         """Run mobile behavior supplied by MOB-01."""
+        from systems.mobiles import process_mobile_pulse
+
+        process_mobile_pulse(event)
 
     def at_effects_pulse(self, event: PulseEvent) -> None:
         """Advance persistent timed effects for PCs and NPCs."""

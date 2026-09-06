@@ -760,6 +760,11 @@ HELP_ENTRY_DICTS = [
             all six ability scores, level and XP, proficiency bonus, hit points,
             hit die, Reaction, Armor Class, passive Perception, speed, and an
             optional |wcorpse_decay_minutes|n override for that NPC's corpse.
+            Use |wset behavior idle|n to choose its initial autonomous profile.
+            Idle is safe and has no visible action. Combat, aggression flags,
+            wandering, reset/spawn policy, followers, and special behavior are
+            introduced by their own game systems; this setting only supplies an
+            initial profile to newly spawned copies.
             Use |wfields|n for accepted values and |wshow|n for the current sheet.
 
             Changes persist immediately and affect copies spawned afterwards.

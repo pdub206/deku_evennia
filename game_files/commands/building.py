@@ -546,6 +546,7 @@ class CmdBuild(Command):
             "hp_current": 9,
             "hit_die": 10,
             "speed": 30,
+            "mobile_behavior_profile": "idle",
         }
         save_prototype(proto)
         (npc,) = spawn({**proto, "location": caller.location}, caller=caller)
