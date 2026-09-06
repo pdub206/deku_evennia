@@ -2,6 +2,7 @@
 
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
+from systems.advancement import initialize_level_one
 from systems.injury import apply_damage
 from systems.rewards import record_damage, reward_result
 
@@ -12,8 +13,11 @@ class TestCombatRewards(EvenniaTest):
     def setUp(self):
         super().setUp()
         self.char1.db.hp_current = 20
+        self.char1.db.char_class = "Fighter"
+        self.char1.db.hit_die = 10
+        initialize_level_one(self.char1, class_key="Fighter", hp_base=10)
+        self.char1.db.xp = 6500
         self.char1.db.level = 5
-        self.char1.db.xp = 7
         self.char2.db.is_player_character = False
         self.char2.db.hp_current = 10
         self.char2.db.hp_base = 10
@@ -27,20 +31,22 @@ class TestCombatRewards(EvenniaTest):
 
         self.assertEqual(result.final_xp, 11)
         self.assertEqual(result.credited_id, self.char1.id)
-        self.assertEqual(self.char1.stats.xp, 18)
+        self.assertEqual(self.char1.stats.xp, 6511)
         # Replaying the same death is served from its durable audit result.
         self.assertEqual(reward_result(injury.death_id).final_xp, 11)
-        self.assertEqual(self.char1.stats.xp, 18)
+        self.assertEqual(self.char1.stats.xp, 6511)
 
     def test_level_adjustment_clamps_floors_and_keeps_minimum_one(self):
         """The authored base is adjusted only after a recipient is selected."""
         self.char2.db.level = 1
         self.char2.db.xp_reward = 9
         self.char1.db.level = 11
+        self.char1.db.xp = 85000
         low = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
         self.assertEqual(reward_result(low.death_id).final_xp, 0)
 
         self.char1.db.level = 10
+        self.char1.db.xp = 64000
         npc = create_object(
             "typeclasses.characters.Character", key="high foe", location=self.room1
         )
@@ -77,4 +83,4 @@ class TestCombatRewards(EvenniaTest):
         injury = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
         result = reward_result(injury.death_id)
         self.assertEqual(result.reason, "invalid_xp_reward")
-        self.assertEqual(self.char1.stats.xp, 7)
+        self.assertEqual(self.char1.stats.xp, 6500)

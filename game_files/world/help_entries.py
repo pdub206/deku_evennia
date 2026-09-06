@@ -442,6 +442,23 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "advancement",
+        "aliases": ["experience", "xp", "leveling", "level up"],
+        "category": "Character",
+        "text": """
+            Experience Points (XP) are cumulative. Reaching a level's XP
+            threshold raises your level automatically; no trainer is needed
+            for your level, hit points, or other automatic benefits. Some
+            future class benefits may be choices. Those remain pending until
+            you train them instead of being selected for you.
+
+            The current level cap is 20 at 355,000 XP. You may still earn and
+            retain XP after that point, but it grants no additional levels or
+            level-based benefits. Characters have one class; multiclassing is
+            not available.
+        """,
+    },
+    {
         "key": "experience from combat",
         "aliases": ["combat experience", "npc xp", "xp rewards"],
         "category": "Combat",

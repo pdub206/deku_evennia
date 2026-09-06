@@ -4,6 +4,7 @@ from django.test import override_settings
 from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
+from systems.advancement import initialize_level_one
 from systems.areas import AREA_TAG_CATEGORY, ROOM_KEY_CATEGORY
 from systems.attacks import resolve_basic_attack
 from systems.combat import (
@@ -35,6 +36,8 @@ class TestMilestoneOneExitGate(EvenniaTest):
         """Create an ordinary player-owned character in the test room."""
         character = create_object(Character, key=key, location=self.room1)
         character.db.is_player_character = True
+        character.db.hit_die = 10
+        initialize_level_one(character, class_key="Fighter", hp_base=10)
         return character
 
     def _npc(self, key):

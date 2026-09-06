@@ -16,13 +16,26 @@ from typing import Any
 
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
-                                BACKGROUNDS, CLASSES, MAX_AGE, MIN_AGE,
-                                POINT_BUY_COSTS, POINT_BUY_MAX, POINT_BUY_MIN,
-                                POINT_BUY_TOTAL, SKILLS, SPECIES,
-                                STANDARD_ARRAY, STANDARD_ARRAY_BY_CLASS,
-                                STANDARD_LANGUAGES, ability_modifier,
-                                roll_4d6_drop_lowest)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    CLASSES,
+    MAX_AGE,
+    MIN_AGE,
+    POINT_BUY_COSTS,
+    POINT_BUY_MAX,
+    POINT_BUY_MIN,
+    POINT_BUY_TOTAL,
+    SKILLS,
+    SPECIES,
+    STANDARD_ARRAY,
+    STANDARD_ARRAY_BY_CLASS,
+    STANDARD_LANGUAGES,
+    ability_modifier,
+    roll_4d6_drop_lowest,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1592,12 +1605,12 @@ def menunode_end(caller: Any, **kwargs):
     # Persistent rules inputs. Derived values come from ``char.stats`` so they
     # respond immediately when these inputs or modifier sources change.
     cls_data = CLASSES.get(cls_name, CLASSES["Fighter"])
-    char.db.level = 1
-    char.db.xp = 0
     char.db.char_class = cls_name
     char.db.species = species
     char.db.size = size
-    char.db.hp_base = cls_data["hp_base"]
+    from systems.advancement import initialize_level_one
+
+    initialize_level_one(char, class_key=cls_name, hp_base=cls_data["hp_base"])
     char.db.hit_die = cls_data["hit_die"]
     char.db.speed = species_data.get("speed", 30)
     for stale_derived in (
