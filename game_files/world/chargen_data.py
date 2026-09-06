@@ -103,7 +103,10 @@ ABILITY_SCORE_MODIFIERS: dict[int, int] = {
 #   weapon_categories – machine-readable simple/martial training
 #   weapon_proficiencies – machine-readable exceptions by weapon kind
 
-CLASSES: dict[str, dict] = {
+# This is deliberately private compatibility input.  ``systems.progression``
+# turns it into the immutable, validated registry consumed by the game; public
+# callers use the ``CLASSES`` projection installed at the end of this module.
+_CLASS_SUMMARIES: dict[str, dict] = {
     "Barbarian": {
         "likes": "Battle",
         "primary_ability": "Strength",
@@ -923,3 +926,16 @@ ALIGNMENTS: list[tuple[str, str, str]] = [
         "Acts with arbitrary violence, spurred by hatred or bloodlust. Destroys without remorse.",
     ),
 ]
+
+
+def __getattr__(name: str):
+    """Expose the registry's legacy chargen projection on demand.
+
+    A lazy import avoids a cycle when the registry reads the private authored
+    source above while retaining import compatibility for old menu extensions.
+    """
+    if name == "CLASSES":
+        from systems.progression import CLASSES
+
+        return CLASSES
+    raise AttributeError(name)

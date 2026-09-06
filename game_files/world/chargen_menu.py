@@ -16,26 +16,13 @@ from typing import Any
 
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    ALIGNMENTS,
-    BACKGROUNDS,
-    CLASSES,
-    MAX_AGE,
-    MIN_AGE,
-    POINT_BUY_COSTS,
-    POINT_BUY_MAX,
-    POINT_BUY_MIN,
-    POINT_BUY_TOTAL,
-    SKILLS,
-    SPECIES,
-    STANDARD_ARRAY,
-    STANDARD_ARRAY_BY_CLASS,
-    STANDARD_LANGUAGES,
-    ability_modifier,
-    roll_4d6_drop_lowest,
-)
+from systems.progression import CLASSES
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
+                                BACKGROUNDS, MAX_AGE, MIN_AGE, POINT_BUY_COSTS,
+                                POINT_BUY_MAX, POINT_BUY_MIN, POINT_BUY_TOTAL,
+                                SKILLS, SPECIES, STANDARD_ARRAY,
+                                STANDARD_ARRAY_BY_CLASS, STANDARD_LANGUAGES,
+                                ability_modifier, roll_4d6_drop_lowest)
 
 # ---------------------------------------------------------------------------
 # Helpers

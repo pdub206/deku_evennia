@@ -13,6 +13,7 @@ from hashlib import sha256
 from typing import Any
 
 from django.db import transaction
+from systems.progression import CLASS_PROGRESSION, RegistryValidationError
 
 MAX_LEVEL = 20
 MAX_LEDGER_ENTRIES = 128
@@ -158,24 +159,37 @@ def initialize_level_one(character: Any, *, class_key: str, hp_base: int) -> Non
     _non_negative_integer(hp_base, "HP base")
     if not isinstance(class_key, str) or not class_key:
         raise AdvancementError("A canonical class is required.")
+    try:
+        definition = CLASS_PROGRESSION.class_for(class_key)
+    except RegistryValidationError as err:
+        raise AdvancementError("A canonical class is required.") from err
+    if hp_base != definition.hit_die:
+        raise AdvancementError("Level-one HP must match the class progression.")
     with transaction.atomic():
         _lock_character(character)
         character.db.char_class = class_key
         character.db.xp = 0
         character.db.level = 1
         character.db.hp_base = max(1, hp_base)
+        character.db.class_progression = {
+            "class_key": definition.key,
+            "registry_version": CLASS_PROGRESSION.version,
+            "fingerprint": CLASS_PROGRESSION.fingerprint,
+            "grants": list(definition.grants_at(1).automatic_feature_keys),
+        }
         _write_ledger(character, _new_ledger())
 
 
 def _apply_levels(character: Any, old_level: int, new_level: int) -> list[str]:
-    """Apply the registry-independent fixed HP grant for each crossed level."""
+    """Apply the registry-defined fixed HP grant for each crossed level."""
     if new_level <= old_level:
         return []
-    hit_die = character.stats.hit_die
-    if not isinstance(hit_die, int) or isinstance(hit_die, bool) or hit_die < 1:
-        raise AdvancementError("Character hit die is invalid.")
+    try:
+        definition = CLASS_PROGRESSION.class_for(character.attributes.get("char_class"))
+    except RegistryValidationError as err:
+        raise AdvancementError("Character advancement requires staff repair.") from err
     constitution = character.stats.ability_modifier("Constitution")
-    gain = max(1, hit_die // 2 + 1 + constitution)
+    gain = max(1, definition.fixed_hp_gain + constitution)
     character.db.hp_base = character.stats.hp_base + gain * (new_level - old_level)
     return tuple(f"hp_level_{level}" for level in range(old_level + 1, new_level + 1))
 
@@ -195,9 +209,7 @@ def _validate_character(character: Any) -> None:
         raise AdvancementError("Only player characters can receive XP.")
     if character.attributes.get("advancement_repair_required"):
         raise AdvancementError("Character advancement requires staff repair.")
-    from world.chargen_data import CLASSES
-
-    if character.attributes.get("char_class") not in CLASSES:
+    if not CLASS_PROGRESSION.is_available(character.attributes.get("char_class")):
         _mark_repair_required(character, "missing_or_unknown_class")
         raise AdvancementError("Character advancement requires staff repair.")
 

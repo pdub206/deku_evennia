@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from numbers import Real
 from typing import Any
 
-from world.chargen_data import CLASSES
+from systems.progression import CLASSES
 
 WEAR_LOCATIONS: tuple[str, ...] = (
     "right finger",

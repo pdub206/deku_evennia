@@ -26,6 +26,42 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "class progression",
+        "aliases": ["classes", "class features", "level features"],
+        "category": "Character",
+        "text": """
+            Your class determines your hit die, training, saving throws, and
+            the features, resources, spell access, and choices available as
+            you gain levels. Class progress is fixed when you create your
+            character: multiclassing is not available.
+
+            Class features and resources unlock automatically when their level
+            is earned. Some gains are choices; they remain pending until you
+            make the required selection through training. A later rules update
+            never silently changes benefits already recorded on your character.
+        """,
+    },
+    {
+        "key": "class progression registry",
+        "aliases": ["adv-02", "class registry", "progression validation"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            The class progression registry is the sole source for selectable
+            class keys, level grants, training, resources, and spell access.
+            A class is selectable only when all twenty levels and every
+            referenced feature, choice, resource, spell access entry, owner,
+            and help key validate together.
+
+            Registry definitions contain only stable primitive keys. Do not
+            store callbacks, imported classes, commands, or display prose in
+            prototypes or character Attributes. A registry fingerprint is
+            recorded at level one so a changed definition can be identified;
+            correcting an incompatible existing character is an ADV-06 task,
+            never a reload side effect.
+        """,
+    },
+    {
         "key": "pets",
         "aliases": ["pet", "followers", "order", "charm"],
         "category": "Character",

@@ -25,8 +25,9 @@ from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
                                DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
                                PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
                                WEAR_LOCATIONS)
+from systems.progression import CLASSES
 from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
-                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
+                                MAX_AGE, MIN_AGE, SKILLS, SPECIES,
                                 STANDARD_LANGUAGES)
 
 

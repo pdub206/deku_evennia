@@ -12,15 +12,10 @@ from numbers import Real
 from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    CARRY_CAPACITY_MULTIPLIER,
-    CLASSES,
-    SKILLS,
-    SPECIES,
-    ability_modifier,
-)
+from systems.progression import CLASSES
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
+                                CARRY_CAPACITY_MULTIPLIER, SKILLS, SPECIES,
+                                ability_modifier)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -227,7 +222,8 @@ class CharacterStats:
         current = self.hp_current
         # COMBAT-09 observes the canonical HP write rather than duplicating
         # damage/healing paths.  The lazy import keeps stats usable at boot.
-        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
+        from systems.combat_controls import (reconcile_wimpy,
+                                             refresh_combat_prompt)
 
         # A zero-HP injury transition is written by ``apply_damage`` after this
         # resource write; defer its policy check so a newly dying/dead character

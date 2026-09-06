@@ -1,15 +1,10 @@
 """ADV-01 XP threshold, transaction, and replay-safety coverage."""
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.advancement import (
-    ADVANCEMENT_ATTRIBUTE,
-    MAX_LEVEL,
-    XP_THRESHOLDS,
-    AdvancementError,
-    award_xp,
-    earned_level,
-    initialize_level_one,
-)
+from systems.advancement import (ADVANCEMENT_ATTRIBUTE, MAX_LEVEL,
+                                 XP_THRESHOLDS, AdvancementError, award_xp,
+                                 earned_level, initialize_level_one)
+from systems.progression import CLASS_PROGRESSION
 
 
 class TestAdvancement(EvenniaTest):
@@ -48,6 +43,22 @@ class TestAdvancement(EvenniaTest):
         self.assertEqual(self.char1.stats.hp_base, 42)
         self.assertEqual(self.char1.stats.hp_max, 52)
         self.assertEqual(self.char1.stats.hp_current, 45)
+
+    def test_level_one_records_the_registry_identity_without_copying_definitions(self):
+        """A later registry edit can be reconciled without rewriting the PC."""
+        provenance = self.char1.db.class_progression
+
+        self.assertEqual(provenance["class_key"], "Fighter")
+        self.assertEqual(provenance["registry_version"], CLASS_PROGRESSION.version)
+        self.assertEqual(provenance["fingerprint"], CLASS_PROGRESSION.fingerprint)
+        self.assertEqual(
+            provenance["grants"],
+            list(
+                CLASS_PROGRESSION.class_for("Fighter")
+                .grants_at(1)
+                .automatic_feature_keys
+            ),
+        )
 
     def test_duplicate_source_is_a_durable_noop(self):
         """A retry cannot pay an event a second time after reload-safe storage."""
