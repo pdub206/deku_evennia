@@ -713,6 +713,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "noncombatant": False,
             },
         )
+        self.assertEqual(proto["mobile_specials"], {"version": 1, "behaviors": []})
 
     def test_fields_clone_finished_pc_sheet(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -743,6 +744,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "xp",
                 "xp_reward",
                 "behavior",
+                "specials",
                 "combat_profile",
                 "sentinel",
                 "scavenger",
@@ -768,6 +770,10 @@ class TestEditNewNpc(EvenniaCommandTest):
     def test_set_npc_fields_persists_canonical_values(self):
         self.call(CmdBuild(), "new npc City Guard")
         self.call(CmdBuildSet(), "behavior idle")
+        self.call(
+            CmdBuildSet(),
+            'specials {"version": 1, "behaviors": [{"key": "guard", "config": {}}]}',
+        )
         self.call(CmdBuildSet(), "gender female")
         self.call(CmdBuildSet(), "species elf")
         self.call(CmdBuildSet(), "class wizard")
@@ -804,6 +810,10 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["mob_combat_profile"]["target_policy"], "lowest_id")
         self.assertEqual(saved["mob_combat_profile"]["wimpy"], 35)
         self.assertTrue(saved["mobile_policy"]["aggressive"])
+        self.assertEqual(
+            saved["mobile_specials"],
+            {"version": 1, "behaviors": [{"key": "guard", "config": {}}]},
+        )
         self.assertEqual(saved["mobile_policy"]["wimpy"], 35)
         self.assertEqual(saved["mobile_policy"]["detection"], ["sight", "hearing"])
 

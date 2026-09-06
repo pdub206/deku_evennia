@@ -581,6 +581,7 @@ class CmdBuild(Command):
             "hit_die": 10,
             "speed": 30,
             "mobile_behavior_profile": "idle",
+            "mobile_specials": {"version": 1, "behaviors": []},
             "mob_combat_profile": {
                 "version": 1,
                 "target_policy": "current",

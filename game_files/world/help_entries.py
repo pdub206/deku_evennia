@@ -26,6 +26,37 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "NPC special behaviors",
+        "aliases": ["npc specials", "mobile specials", "mob specials"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            NPC templates can have registered special behaviors through the
+            |wspecials|n builder field. The value is JSON with version 1 and a
+            |wbehaviors|n list. Every list entry has only a registered |wkey|n
+            and a primitive |wconfig|n mapping; it can never contain Python,
+            commands, callbacks, live objects, or an arbitrary lock string.
+
+            Specials have code-owned priorities and run in that deterministic
+            order. A special may decline an event; only one may take an action
+            for a given mobile decision or event, and declared conflicts are
+            reported as blocked rather than silently replacing another special.
+            Unknown, unavailable, malformed, or duplicate stored entries fail
+            closed without preventing the other valid entries from running.
+
+            Built-in |wguard|n and |wscavenger|n behaviors delegate to the
+            existing legal combat and pickup rules. |wspeaker|n needs a trigger
+            and response and replies through ordinary language-aware speech.
+            |wunique_trigger|n is a small message trigger with an optional
+            once-only primitive state. Shopkeeper, trainer, caster, and healer
+            assignments remain deferred until their owning services are added.
+
+            Template changes affect future spawned copies only. Edit a live NPC
+            for a deliberate one-off. Builder permission is required to assign
+            or edit any special configuration.
+        """,
+    },
+    {
         "key": "NPC combat profiles",
         "aliases": ["npc combat", "mobile combat", "mob combat"],
         "category": "Building",

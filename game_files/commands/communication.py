@@ -6,10 +6,52 @@ produced for listeners who don't understand the speaker's active language.
 Sign language is handled separately from spoken language.
 """
 
+from typing import Any, Sequence
+
 from evennia.commands.default.general import CmdSay as _BaseSay
 from evennia.commands.default.general import CmdWhisper as _BaseWhisper
 from systems.action_policy import ActionCategory
 from systems.language import garble, hand_pronoun, is_sign_language
+
+
+def send_speech(
+    speaker: Any, speech: str, *, recipients: Sequence[Any] | None = None
+) -> None:
+    """Use the normal display- and language-aware spoken-message path.
+
+    MOB-06 scripted speakers call this rather than constructing a separate
+    dialogue channel.  ``recipients`` can narrow delivery for a directed reply.
+    """
+    known: list[str] = speaker.db.languages or ["Common"]
+    active = speaker.db.active_language
+    if not active or active not in known:
+        active = known[0]
+        speaker.db.active_language = active
+    lang_label = active.lower()
+    sign = is_sign_language(active)
+    speaker.msg(f'You say, in {lang_label},\n  "{speech}"')
+    if not speaker.location:
+        return
+    audience = recipients
+    if audience is None:
+        audience = speaker.location.contents_get(content_type="character")
+    for obj in audience:
+        if obj is speaker or getattr(obj, "location", None) is not speaker.location:
+            continue
+        listener_langs: list[str] = obj.db.languages or ["Common"]
+        knows = active in listener_langs
+        name = speaker.get_display_name(obj)
+        if sign:
+            if knows:
+                obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
+            else:
+                obj.msg(
+                    f"{name} uses {hand_pronoun(speaker.db.gender or '')} hands to communicate in sign language."
+                )
+        elif knows:
+            obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
+        else:
+            obj.msg(f'{name} says, in an unknown language,\n  "{garble(speech)}"')
 
 
 class CmdSay(_BaseSay):
@@ -36,45 +78,20 @@ class CmdSay(_BaseSay):
 
         speech = self.args.strip()
 
-        # Resolve active language, initialising from first known if unset.
-        known: list[str] = caller.db.languages or ["Common"]
-        active = caller.db.active_language
-        if not active or active not in known:
-            active = known[0]
-            caller.db.active_language = active
+        send_speech(caller, speech)
+        if caller.location:
+            from systems.mobile_specials import (SpecialEvent,
+                                                 dispatch_room_specials)
 
-        lang_label = active.lower()
-        sign = is_sign_language(active)
-
-        # The speaking character always sees their own speech clearly.
-        caller.msg(f'You say, in {lang_label},\n  "{speech}"')
-
-        if not caller.location:
-            return
-
-        for obj in caller.location.contents_get(content_type="character"):
-            if obj is caller:
-                continue
-
-            listener_langs: list[str] = obj.db.languages or ["Common"]
-            knows = active in listener_langs
-            name = caller.get_display_name(obj)
-
-            if sign:
-                if knows:
-                    obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
-                else:
-                    pronoun = hand_pronoun(caller.db.gender or "")
-                    obj.msg(
-                        f"{name} uses {pronoun} hands to communicate in sign language."
-                    )
-            else:
-                if knows:
-                    obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
-                else:
-                    obj.msg(
-                        f'{name} says, in an unknown language,\n  "{garble(speech)}"'
-                    )
+            dispatch_room_specials(
+                caller.location,
+                SpecialEvent(
+                    "speech",
+                    actor=caller,
+                    text=speech,
+                    language=caller.db.active_language,
+                ),
+            )
 
 
 class CmdWhisper(_BaseWhisper):

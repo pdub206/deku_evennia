@@ -20,13 +20,10 @@ from systems.effects import EffectHandler, EffectStorageError
 from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 from systems.injury import InjuryError, imposed_position
-from systems.lifecycle import (
-    UnavailabilityCause,
-    deliver_character_notices,
-    mark_character_available,
-    mark_character_unavailable,
-    resolve_unavailability_cause,
-)
+from systems.lifecycle import (UnavailabilityCause, deliver_character_notices,
+                               mark_character_available,
+                               mark_character_unavailable,
+                               resolve_unavailability_cause)
 
 from .objects import ObjectParent
 
@@ -154,6 +151,19 @@ class Character(ObjectParent, DefaultCharacter):
         """Repair combat immediately after any forced relocation or extraction."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
+            from systems.mobile_specials import (SpecialEvent,
+                                                 dispatch_room_specials)
+
+            if source_location is not None:
+                dispatch_room_specials(
+                    source_location,
+                    SpecialEvent("departure", actor=self, target=self),
+                )
+            if self.location is not None:
+                dispatch_room_specials(
+                    self.location,
+                    SpecialEvent("arrival", actor=self, target=self),
+                )
             # Capture pursuit before combat removes the departing target from
             # its encounter. MOB-04 later revalidates every route and target.
             from systems.mobile_navigation import note_target_departure

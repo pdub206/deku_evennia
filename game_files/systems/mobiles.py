@@ -227,6 +227,16 @@ def _process_one(npc: Any, event: PulseEvent, injected_selector: Any) -> MobileO
     state["last_consumed_token"] = event.sequence
     state["next_eligible_token"] = event.sequence + 1
     _write_state(npc, state)  # Never replay work after selector/executor failure.
+    # MOB-06 specials share this already-consumed MOB-01 decision token.  They
+    # therefore cannot replay after a hot reload or manufacture a second action.
+    from systems.mobile_specials import SpecialEvent, dispatch_specials
+
+    specials = dispatch_specials(npc, SpecialEvent("decision", token=event.sequence))
+    if specials.acted:
+        behavior_key = next(
+            key for key, outcome in specials.outcomes if outcome.status == "acted"
+        )
+        return MobileOutcome(npc_id, "acted", "special", behavior_key, "special")
     # MOB-03 owns the optional non-combat action layer.  It runs before the
     # behavior registry and consumes this token even when no action is eligible,
     # so a duplicate pulse cannot start a second encounter or take two items.

@@ -188,6 +188,20 @@ def as_mobile_behavior_profile(raw: str) -> str:
     return value
 
 
+def as_mobile_specials(raw: str) -> dict[str, Any]:
+    """Validate the data-only MOB-06 special assignment JSON."""
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("expected a JSON mobile-special assignment.") from exc
+    from systems.mobile_specials import validate_mobile_specials
+
+    try:
+        return validate_mobile_specials(value)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 def as_mob_combat_profile(raw: str) -> dict[str, Any]:
     """Validate a JSON-only NPC combat profile without accepting executable data."""
     try:
@@ -439,6 +453,12 @@ NPC_FIELDS: dict[str, Field] = {
         as_mobile_behavior_profile,
         "initial autonomous behavior profile (idle or wander)",
         "mobile_behavior_profile",
+    ),
+    "specials": Field(
+        "attr",
+        as_mobile_specials,
+        "JSON data-only special assignments (registered keys and primitive configuration)",
+        "mobile_specials",
     ),
     "combat_profile": Field(
         "attr",

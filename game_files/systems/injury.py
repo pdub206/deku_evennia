@@ -195,6 +195,21 @@ def apply_damage(
     reason = prediction.reason
 
     _write(owner, next_record, source=source)
+    # Combat is a distinct event from injury/death, so encounter specials can
+    # observe a legal hit without taking ownership of the damage transaction.
+    try:
+        from systems.mobile_specials import SpecialEvent, dispatch_specials
+
+        combat_event = SpecialEvent(
+            "combat", actor=source, target=owner, data={"damage": amount}
+        )
+        dispatch_specials(owner, combat_event)
+        if source is not None and source is not owner:
+            dispatch_specials(source, combat_event)
+    except Exception:
+        logger.log_trace(
+            f"MOB-06 combat event failed for object #{getattr(owner, 'id', '?')}."
+        )
     cleanup = next_record.state in {
         InjuryState.DYING,
         InjuryState.INCAPACITATED,
@@ -477,6 +492,21 @@ def _write(owner: Any, record: InjuryRecord, *, source: Any | None = None) -> No
             "death_id": record.death_id,
         },
     )
+    # This is notification-only; handlers retain ordinary action, combat, and
+    # room policies, and a failing special cannot interrupt injury persistence.
+    try:
+        from systems.mobile_specials import SpecialEvent, dispatch_specials
+
+        dispatch_specials(
+            owner,
+            SpecialEvent(
+                "death" if record.state is InjuryState.DEAD else "injury", target=owner
+            ),
+        )
+    except Exception:
+        logger.log_trace(
+            f"MOB-06 injury event failed for object #{getattr(owner, 'id', '?')}."
+        )
     if record.state is InjuryState.DEAD:
         # Death identity is the cross-system contract: COMBAT-05 owns the
         # idempotent follow-up and isolates a recoverable corpse failure from

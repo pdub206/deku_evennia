@@ -176,14 +176,23 @@ def spawn_mobile(
         if not _is_npc(npc):
             _delete_partial(npc)
             return MobileSpawnResult("failed", "non_npc_prototype")
+        from systems.mobile_specials import (SpecialEvent, dispatch_specials,
+                                             set_mobile_specials)
         from systems.mobiles import set_mobile_profile
 
         set_mobile_profile(npc, npc.attributes.get("mobile_behavior_profile", "idle"))
+        set_mobile_specials(
+            npc, npc.attributes.get("mobile_specials", {"version": 1, "behaviors": []})
+        )
         if not npc.move_to(
             room, quiet=True, move_type="mobile_spawn", capacity_actor=npc
         ):
             _delete_partial(npc)
             return MobileSpawnResult("failed", "room_admission_denied")
+        dispatch_specials(
+            npc,
+            SpecialEvent("reset" if identity.managed else "spawn", target=npc),
+        )
     except Exception:
         if npc is not None:
             _delete_partial(npc)
