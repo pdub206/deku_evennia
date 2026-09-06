@@ -126,6 +126,15 @@ def combat_profile(npc: Any) -> dict[str, Any]:
     return default_combat_profile() if raw is None else validate_combat_profile(raw)
 
 
+def mobile_combat_snapshot(npc: Any) -> dict[str, Any]:
+    """Read MOB-02 configuration and latches without creating state."""
+    raw = npc.attributes.get(MOB_COMBAT_STATE_ATTRIBUTE)
+    return {
+        "profile": combat_profile(npc),
+        "state": _initial_state() if raw is None else _state_copy(raw),
+    }
+
+
 def set_combat_profile(npc: Any, profile: Any) -> dict[str, Any]:
     """Persist one validated profile and reset only MOB-02's runtime latches."""
     normalized = validate_combat_profile(profile)

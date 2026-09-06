@@ -16,7 +16,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.account import CmdCharCreate, CmdOOC
 from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
-                               CmdNpcs, CmdRooms, CmdSpawn)
+                               CmdMobile, CmdNpcs, CmdRooms, CmdSpawn)
 from commands.change import CmdChange
 from commands.combat import (CmdAim, CmdAttack, CmdBackstab, CmdBash,
                              CmdCombatPrompt, CmdCombatVerbose, CmdConsider,
@@ -89,6 +89,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRooms)
         self.add(CmdItems)
         self.add(CmdNpcs)
+        self.add(CmdMobile)
         self.add(CmdSpawn)
         self.add(CmdLoadArea)
         self.add(CmdEffects)

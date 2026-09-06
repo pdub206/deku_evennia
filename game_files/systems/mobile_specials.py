@@ -211,6 +211,16 @@ def dispatch_specials(npc: Any, event: SpecialEvent) -> SpecialDispatchResult:
                     "MOB-06 special failed: "
                     f"event={event.hook} token={event.token!r} npc=#{npc_id} behavior={key}."
                 )
+                from systems.mobile_diagnostics import record_mobile_failure
+
+                record_mobile_failure(
+                    npc,
+                    "specials",
+                    "exception",
+                    token=event.token,
+                    behavior_key=key,
+                    purpose=event.hook,
+                )
                 outcome = SpecialOutcome("failed", "exception")
             results.append((key, outcome))
             if outcome.status != "failed":

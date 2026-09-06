@@ -209,6 +209,15 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
         logger.log_trace(
             f"Mobile navigation failed for #{getattr(request.actor, 'id', '?')} token {request.token} purpose {request.purpose}."
         )
+        from systems.mobile_diagnostics import record_mobile_failure
+
+        record_mobile_failure(
+            request.actor,
+            "navigation",
+            "traversal_failed",
+            token=request.token,
+            purpose=request.purpose,
+        )
         return NavigationOutcome("failed", "traversal_failed")
     if request.actor.location is source or request.actor.location is not destination:
         return NavigationOutcome("blocked", "traversal_denied")

@@ -898,6 +898,37 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "@mobile",
+        "aliases": ["@mob", "mobile diagnostics"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Inspect a mobile's current runtime state and safe MOB subsystem
+            diagnostics. This command is for Builders and higher.
+
+            Usage:
+              @mobile <npc or #dbref>
+              @mobile/template <prototype key>
+              @mobile/area <area key>
+              @mobile/placement <area key>:<placement key>
+              @mobile/clear <npc or #dbref>
+
+            A live NPC report distinguishes its durable source identity from
+            mutable runtime state. |ymanaged|n copies belong to a named reset
+            placement; |yunmanaged|n copies came from a template but have no
+            reset placement; |yuntemplated|n legacy NPCs have neither identity.
+            Area and placement reports use a fresh count of live NPC identity,
+            never names, sessions, or a cached list.
+
+            Sections marked unavailable have malformed or temporarily missing
+            source data; inspection leaves them unchanged. The retained last
+            failure contains stable subsystem/reason keys, repeats, and a
+            recovery marker. A later success marks it recovered but keeps it
+            visible. Use |w@mobile/clear|n only after following the repair
+            workflow owned by the named MOB subsystem; clearing is audited.
+        """,
+    },
+    {
         "key": "@effects",
         "aliases": ["@conditions", "effect inspection"],
         "category": "Staff",

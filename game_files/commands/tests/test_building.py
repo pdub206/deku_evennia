@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
                                CmdBuildDel, CmdBuildDig, CmdBuildDone,
                                CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdNpcs, CmdRooms, CmdSpawn,
-                               _enter_build_mode, _exit_build_mode)
+                               CmdLoadArea, CmdMobile, CmdNpcs, CmdRooms,
+                               CmdSpawn, _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -891,6 +891,37 @@ class TestNpcsListing(EvenniaCommandTest):
     def test_npcs_empty_state(self):
         self.char1.permissions.add("Builder")
         self.call(CmdNpcs(), "", "There are no NPC templates yet")
+
+
+class TestMobileDiagnosticsCommand(EvenniaCommandTest):
+    """The Builder command is registered and rejects player-character targets."""
+
+    def test_live_npc_and_player_rejection(self):
+        self.char1.permissions.add("Builder")
+        npc = create_object(
+            "typeclasses.characters.Character", key="Mobile report", location=self.room1
+        )
+        npc.db.is_player_character = False
+
+        report = self.call(CmdMobile(), f"#{npc.id}")
+
+        self.assertIn("Mobile diagnostic", report)
+        self.call(
+            CmdMobile(), f"#{self.char1.id}", "Only live NPCs have mobile diagnostics."
+        )
+
+    def test_mobile_command_registered(self):
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+        self.assertTrue(
+            any(isinstance(command, CmdMobile) for command in cmdset.commands)
+        )
+
+    def test_mobile_area_switch_uses_fresh_population_snapshot(self):
+        self.char1.permissions.add("Builder")
+        report = self.call(CmdMobile(), "/area nowhere")
+        self.assertIn("Mobile population", report)
+        self.assertIn('"area_key":"nowhere"', report)
 
 
 class TestEditPrompt(EvenniaCommandTest):

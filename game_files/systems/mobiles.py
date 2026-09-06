@@ -130,6 +130,16 @@ def mobile_state(npc: Any) -> dict[str, Any]:
     return _validate_state(raw)
 
 
+def mobile_behavior_snapshot(npc: Any) -> dict[str, Any]:
+    """Read runner state without initializing an absent legacy Attribute."""
+    raw = npc.attributes.get(MOBILE_BEHAVIOR_ATTRIBUTE)
+    if raw is not None:
+        return _validate_state(raw)
+    return initial_mobile_state(
+        npc.attributes.get(MOBILE_BEHAVIOR_PROFILE_ATTRIBUTE, IDLE_BEHAVIOR_KEY)
+    )
+
+
 def set_mobile_profile(npc: Any, profile: Any) -> dict[str, Any]:
     """Replace an NPC's profile and reset its safely idle runtime state."""
     state = initial_mobile_state(profile)
@@ -200,8 +210,29 @@ def process_mobile_pulse(
                 f"during heartbeat {event.heartbeat}."
             )
             outcome = MobileOutcome(getattr(npc, "id", None), "failed", "exception")
+        _record_diagnostic_outcome(npc, event, outcome)
         outcomes.append(outcome)
     return MobilePulseResult(tuple(outcomes))
+
+
+def _record_diagnostic_outcome(
+    npc: Any, event: PulseEvent, outcome: MobileOutcome
+) -> None:
+    """Mirror runner failures into MOB-08 without affecting pulse semantics."""
+    from systems.mobile_diagnostics import (mark_mobile_failure_recovered,
+                                            record_mobile_failure)
+
+    if outcome.status == "failed":
+        record_mobile_failure(
+            npc,
+            "runner",
+            outcome.reason,
+            token=event.sequence,
+            behavior_key=outcome.behavior_key,
+            action_key=outcome.action_key,
+        )
+    elif outcome.status in {"acted", "idle"}:
+        mark_mobile_failure_recovered(npc)
 
 
 def _process_one(npc: Any, event: PulseEvent, injected_selector: Any) -> MobileOutcome:
