@@ -15,18 +15,32 @@ wiring it into :func:`schema_for`.  Validators raise ``ValueError`` with a short
 player-safe reason on bad input; callers turn that into a friendly message.
 """
 
+import json
 import re
 from decimal import Decimal, InvalidOperation
-from typing import Callable, NamedTuple
+from typing import Any, Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
-                               DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
-                               PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
-                               WEAR_LOCATIONS)
-from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
-                                CLASSES, MAX_AGE, MIN_AGE, SKILLS, SPECIES,
-                                STANDARD_LANGUAGES)
+from systems.equipment import (
+    ARMOR_CATEGORIES,
+    ATTACK_ABILITIES,
+    DAMAGE_TYPES,
+    MAX_MITIGATION_PERCENT,
+    PHYSICAL_DAMAGE_TYPES,
+    WEAPON_CATEGORIES,
+    WEAR_LOCATIONS,
+)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    CLASSES,
+    MAX_AGE,
+    MIN_AGE,
+    SKILLS,
+    SPECIES,
+    STANDARD_LANGUAGES,
+)
 
 
 class Field(NamedTuple):
@@ -184,6 +198,20 @@ def as_mobile_behavior_profile(raw: str) -> str:
     if value not in behavior_profile_keys():
         raise ValueError(f"must be one of: {', '.join(behavior_profile_keys())}.")
     return value
+
+
+def as_mob_combat_profile(raw: str) -> dict[str, Any]:
+    """Validate a JSON-only NPC combat profile without accepting executable data."""
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("expected a JSON combat profile.") from exc
+    from systems.mob_combat import validate_combat_profile
+
+    try:
+        return validate_combat_profile(value)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -416,6 +444,12 @@ NPC_FIELDS: dict[str, Field] = {
         as_mobile_behavior_profile,
         "initial autonomous behavior profile (currently idle)",
         "mobile_behavior_profile",
+    ),
+    "combat_profile": Field(
+        "attr",
+        as_mob_combat_profile,
+        "JSON combat profile: target policy, tactical weights/cooldowns, and NPC wimpy",
+        "mob_combat_profile",
     ),
     "corpse_decay_minutes": Field(
         "attr",

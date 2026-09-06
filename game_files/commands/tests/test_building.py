@@ -697,6 +697,10 @@ class TestEditNewNpc(EvenniaCommandTest):
         for name, value in expected.items():
             self.assertEqual(proto[name], value, name)
         self.assertEqual(proto["mobile_behavior_profile"], "idle")
+        self.assertEqual(
+            proto["mob_combat_profile"],
+            {"version": 1, "target_policy": "current", "tactics": [], "wimpy": 0},
+        )
 
     def test_fields_clone_finished_pc_sheet(self):
         self.call(CmdBuild(), "new npc City Guard")
@@ -727,6 +731,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "xp",
                 "xp_reward",
                 "behavior",
+                "combat_profile",
                 "corpse_decay_minutes",
                 "proficiency_bonus",
                 "hp_base",
@@ -754,6 +759,10 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.call(CmdBuildSet(), "active_language elvish")
         self.call(CmdBuildSet(), "skills Arcana, History")
         self.call(CmdBuildSet(), "intelligence 18")
+        self.call(
+            CmdBuildSet(),
+            'combat_profile {"version": 1, "target_policy": "lowest_id", "tactics": [], "wimpy": 35}',
+        )
         self.call(CmdBuildSet(), "corpse_decay_minutes 12.5")
 
         saved = _proto("city_guard")
@@ -769,12 +778,19 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["intelligence"], 18)
         self.assertEqual(saved["corpse_decay_minutes"], 12.5)
         self.assertEqual(saved["mobile_behavior_profile"], "idle")
+        self.assertEqual(saved["mob_combat_profile"]["target_policy"], "lowest_id")
+        self.assertEqual(saved["mob_combat_profile"]["wimpy"], 35)
 
     def test_invalid_npc_value_rejected(self):
         self.call(CmdBuild(), "new npc City Guard")
         self.call(CmdBuildSet(), "class commoner", "Invalid value for 'class'")
         self.call(CmdBuildSet(), "strength 21", "Invalid value for 'strength'")
         self.call(CmdBuildSet(), "xp_reward 1000001", "Invalid value for 'xp_reward'")
+        self.call(
+            CmdBuildSet(),
+            "combat_profile not-json",
+            "Invalid value for 'combat_profile'",
+        )
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
 

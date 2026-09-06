@@ -67,11 +67,15 @@ class InjuryPulseResult:
 def _refresh_combat_controls(owner: Any, previous_hp: int, current_hp: int) -> None:
     """Refresh COMBAT-09 after the injury state reaches its final value."""
     try:
-        from systems.combat_controls import (reconcile_wimpy,
-                                             refresh_combat_prompt)
+        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
 
         reconcile_wimpy(owner, previous_hp, current_hp)
         refresh_combat_prompt(owner)
+        # MOB-02 uses its own NPC-only profile and latch. Keeping it here
+        # observes every canonical damage/healing path without duplicating one.
+        from systems.mob_combat import reconcile_mob_wimpy
+
+        reconcile_mob_wimpy(owner, previous_hp, current_hp)
     except Exception:
         logger.log_trace(
             f"Could not refresh COMBAT-09 controls for #{getattr(owner, 'id', '?')}."
@@ -202,6 +206,15 @@ def apply_damage(
     if emit_messages and result.state is not record.state:
         _announce(owner, result)
     _refresh_combat_controls(owner, previous_hp, final_hp)
+    if result.accepted and amount:
+        try:
+            from systems.mob_combat import retaliate
+
+            retaliate(owner, source)
+        except Exception:
+            logger.log_trace(
+                f"Could not start MOB-02 retaliation for #{getattr(owner, 'id', '?')}."
+            )
     return result
 
 

@@ -20,19 +20,34 @@ from commands.command import Command
 from django.conf import settings
 from evennia import CmdSet, create_object
 from evennia.objects.models import ObjectDB
-from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
-                                           delete_prototype, save_prototype,
-                                           search_prototype)
+from evennia.prototypes.prototypes import (
+    PROTOTYPE_TAG_CATEGORY,
+    delete_prototype,
+    save_prototype,
+    search_prototype,
+)
 from evennia.prototypes.spawner import spawn
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
-from systems.areas import (area_index, area_of, assign_area, export_area,
-                           load_area, room_key_of, rooms_in_area)
-from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
-                                schema_for_prototype)
+from systems.areas import (
+    area_index,
+    area_of,
+    assign_area,
+    export_area,
+    load_area,
+    room_key_of,
+    rooms_in_area,
+)
+from world.build_schema import (
+    ITEM_TYPES,
+    TYPE_FIELDS,
+    as_slug,
+    schema_for,
+    schema_for_prototype,
+)
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
 # exits two-way and to alias n/s/e/w/u/d like Evennia's own tunnel command.
@@ -547,6 +562,12 @@ class CmdBuild(Command):
             "hit_die": 10,
             "speed": 30,
             "mobile_behavior_profile": "idle",
+            "mob_combat_profile": {
+                "version": 1,
+                "target_policy": "current",
+                "tactics": [],
+                "wimpy": 0,
+            },
         }
         save_prototype(proto)
         (npc,) = spawn({**proto, "location": caller.location}, caller=caller)

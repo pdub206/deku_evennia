@@ -26,6 +26,25 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "NPC combat profiles",
+        "aliases": ["npc combat", "mobile combat", "mob combat"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            NPCs retaliate only after they take hostile damage; they do not begin
+            fights on their own. Their |wcombat_profile|n builder field is JSON
+            containing a target policy, an allowlisted weighted list of registered
+            tactical actions with primitive arguments and cooldowns, and an NPC
+            |wwimpy|n percentage from 0 through 90.
+
+            New NPC templates use the safe basic-attack profile: current target,
+            no tactics, and wimpy 0. Invalid profiles are rejected. A wimpy NPC
+            makes one normal flee attempt when it crosses its threshold, then must
+            heal above it before another automatic attempt. Pursuit and navigation
+            are not part of this profile.
+        """,
+    },
+    {
         "key": "account",
         "aliases": ["account controls", "ic", "ooc", "puppet"],
         "category": "General",
