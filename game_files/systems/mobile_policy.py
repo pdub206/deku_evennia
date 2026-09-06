@@ -163,6 +163,15 @@ def can_detect(observer: Any, candidate: Any) -> PolicyDecision:
         or observer.location != getattr(candidate, "location", None)
     ):
         return PolicyDecision(False, "not_colocated")
+    return can_detect_remotely(observer, candidate)
+
+
+def can_detect_remotely(observer: Any, candidate: Any) -> PolicyDecision:
+    """Check passive detection without requiring co-location for MOB-04 routes.
+
+    This is not a long-range sensory feature: it only preserves the same
+    primitive detection decision while an NPC follows a target it already saw.
+    """
     try:
         profile = mobile_policy(observer)
         record = injury_record(candidate)

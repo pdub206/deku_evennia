@@ -16,6 +16,7 @@ from evennia.utils import logger
 from systems.combat import is_fighting
 from systems.combat_outcomes import InjuryState
 from systems.injury import InjuryError, injury_record
+from systems.mobile_navigation import register_mobile_behaviors
 from systems.pulses import PulseEvent, PulseLane
 
 MOBILE_BEHAVIOR_ATTRIBUTE = "mobile_behavior"
@@ -238,6 +239,14 @@ def _process_one(npc: Any, event: PulseEvent, injected_selector: Any) -> MobileO
         )
     if policy.reason == "malformed_mobile_policy":
         return MobileOutcome(npc_id, "skipped", policy.reason, behavior_key)
+    # A pursuit intent has priority over ordinary behavior, but still consumes
+    # this one MOB-01 token and can traverse no more than one exit.
+    from systems.mobile_navigation import pursue
+
+    pursuit = pursue(npc, event.sequence)
+    if pursuit is not None:
+        status = "acted" if pursuit.status == "moved" else "skipped"
+        return MobileOutcome(npc_id, status, pursuit.reason, behavior_key, "pursuit")
     behavior = _BEHAVIORS.get(behavior_key)
     if behavior is None:
         return MobileOutcome(npc_id, "failed", "unknown_behavior", behavior_key)
@@ -412,3 +421,7 @@ def _execute_idle(npc: Any, event: PulseEvent, data: Mapping[str, Any]) -> None:
 
 register_action(MobileActionDefinition(IDLE_ACTION_KEY, _execute_idle))
 register_behavior(MobileBehaviorDefinition(IDLE_BEHAVIOR_KEY, _select_idle))
+
+# The navigation module registers code-owned behavior keys only after the base
+# registry exists; no callbacks are ever persisted on an NPC.
+register_mobile_behaviors()

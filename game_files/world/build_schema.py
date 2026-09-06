@@ -437,7 +437,7 @@ NPC_FIELDS: dict[str, Field] = {
     "behavior": Field(
         "attr",
         as_mobile_behavior_profile,
-        "initial autonomous behavior profile (currently idle)",
+        "initial autonomous behavior profile (idle or wander)",
         "mobile_behavior_profile",
     ),
     "combat_profile": Field(

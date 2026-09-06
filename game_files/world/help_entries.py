@@ -779,7 +779,15 @@ HELP_ENTRY_DICTS = [
             all six ability scores, level and XP, proficiency bonus, hit points,
             hit die, Reaction, Armor Class, passive Perception, speed, and an
             optional |wcorpse_decay_minutes|n override for that NPC's corpse.
-            Use |wset behavior idle|n to choose its initial autonomous profile.
+            Use |wset behavior idle|n to keep an NPC still, or |wset behavior
+            wander|n to let it take one legal exit per mobile decision. Wandering
+            never opens or searches exits and respects ordinary exit locks and
+            room limits. A sentinel does not wander. A stay-in-area wanderer (or
+            fleeing NPC) remains within rooms carrying the same authored area
+            tag; an untagged boundary leaves it with no route. NPCs that lose a
+            combat target may pursue through legal routes, but stop when the
+            target is lost, hidden, protected, unreachable, outside the allowed
+            area, or the short pursuit limit is reached.
             MOB flags are set independently on the template: |wsentinel|n stops
             ordinary wandering; |wscavenger|n picks up at most one accessible,
             loose room item per mobile decision; |waggressive|n starts a normal

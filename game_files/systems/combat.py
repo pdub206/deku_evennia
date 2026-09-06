@@ -239,6 +239,27 @@ def get_encounter_id(actor: Any) -> int | None:
     return _participant_encounter(state, actor_id)
 
 
+def combat_opponents(actor: Any) -> tuple[Any, ...]:
+    """Return current opposing live participants without changing an encounter."""
+    actor_id = _object_id(actor)
+    if actor_id is None:
+        return ()
+    state = _read_state()
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return ()
+    encounter = state["encounters"].get(str(encounter_id))
+    if encounter is None:
+        return ()
+    sides = _participant_sides(encounter)
+    return tuple(
+        opponent
+        for participant_id in sorted(sides)
+        if sides[participant_id] != sides.get(actor_id)
+        and (opponent := _get_character(participant_id)) is not None
+    )
+
+
 def schedule_flee(actor: Any, exit_id: int) -> CombatOperationResult:
     """Persist one replacement-safe flee intent for actor's next ready action."""
     if not _positive_int(exit_id):

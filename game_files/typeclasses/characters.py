@@ -154,6 +154,11 @@ class Character(ObjectParent, DefaultCharacter):
         """Repair combat immediately after any forced relocation or extraction."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
+            # Capture pursuit before combat removes the departing target from
+            # its encounter. MOB-04 later revalidates every route and target.
+            from systems.mobile_navigation import note_target_departure
+
+            note_target_departure(self, source_location)
             handle_departure(self)
 
     def at_object_delete(self) -> bool | None:
