@@ -32,12 +32,15 @@ HELP_ENTRY_DICTS = [
         "text": """
             A pet has a durable owner, while charm is temporary control. Either
             may let you issue an |worder|n while the creature is in your room:
-            |worder <pet> <command>|n. For example, |worder hound get all
-            corpse|n or |worder hound put gem bag|n. The pet uses its normal
-            command list, locks, and action rules; it cannot issue another
-            |worder|n command.
+            |worder <pet> <action>|n. The available actions are |wfollow|n,
+            |wstay|n, and |wflee|n; for example, |worder hound follow|n.
+            Orders never run arbitrary commands, speech, building tools, or
+            movement. Flee is queued for the pet's next combat action.
 
-            Following uses normal exits and movement rules. A pet will not
+            Use |wpet <pet> follow|n or |wpet <pet> stay|n for the same direct
+            control, and |wpet <pet> release|n to end durable ownership.
+            Pets are acquired or charmed only by an ability or encounter that
+            explicitly permits it. Following uses normal exits and movement rules. A pet will not
             teleport, reveal hidden routes, bypass a locked door, or cross an
             area boundary it is not allowed to cross. If you disconnect, it
             stops following but remains yours; reconnecting never moves it to
@@ -76,6 +79,26 @@ HELP_ENTRY_DICTS = [
             Template changes affect future spawned copies only. Edit a live NPC
             for a deliberate one-off. Builder permission is required to assign
             or edit any special configuration.
+        """,
+    },
+    {
+        "key": "NPC pet control",
+        "aliases": ["npc ownership", "npc charm", "pet locks"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Pet ownership and charm are opt-in NPC capabilities. An NPC must
+            grant the appropriate |wpet|n, |wcharm|n, |wtransfer|n, and
+            |worder|n locks; control is denied when a lock is absent. Content
+            such as a taming encounter or a charm effect uses the shared
+            relationship service to acquire or bind control.
+
+            A controlled NPC may receive only registered orders: |wfollow|n,
+            |wstay|n, and |wflee|n. Player text is never forwarded to an NPC's
+            normal command handler. Durable ownership persists through normal
+            disconnects; transient following and queued combat work do not.
+            The |w@mobile|n diagnostic shows ownership, charm source, follow
+            state, and retained safe failure information for a live NPC.
         """,
     },
     {

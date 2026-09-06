@@ -117,14 +117,17 @@ def mobile_template_snapshot(prototype_key: str) -> dict[str, Any]:
         raise MobileDiagnosticError("NPC prototype is missing or ambiguous.")
     source = _flatten_prototype(matches[0])
     from systems.mob_combat import validate_combat_profile
-    from systems.mobile_policy import (MOBILE_POLICY_ATTRIBUTE,
-                                       default_mobile_policy,
-                                       validate_mobile_policy)
-    from systems.mobile_specials import (MOBILE_SPECIALS_ATTRIBUTE,
-                                         default_mobile_specials,
-                                         validate_mobile_specials)
-    from systems.mobiles import (MOBILE_BEHAVIOR_PROFILE_ATTRIBUTE,
-                                 initial_mobile_state)
+    from systems.mobile_policy import (
+        MOBILE_POLICY_ATTRIBUTE,
+        default_mobile_policy,
+        validate_mobile_policy,
+    )
+    from systems.mobile_specials import (
+        MOBILE_SPECIALS_ATTRIBUTE,
+        default_mobile_specials,
+        validate_mobile_specials,
+    )
+    from systems.mobiles import MOBILE_BEHAVIOR_PROFILE_ATTRIBUTE, initial_mobile_state
 
     return {
         "version": MOBILE_DIAGNOSTIC_VERSION,
@@ -165,8 +168,7 @@ def mobile_template_snapshot(prototype_key: str) -> dict[str, Any]:
 
 def mobile_population_snapshot(area_key: str) -> dict[str, Any]:
     """Return MOB-05's fresh counts in a deterministic diagnostic envelope."""
-    from systems.mob_spawning import \
-        mobile_population_snapshot as count_population
+    from systems.mob_spawning import mobile_population_snapshot as count_population
 
     snapshot = count_population(area_key)
     return {
@@ -312,9 +314,49 @@ def _findings(npc: Any, sections: Mapping[str, Any]) -> list[dict[str, str]]:
         add("warning", "navigation", "fighting_competing_work", "MOB-04")
     if getattr(npc, "location", None) is None and isinstance(runner, Mapping):
         add("warning", "runner", "scheduled_off_grid", "MOB-01")
+    try:
+        from systems.injury import InjuryState, injury_record
+
+        injury_state = injury_record(npc).state
+        if injury_state is InjuryState.DEAD and isinstance(runner, Mapping):
+            add("error", "runner", "scheduled_dead", "MOB-01")
+    except Exception:
+        add("warning", "runner", "injury_state_unavailable", "COMBAT-04")
+    if combat.get("fighting") and combat.get("target_dbref") is None:
+        add("error", "combat", "stale_target", "MOB-02")
+    if isinstance(relationship, Mapping):
+        _relationship_findings(add, relationship)
     return sorted(
         findings, key=lambda item: (item["severity"], item["subsystem"], item["reason"])
     )
+
+
+def _relationship_findings(add: Any, relationship: Mapping[str, Any]) -> None:
+    """Report dangling MOB-07 identifiers without attempting a repair."""
+    from systems.mobile_relationships import _character
+
+    references = (
+        ("owner_id", relationship.get("owner_id")),
+        (
+            "controller_id",
+            (
+                relationship.get("charm", {}).get("controller_id")
+                if isinstance(relationship.get("charm"), Mapping)
+                else None
+            ),
+        ),
+        (
+            "follow_target_id",
+            (
+                relationship.get("follow", {}).get("target_id")
+                if isinstance(relationship.get("follow"), Mapping)
+                else None
+            ),
+        ),
+    )
+    for label, object_id in references:
+        if object_id is not None and _character(object_id) is None:
+            add("error", "relationships", f"dangling_{label}", "MOB-07")
 
 
 def _owner(section: str) -> str:

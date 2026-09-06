@@ -7,21 +7,36 @@ movement do not grow competing owner/controller conventions.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
 from systems.action_policy import ActionCategory
-from systems.lifecycle import (CharacterAvailability, LifecycleConsumer,
-                               LifecycleError, register_lifecycle_consumer,
-                               unregister_lifecycle_consumer)
+from systems.lifecycle import (
+    CharacterAvailability,
+    LifecycleConsumer,
+    LifecycleError,
+    register_lifecycle_consumer,
+    unregister_lifecycle_consumer,
+)
 
 MOBILE_RELATIONSHIP_ATTRIBUTE = "mobile_relationship"
-MOBILE_RELATIONSHIP_VERSION = 1
+MOBILE_RELATIONSHIP_VERSION = 2
 RELATIONSHIP_LIFECYCLE_KEY = "mob07.relationships"
 FOLLOW_STEP_LIMIT = 8
 DEFAULT_PET_CAPACITY = 1
+
+
+@dataclass(frozen=True)
+class OrderActionDefinition:
+    """One code-owned action a controller may request from a mobile."""
+
+    key: str
+    execute: Callable[[Any, Any, str], "RelationshipOutcome"]
+
+
+_ORDER_ACTIONS: dict[str, OrderActionDefinition] = {}
 
 
 @dataclass(frozen=True)
@@ -35,6 +50,23 @@ class RelationshipOutcome:
     def accepted(self) -> bool:
         """Return whether the requested mutation or order was accepted."""
         return self.status in {"accepted", "acted", "queued"}
+
+
+def register_order_action(definition: OrderActionDefinition) -> None:
+    """Register one narrow, code-owned MOB-07 order action."""
+    if (
+        not isinstance(definition, OrderActionDefinition)
+        or not _safe_order_key(definition.key)
+        or not callable(definition.execute)
+        or definition.key in _ORDER_ACTIONS
+    ):
+        raise ValueError("A mobile order action is invalid or already registered.")
+    _ORDER_ACTIONS[definition.key] = definition
+
+
+def order_action_keys() -> tuple[str, ...]:
+    """Return the player-safe ordered action allowlist."""
+    return tuple(sorted(_ORDER_ACTIONS))
 
 
 def relationship_state(npc: Any) -> dict[str, Any]:
@@ -87,7 +119,12 @@ def transfer_pet(owner: Any, npc: Any, recipient: Any) -> RelationshipOutcome:
 
 
 def charm(
-    npc: Any, controller: Any, *, source_id: int | None = None, source_key: str = ""
+    npc: Any,
+    controller: Any,
+    *,
+    source_id: int | None = None,
+    source_key: str = "",
+    effect_instance_id: str | None = None,
 ) -> RelationshipOutcome:
     """Install temporary control while retaining any durable pet owner."""
     if not _valid_npc(npc) or not _valid_owner(controller):
@@ -97,6 +134,10 @@ def charm(
     if source_id is not None and not _positive_id(source_id):
         return RelationshipOutcome("denied", "invalid_source")
     if not isinstance(source_key, str) or len(source_key) > 80:
+        return RelationshipOutcome("denied", "invalid_source")
+    if effect_instance_id is not None and not _valid_effect_instance_id(
+        effect_instance_id
+    ):
         return RelationshipOutcome("denied", "invalid_source")
     if _would_cycle(npc.id, controller.id):
         return RelationshipOutcome("denied", "cycle")
@@ -108,21 +149,32 @@ def charm(
         "controller_id": controller.id,
         "source_id": source_id,
         "source_key": source_key,
+        "effect_instance_id": effect_instance_id,
     }
     state["sequence"] += 1
     _write_state(npc, state)
     return RelationshipOutcome("accepted", "charmed")
 
 
-def release_charm(npc: Any, *, source_id: int | None = None) -> RelationshipOutcome:
+def release_charm(
+    npc: Any,
+    *,
+    source_id: int | None = None,
+    effect_instance_id: str | None = None,
+) -> RelationshipOutcome:
     """Release a matching charm exactly once, exposing underlying ownership."""
     try:
         state = relationship_state(npc)
     except ValueError:
         return RelationshipOutcome("denied", "malformed_state")
     charm_state = state["charm"]
-    if charm_state is None or (
-        source_id is not None and charm_state["source_id"] != source_id
+    if (
+        charm_state is None
+        or (source_id is not None and charm_state["source_id"] != source_id)
+        or (
+            effect_instance_id is not None
+            and charm_state["effect_instance_id"] != effect_instance_id
+        )
     ):
         return RelationshipOutcome("accepted", "already_released")
     state["charm"] = None
@@ -131,6 +183,25 @@ def release_charm(npc: Any, *, source_id: int | None = None) -> RelationshipOutc
     state["sequence"] += 1
     _write_state(npc, state)
     return RelationshipOutcome("accepted", "released_charm")
+
+
+def bind_charm_effect(npc: Any, controller: Any, effect: Any) -> RelationshipOutcome:
+    """Bind temporary control to one active RULES-03 effect instance.
+
+    The effect owner must be the controlled NPC. Its removal listener then
+    releases precisely this charm instance, whether it expires, is dispelled,
+    is cured, or is administratively removed.
+    """
+    if getattr(effect, "owner", None) is not npc or not _valid_effect_instance_id(
+        getattr(effect, "instance_id", None)
+    ):
+        return RelationshipOutcome("denied", "invalid_effect")
+    return charm(
+        npc,
+        controller,
+        source_key=getattr(effect, "source_key", "") or "effect",
+        effect_instance_id=effect.instance_id,
+    )
 
 
 def dismiss(actor: Any, npc: Any) -> RelationshipOutcome:
@@ -248,33 +319,71 @@ def advance_follow(npc: Any, token: int) -> RelationshipOutcome | None:
     return RelationshipOutcome("skipped", outcome.reason or outcome.status)
 
 
-def order(actor: Any, npc: Any, command_text: str) -> RelationshipOutcome:
-    """Run one normal pet command after control and command-lock revalidation.
+def order(
+    actor: Any, npc: Any, action_key: str, arguments: str = ""
+) -> RelationshipOutcome:
+    """Execute one registered action without forwarding player text to Evennia.
 
-    The text is deliberately handled by the pet's ordinary Character command
-    set, not parsed or reimplemented here. That keeps ``get all corpse``,
-    ``put item bag``, exits, and future player commands consistent while their
-    normal locks and action policies continue to run as the pet. ``order``
-    itself is excluded to prevent recursive command chains.
+    The action registry is deliberately much narrower than a character command
+    set.  It prevents pets from becoming a proxy for speech, building, arbitrary
+    exits, staff tools, or future commands whose locks were not designed for
+    remote control.  Each action revalidates its own policy immediately before
+    it changes state or queues an existing combat intent.
     """
-    if not isinstance(command_text, str) or not 1 <= len(command_text.strip()) <= 500:
-        return RelationshipOutcome("denied", "invalid_command")
-    command_key = command_text.strip().split(None, 1)[0].casefold()
-    if command_key == "order":
-        return RelationshipOutcome("denied", "nested_order")
+    if not _safe_order_key(action_key) or not isinstance(arguments, str):
+        return RelationshipOutcome("denied", "invalid_order")
+    definition = _ORDER_ACTIONS.get(action_key.casefold())
+    if definition is None:
+        return RelationshipOutcome("denied", "unsupported_order")
     if effective_controller(npc) is not actor or npc.location is not actor.location:
         return RelationshipOutcome("denied", "not_controlled_here")
     if (
         not _access(npc, actor, "order")
-        or not _can_act(actor, ActionCategory.STATE_INDEPENDENT)
-        or not _can_act(npc, ActionCategory.STATE_INDEPENDENT)
+        or not _can_act(actor, ActionCategory.MANIPULATE)
+        or not _can_act(npc, ActionCategory.MANIPULATE)
     ):
         return RelationshipOutcome("denied", "action_denied")
     try:
-        npc.execute_cmd(command_text.strip())
+        return definition.execute(actor, npc, arguments.strip())
     except Exception:
-        return RelationshipOutcome("failed", "command_failed")
-    return RelationshipOutcome("acted", "command")
+        _record_relationship_failure(
+            npc, "order_execution_failed", action_key=action_key
+        )
+        return RelationshipOutcome("failed", "order_execution_failed")
+
+
+def _order_follow(actor: Any, npc: Any, arguments: str) -> RelationshipOutcome:
+    """Start ordinary bounded following; this order has no arguments."""
+    if arguments:
+        return RelationshipOutcome("denied", "unexpected_arguments")
+    return set_following(actor, npc)
+
+
+def _order_stay(actor: Any, npc: Any, arguments: str) -> RelationshipOutcome:
+    """Stop following; this order has no arguments."""
+    if arguments:
+        return RelationshipOutcome("denied", "unexpected_arguments")
+    return stay(actor, npc)
+
+
+def _order_flee(actor: Any, npc: Any, arguments: str) -> RelationshipOutcome:
+    """Queue the pet's normal COMBAT-03 flee intent, never an instant move."""
+    if arguments:
+        return RelationshipOutcome("denied", "unexpected_arguments")
+    if not _can_act(actor, ActionCategory.COMBAT) or not _can_act(
+        npc, ActionCategory.COMBAT
+    ):
+        return RelationshipOutcome("denied", "action_denied")
+    from systems.combat import schedule_flee
+    from systems.combat_movement import choose_flee_exit
+
+    route = choose_flee_exit(npc)
+    if not route.allowed:
+        return RelationshipOutcome("denied", "no_flee_route")
+    scheduled = schedule_flee(npc, route.exit.id)
+    if not scheduled.accepted:
+        return RelationshipOutcome("denied", scheduled.reason)
+    return RelationshipOutcome("queued", "flee")
 
 
 def repair_relationships_for(character: Any) -> None:
@@ -301,6 +410,20 @@ def repair_relationships_for(character: Any) -> None:
             _write_state(npc, state)
 
 
+def _record_relationship_failure(
+    npc: Any, reason: str, *, action_key: str | None = None
+) -> None:
+    """Record a safe MOB-07 failure without weakening pet-control behavior."""
+    try:
+        from systems.mobile_diagnostics import record_mobile_failure
+
+        record_mobile_failure(
+            npc, "relationships", reason, action_key=action_key, purpose="order"
+        )
+    except Exception:
+        return
+
+
 def _initial_state() -> dict[str, Any]:
     return {
         "version": MOBILE_RELATIONSHIP_VERSION,
@@ -313,6 +436,13 @@ def _initial_state() -> dict[str, Any]:
 
 
 def _validate_state(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, Mapping) and raw.get("version") == 1:
+        # Preserve older durable ownership while making effect linkage explicit.
+        raw = deepcopy(dict(raw))
+        charm_state = raw.get("charm")
+        if isinstance(charm_state, Mapping):
+            raw["charm"] = {**dict(charm_state), "effect_instance_id": None}
+        raw["version"] = MOBILE_RELATIONSHIP_VERSION
     if (
         not isinstance(raw, Mapping)
         or set(raw) != set(_initial_state())
@@ -330,13 +460,18 @@ def _validate_state(raw: Any) -> dict[str, Any]:
         raise ValueError("Mobile relationship owner is invalid.")
     if charm_state is not None and (
         not isinstance(charm_state, Mapping)
-        or set(charm_state) != {"controller_id", "source_id", "source_key"}
+        or set(charm_state)
+        != {"controller_id", "source_id", "source_key", "effect_instance_id"}
         or not _positive_id(charm_state["controller_id"])
         or (
             charm_state["source_id"] is not None
             and not _positive_id(charm_state["source_id"])
         )
         or not isinstance(charm_state["source_key"], str)
+        or (
+            charm_state["effect_instance_id"] is not None
+            and not _valid_effect_instance_id(charm_state["effect_instance_id"])
+        )
     ):
         raise ValueError("Mobile charm control is invalid.")
     if follow is not None and (
@@ -393,9 +528,31 @@ def _positive_id(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+def _safe_order_key(value: Any) -> bool:
+    """Accept only small registered-action keys, never arbitrary command text."""
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 32
+        and all(
+            character.islower() or character.isdigit() or character == "_"
+            for character in value
+        )
+    )
+
+
+def _valid_effect_instance_id(value: Any) -> bool:
+    """Accept Evennia effect UUIDs without storing arbitrary player text."""
+    return (
+        isinstance(value, str)
+        and len(value) == 32
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _access(npc: Any, actor: Any, access_type: str) -> bool:
     try:
-        return npc.access(actor, access_type, default=True)
+        # Control is opt-in content, never an accidental default on an NPC.
+        return npc.access(actor, access_type, default=False)
     except Exception:
         return False
 
@@ -504,3 +661,32 @@ def _register_lifecycle_consumer() -> None:
 
 
 _register_lifecycle_consumer()
+register_order_action(OrderActionDefinition("follow", _order_follow))
+register_order_action(OrderActionDefinition("stay", _order_stay))
+register_order_action(OrderActionDefinition("flee", _order_flee))
+
+
+def _on_effect_removed(effect: Any, _reason: Any) -> None:
+    """Release only the charm whose exact registered effect was removed."""
+    npc = getattr(effect, "owner", None)
+    try:
+        state = relationship_state(npc)
+        charm_state = state["charm"]
+        if charm_state and charm_state["effect_instance_id"] == effect.instance_id:
+            release_charm(npc, effect_instance_id=effect.instance_id)
+    except Exception:
+        return
+
+
+def _register_effect_listener() -> None:
+    """Connect charm expiry/dispel to the project-owned effect lifecycle."""
+    from systems.effects import EffectError, register_removal_listener
+
+    try:
+        register_removal_listener("mob07.charm", _on_effect_removed)
+    except EffectError:
+        # Reload reconstructs module state; an existing equivalent listener is safe.
+        return
+
+
+_register_effect_listener()

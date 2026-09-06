@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from string import Formatter
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 from evennia.utils import logger
@@ -251,6 +251,20 @@ class EffectRegistry:
 
 
 EFFECT_REGISTRY = EffectRegistry()
+EffectRemovalListener = Callable[["ActiveEffect", RemovalReason], None]
+_REMOVAL_LISTENERS: dict[str, EffectRemovalListener] = {}
+
+
+def register_removal_listener(key: str, listener: EffectRemovalListener) -> None:
+    """Register one isolated post-removal lifecycle adapter.
+
+    Effect definitions remain declarative. Systems with state keyed to an
+    effect instance subscribe here rather than persisting callbacks or imports.
+    """
+    _validate_key(key, "effect removal listener")
+    if not callable(listener) or key in _REMOVAL_LISTENERS:
+        raise EffectError("Effect removal listener is invalid or already registered.")
+    _REMOVAL_LISTENERS[key] = listener
 
 
 @dataclass(frozen=True)
@@ -496,6 +510,7 @@ class EffectHandler:
         del records[instance_id]
         self._write_records(records)
         self._reconcile_stats()
+        _notify_removal_listeners(effect, reason)
         if effect.definition and not quiet:
             event = (
                 "expire"
@@ -887,6 +902,17 @@ def _canonical_ability(value: str) -> str:
         if lowered in {name.lower(), ABILITY_SHORT[name].lower()}:
             return name
     raise EffectError(f"Unknown saving-throw ability: {value}")
+
+
+def _notify_removal_listeners(effect: ActiveEffect, reason: RemovalReason) -> None:
+    """Notify optional adapters after persistence is committed and isolated."""
+    for key, listener in tuple(_REMOVAL_LISTENERS.items()):
+        try:
+            listener(effect, reason)
+        except Exception:
+            logger.log_trace(
+                f"Effect removal listener '{key}' failed for {effect.instance_id}."
+            )
 
 
 def _validate_key(value: str, label: str) -> None:
