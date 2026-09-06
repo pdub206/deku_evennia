@@ -185,7 +185,7 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
         or request.token < 1
     ):
         return NavigationOutcome("failed", "invalid_token")
-    if request.purpose not in {"wander", "pursuit", "flee", "special"}:
+    if request.purpose not in {"wander", "pursuit", "follow", "flee", "special"}:
         return NavigationOutcome("failed", "invalid_purpose")
     allow_fighting = request.purpose == "flee"
     state = navigation_state(request.actor)
@@ -312,6 +312,28 @@ def pursue(actor: Any, token: int) -> NavigationOutcome | None:
     return outcome
 
 
+def follow_step(actor: Any, leader: Any, token: int) -> NavigationOutcome:
+    """Traverse one legal shortest step toward a relationship leader.
+
+    MOB-07 owns whether following is wanted and how long it may continue;
+    MOB-04 continues to own route selection, locks, admission, and traversal.
+    """
+    if getattr(leader, "location", None) is None:
+        return NavigationOutcome("skipped", "target_lost")
+    stay_in_area = _resolve_area_constraint(actor, None)
+    if isinstance(stay_in_area, NavigationOutcome):
+        return stay_in_area
+    route = _shortest_first_exit(actor, leader.location, stay_in_area)
+    if route is None:
+        return NavigationOutcome("no-route", "no_route")
+    return execute_navigation(
+        NavigationRequest(
+            "follow", actor, token, target=leader, stay_in_area=stay_in_area
+        ),
+        route,
+    )
+
+
 def navigation_state(actor: Any) -> dict[str, Any]:
     """Read the detached, primitive-only durable navigation state."""
     raw = actor.attributes.get(MOBILE_NAVIGATION_ATTRIBUTE)
@@ -340,12 +362,9 @@ def _execute_wander(npc: Any, event: Any, data: Mapping[str, Any]) -> None:
 
 def register_mobile_behaviors() -> None:
     """Register code-owned MOB-04 behavior keys exactly once per reload."""
-    from systems.mobiles import (
-        MobileActionDefinition,
-        MobileBehaviorDefinition,
-        register_action,
-        register_behavior,
-    )
+    from systems.mobiles import (MobileActionDefinition,
+                                 MobileBehaviorDefinition, register_action,
+                                 register_behavior)
 
     try:
         register_action(MobileActionDefinition(WANDER_ACTION_KEY, _execute_wander))
@@ -422,11 +441,8 @@ def _shortest_first_exit(
 
 
 def _pursuit_target_allowed(actor: Any, target: Any) -> bool:
-    from systems.mobile_policy import (
-        can_detect_remotely,
-        is_protected,
-        may_enter_combat,
-    )
+    from systems.mobile_policy import (can_detect_remotely, is_protected,
+                                       may_enter_combat)
 
     if target is None or target.location is None or is_protected(target):
         return False

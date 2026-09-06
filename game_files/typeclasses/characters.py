@@ -167,12 +167,17 @@ class Character(ObjectParent, DefaultCharacter):
             # Capture pursuit before combat removes the departing target from
             # its encounter. MOB-04 later revalidates every route and target.
             from systems.mobile_navigation import note_target_departure
+            from systems.mobile_relationships import note_leader_moved
 
             note_target_departure(self, source_location)
+            note_leader_moved(self, source_location)
             handle_departure(self)
 
     def at_object_delete(self) -> bool | None:
         """Remove combat references before Evennia extracts this character."""
+        from systems.mobile_relationships import repair_relationships_for
+
+        repair_relationships_for(self)
         handle_departure(self)
         return super().at_object_delete()
 

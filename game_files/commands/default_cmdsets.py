@@ -30,6 +30,7 @@ from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
                               CmdPose, CmdRemove, CmdSetDesc, CmdWear)
 from commands.injury import CmdInjury, CmdStabilize
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
+from commands.relationships import CmdOrder
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 from evennia import default_cmds
@@ -103,6 +104,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdFlee)
         self.add(CmdStabilize)
         self.add(CmdInjury)
+        self.add(CmdOrder)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

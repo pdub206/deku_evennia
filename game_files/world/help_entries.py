@@ -26,6 +26,28 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "pets",
+        "aliases": ["pet", "followers", "order", "charm"],
+        "category": "Character",
+        "text": """
+            A pet has a durable owner, while charm is temporary control. Either
+            may let you issue an |worder|n while the creature is in your room:
+            |worder <pet> <command>|n. For example, |worder hound get all
+            corpse|n or |worder hound put gem bag|n. The pet uses its normal
+            command list, locks, and action rules; it cannot issue another
+            |worder|n command.
+
+            Following uses normal exits and movement rules. A pet will not
+            teleport, reveal hidden routes, bypass a locked door, or cross an
+            area boundary it is not allowed to cross. If you disconnect, it
+            stops following but remains yours; reconnecting never moves it to
+            you automatically. Releasing a pet ends ownership and control but
+            does not destroy it or its possessions. Damage dealt by a pet is
+            credited to its responsible owner or controller at the time of the
+            damage.
+        """,
+    },
+    {
         "key": "NPC special behaviors",
         "aliases": ["npc specials", "mobile specials", "mob specials"],
         "category": "Building",

@@ -249,6 +249,19 @@ def _process_one(npc: Any, event: PulseEvent, injected_selector: Any) -> MobileO
         )
     if policy.reason == "malformed_mobile_policy":
         return MobileOutcome(npc_id, "skipped", policy.reason, behavior_key)
+    # MOB-07 consumes this already-owned mobile decision for a follow step;
+    # it cannot teleport or manufacture an additional autonomous action.
+    from systems.mobile_relationships import advance_follow
+
+    following = advance_follow(npc, event.sequence)
+    if following is not None and following.reason != "arrived":
+        return MobileOutcome(
+            npc_id,
+            "acted" if following.status == "acted" else "skipped",
+            following.reason,
+            behavior_key,
+            "follow",
+        )
     # A pursuit intent has priority over ordinary behavior, but still consumes
     # this one MOB-01 token and can traverse no more than one exit.
     from systems.mobile_navigation import pursue

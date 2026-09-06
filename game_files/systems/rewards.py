@@ -340,6 +340,16 @@ def _responsible_pc_id(source: Any | None) -> int | None:
         return None
     if _is_pc(source):
         return _object_id(source)
+    # MOB-07 snapshots the current controller/owner at damage time.  Later
+    # charm expiry or transfer cannot rewrite this ledger entry.
+    try:
+        from systems.mobile_relationships import responsible_pc_id
+
+        responsible = responsible_pc_id(source)
+        if responsible is not None:
+            return responsible
+    except Exception:
+        pass
     for key in ("owner_character_id", "owner_id", "controller_id"):
         candidate = (
             source.attributes.get(key) if getattr(source, "attributes", None) else None
