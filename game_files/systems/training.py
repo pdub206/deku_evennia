@@ -1,8 +1,8 @@
 """ADV-03's durable class-choice and trainer service.
 
 Only ADV-02 choice sets are interpreted here.  The owning adapter applies an
-option; this first release has the built-in ``skill`` adapter, while spells
-remain unavailable until MAGIC-01 supplies its registry and ownership hooks.
+option; this release has the built-in ``skill`` adapter. MAGIC-01 now owns
+spell definitions, while MAGIC-02 will add the casting and training adapters.
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from systems.progression import CLASS_PROGRESSION, ChoiceSet, RegistryValidationError
+from systems.progression import (CLASS_PROGRESSION, ChoiceSet,
+                                 RegistryValidationError)
 
 CHOICE_STATE_ATTRIBUTE = "progression_choices"
 CHOICE_STATE_VERSION = 1

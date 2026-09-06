@@ -46,6 +46,40 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "magic",
+        "aliases": ["spells", "abilities", "casting"],
+        "category": "Magic",
+        "text": """
+            Spells and magical class abilities use a shared registry. Individual
+            ability help tells you its target, range, cost, cast time, attack
+            or saving throw, duration, scaling, and restrictions. You can only
+            use an action your class has gained through its listed access mode,
+            such as learned, prepared, innate, or item use.
+
+            Casting commands and the first class-complete spell lists are not
+            available yet. The registry deliberately does not make placeholder
+            spells selectable before their effects and resource rules exist.
+        """,
+    },
+    {
+        "key": "magic registry",
+        "aliases": ["magic-01", "spell registry", "ability registry"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Magic content may select only a registered stable action key and
+            bounded primitive choices. Definitions are validated together with
+            class access, resources, damage types, effects, handler contracts,
+            aliases, and player-help keys before they become selectable.
+
+            Do not put Python, callbacks, command objects, formulas, imported
+            classes, or lock-bypassing behavior in prototypes or Attributes.
+            Content names a reviewed handler; the owning code implements and
+            revalidates targeting, range, visibility, access, safe-room, and
+            combat policy when MAGIC-02 executes it.
+        """,
+    },
+    {
         "key": "check diagnostics",
         "aliases": ["@check", "builder checks", "adv-04"],
         "category": "Building",
