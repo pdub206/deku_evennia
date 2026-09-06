@@ -56,9 +56,17 @@ HELP_ENTRY_DICTS = [
             use an action your class has gained through its listed access mode,
             such as learned, prepared, innate, or item use.
 
-            Casting commands and the first class-complete spell lists are not
-            available yet. The registry deliberately does not make placeholder
-            spells selectable before their effects and resource rules exist.
+            Use |wspells|n and |wabilities|n to see only actions you currently
+            know or have prepared, along with your class resources. Cast with
+            |wcast <action> at <target>|n, or omit ``at <target>`` for a
+            self-only action. An action with a cast time longer than one action
+            is unavailable until its interruption-safe casting support arrives.
+
+            Class resources have a current value and a level-based maximum.
+            An action never spends more than its declared cost, and commands
+            cannot set resource values or bypass those rules. Rest recovery,
+            concentration, and longer cast times will become available with
+            their interruption-safe supporting systems.
         """,
     },
     {

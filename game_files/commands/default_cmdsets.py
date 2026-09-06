@@ -59,6 +59,7 @@ from commands.generic import (
     CmdWear,
 )
 from commands.injury import CmdInjury, CmdStabilize
+from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
@@ -111,6 +112,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdChange)
         self.add(CmdPractice)
         self.add(CmdTrain)
+        # Registry-backed spells and class abilities.
+        self.add(CmdCast)
+        self.add(CmdSpells)
+        self.add(CmdAbilities)
         # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
         # which otherwise runs no command and so wouldn't refresh it.
         self.add(CmdNoInput)
