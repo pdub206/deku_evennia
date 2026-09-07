@@ -20,7 +20,11 @@ from systems.magic_actions import (
     available_actions,
     grant_action,
     grant_spellbook_entry,
+    has_action_entitlement,
+    mark_preparation_window,
     prepare_action,
+    replace_learned_action,
+    revoke_action,
 )
 
 
@@ -39,17 +43,40 @@ def _spell(number: int) -> MagicDefinition:
         handler_key="utility",
         targeting=Targeting(TargetingMode.SELF, include_caster=True),
         range=RangeCategory.SELF,
+        spell_level=1,
         player_help=PlayerHelp(f"test spell {number}", "A test spell."),
+    )
+
+
+def _cantrip(number: int) -> MagicDefinition:
+    """Build a learned Wizard cantrip for capacity and replacement tests."""
+    return MagicDefinition(
+        key=f"wizard.test_cantrip_{number}",
+        display_name=f"Test Cantrip {number}",
+        aliases=(f"cantrip {number}",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("arcane",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="manipulate",
+        handler_key="utility",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        player_help=PlayerHelp(f"test cantrip {number}", "A test cantrip."),
     )
 
 
 def _registry():
     """Build more spells than level-one preparation capacity permits."""
-    definitions = tuple(_spell(number) for number in range(1, 8))
+    definitions = tuple(_spell(number) for number in range(1, 8)) + tuple(
+        _cantrip(number) for number in range(1, 5)
+    )
     return build_magic_registry(
         definitions,
         class_keys=("Wizard",),
-        help_keys=tuple(f"test spell {number}" for number in range(1, 8)),
+        help_keys=tuple(f"test spell {number}" for number in range(1, 8))
+        + tuple(f"test cantrip {number}" for number in range(1, 5)),
     )
 
 
@@ -65,6 +92,7 @@ class TestSpellOwnership(EvenniaTest):
     def test_spellbook_entry_must_precede_wizard_preparation(self):
         """A Wizard cannot cast a prepared spell absent from their spellbook."""
         with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            mark_preparation_window(self.char1, 1)
             with self.assertRaisesRegex(MagicActionError, "not in your spellbook"):
                 prepare_action(self.char1, "wizard.test_spell_1")
             grant_spellbook_entry(self.char1, "wizard.test_spell_1")
@@ -89,6 +117,7 @@ class TestSpellOwnership(EvenniaTest):
             {"version": 1, "learned": [], "prepared": [], "innate": []},
         )
         with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            mark_preparation_window(self.char1, 1)
             for number in range(1, 6):
                 key = f"wizard.test_spell_{number}"
                 grant_spellbook_entry(self.char1, key)
@@ -99,3 +128,47 @@ class TestSpellOwnership(EvenniaTest):
             self.assertEqual(
                 self.char1.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE)["version"], 2
             )
+
+    def test_preparation_requires_completed_long_rest(self):
+        """A spellbook entry alone cannot bypass the class preparation timing."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            grant_spellbook_entry(self.char1, "wizard.test_spell_1")
+            with self.assertRaisesRegex(MagicActionError, "only after a Long Rest"):
+                prepare_action(self.char1, "wizard.test_spell_1")
+            mark_preparation_window(self.char1, 80)
+            prepare_action(self.char1, "wizard.test_spell_1")
+
+            self.char1.attributes.remove("magic_preparation_window")
+            with self.assertRaisesRegex(MagicActionError, "only after a Long Rest"):
+                revoke_action(self.char1, "wizard.test_spell_1", AccessMode.PREPARED)
+            self.assertTrue(
+                has_action_entitlement(
+                    self.char1, "wizard.test_spell_1", AccessMode.PREPARED
+                )
+            )
+
+    def test_cantrip_capacity_and_atomic_learned_replacement(self):
+        """Cantrips use their own class-table capacity and replace safely."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            for number in range(1, 4):
+                grant_action(
+                    self.char1, f"wizard.test_cantrip_{number}", AccessMode.LEARNED
+                )
+            with self.assertRaisesRegex(MagicActionError, "cannot learn another"):
+                grant_action(self.char1, "wizard.test_cantrip_4", AccessMode.LEARNED)
+
+            replace_learned_action(
+                self.char1, "wizard.test_cantrip_1", "wizard.test_cantrip_4"
+            )
+
+        learned = self.char1.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE)[
+            AccessMode.LEARNED
+        ]
+        self.assertEqual(
+            learned,
+            [
+                "wizard.test_cantrip_2",
+                "wizard.test_cantrip_3",
+                "wizard.test_cantrip_4",
+            ],
+        )

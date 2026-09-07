@@ -1,6 +1,8 @@
 """MAGIC-03 durable Short and Long Rest recovery coverage."""
 
 from evennia.utils.test_resources import EvenniaTest
+from systems.magic_actions import MAGIC_PREPARATION_ATTRIBUTE
+from systems.magic_resources import resource_current, spend_resource
 from systems.magic_rest import (
     LONG_REST_PULSES,
     LONG_REST_SLEEP_PULSES,
@@ -12,7 +14,6 @@ from systems.magic_rest import (
     advance_magic_rest,
     interrupt_magic_rest,
 )
-from systems.magic_resources import resource_current, spend_resource
 from systems.pulses import PulseEvent, PulseLane
 
 
@@ -79,6 +80,10 @@ class TestMagicRest(EvenniaTest):
         completed = advance_magic_rest(self.char1, self._event(LONG_REST_PULSES))
 
         self.assertEqual(completed.profiles, ("short_rest", "long_rest"))
+        self.assertEqual(
+            self.char1.attributes.get(MAGIC_PREPARATION_ATTRIBUTE),
+            {"version": 1, "recovery_sequence": LONG_REST_PULSES},
+        )
         self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 4)
 
     def test_damage_interruption_clears_existing_progress_immediately(self):

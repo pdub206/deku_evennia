@@ -1,8 +1,30 @@
 """ADV-03 durable class-choice and trainer-service coverage."""
 
+from dataclasses import replace
+from types import MappingProxyType
+from unittest.mock import patch
+
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import initialize_level_one
+from systems.magic import (
+    AccessMode,
+    ClassAccess,
+    MagicDefinition,
+    MagicKind,
+    PlayerHelp,
+    RangeCategory,
+    Targeting,
+    TargetingMode,
+    build_magic_registry,
+)
+from systems.magic_actions import (
+    available_actions,
+    has_action_entitlement,
+    has_spellbook_entry,
+    mark_preparation_window,
+)
+from systems.progression import CLASS_PROGRESSION, ChoiceSet
 from systems.training import (
     CHOICE_STATE_ATTRIBUTE,
     TrainingError,
@@ -12,6 +34,127 @@ from systems.training import (
     resolve_training,
     set_trainer_profile,
 )
+
+
+def _magic_definition(
+    key: str, name: str, modes: tuple[str, ...], *, spell_level: int = 0
+) -> MagicDefinition:
+    """Build a test-only Wizard option with no executable game consequence."""
+    return MagicDefinition(
+        key=key,
+        display_name=name,
+        aliases=(name.casefold(),),
+        kind=MagicKind.SPELL,
+        school="abjuration",
+        tags=("test",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=modes,
+        action_category="manipulate",
+        handler_key="utility",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        spell_level=spell_level,
+        player_help=PlayerHelp(name.casefold(), "A test training option."),
+    )
+
+
+def _magic_registry():
+    """Return every ownership shape exposed through the training adapter."""
+    definitions = (
+        _magic_definition(
+            "wizard.training_cantrip",
+            "Training Cantrip",
+            (AccessMode.LEARNED,),
+        ),
+        _magic_definition(
+            "wizard.training_innate",
+            "Training Innate",
+            (AccessMode.INNATE,),
+        ),
+        _magic_definition(
+            "wizard.training_book_spell",
+            "Training Book Spell",
+            (AccessMode.PREPARED,),
+            spell_level=1,
+        ),
+        _magic_definition(
+            "wizard.training_unlearnable_spell",
+            "Training Unlearnable Spell",
+            (AccessMode.LEARNED,),
+            spell_level=1,
+        ),
+    )
+    return build_magic_registry(
+        definitions,
+        class_keys=("Wizard",),
+        help_keys=tuple(definition.player_help.key for definition in definitions),
+    )
+
+
+def _registry_with_magic_choices():
+    """Attach test-only magic choices to Wizard level one declaratively."""
+    choices = (
+        ChoiceSet(
+            "wizard.test_learned",
+            1,
+            ("wizard.training_cantrip",),
+            "none",
+            (),
+            "resolution",
+            "magic_learned",
+        ),
+        ChoiceSet(
+            "wizard.test_innate",
+            1,
+            ("wizard.training_innate",),
+            "none",
+            (),
+            "resolution",
+            "magic_innate",
+        ),
+        ChoiceSet(
+            "wizard.test_spellbook",
+            1,
+            ("wizard.training_book_spell",),
+            "none",
+            (),
+            "resolution",
+            "magic_spellbook",
+        ),
+        ChoiceSet(
+            "wizard.test_prepared",
+            1,
+            ("wizard.training_book_spell",),
+            "none",
+            (),
+            "resolution",
+            "magic_prepared",
+        ),
+        ChoiceSet(
+            "wizard.test_unlearnable",
+            1,
+            ("wizard.training_unlearnable_spell",),
+            "none",
+            (),
+            "resolution",
+            "magic_learned",
+        ),
+    )
+    wizard = CLASS_PROGRESSION.class_for("Wizard")
+    first = replace(
+        wizard.grants_at(1),
+        choice_keys=wizard.grants_at(1).choice_keys
+        + tuple(choice.key for choice in choices),
+    )
+    definitions = dict(CLASS_PROGRESSION.definitions)
+    definitions["Wizard"] = replace(wizard, levels=(first,) + wizard.levels[1:])
+    return replace(
+        CLASS_PROGRESSION,
+        definitions=MappingProxyType(definitions),
+        choices=MappingProxyType(
+            {**CLASS_PROGRESSION.choices, **{item.key: item for item in choices}}
+        ),
+    )
 
 
 class TestTrainingService(EvenniaTest):
@@ -84,3 +227,98 @@ class TestTrainingService(EvenniaTest):
         initialize_choice_entitlements(self.char1, "Fighter", 1)
 
         self.assertEqual(len(practice_view(self.char1).pending_choices), 1)
+
+    def test_magic_choice_adapters_use_magic_ownership_transactionally(self):
+        """Magic choices grant only through their declared ownership adapters."""
+        progression = _registry_with_magic_choices()
+        magic = _magic_registry()
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        profile = default_trainer_profile()
+        profile["classes"] = ["Wizard"]
+        profile["choices"] = [
+            "wizard.test_learned",
+            "wizard.test_innate",
+            "wizard.test_spellbook",
+            "wizard.test_prepared",
+            "wizard.test_unlearnable",
+        ]
+
+        with (
+            patch("systems.advancement.CLASS_PROGRESSION", progression),
+            patch("systems.training.CLASS_PROGRESSION", progression),
+            patch("systems.magic.MAGIC_REGISTRY", magic),
+        ):
+            initialize_level_one(self.char2, class_key="Wizard", hp_base=6)
+            set_trainer_profile(self.trainer, profile)
+            mark_preparation_window(self.char2, 1)
+
+            with self.assertRaisesRegex(TrainingError, "does not learn"):
+                resolve_training(
+                    self.char2,
+                    "wizard.test_unlearnable",
+                    "wizard.training_unlearnable_spell",
+                    self.trainer,
+                )
+            pending = practice_view(self.char2).pending_choices
+            unlearnable = next(
+                item
+                for item in pending
+                if item["choice_key"] == "wizard.test_unlearnable"
+            )
+            self.assertEqual(unlearnable["selected"], [])
+
+            resolve_training(
+                self.char2,
+                "wizard.test_learned",
+                "wizard.training_cantrip",
+                self.trainer,
+            )
+            resolve_training(
+                self.char2,
+                "wizard.test_innate",
+                "wizard.training_innate",
+                self.trainer,
+            )
+            resolve_training(
+                self.char2,
+                "wizard.test_spellbook",
+                "wizard.training_book_spell",
+                self.trainer,
+            )
+            resolve_training(
+                self.char2,
+                "wizard.test_prepared",
+                "wizard.training_book_spell",
+                self.trainer,
+            )
+
+            self.assertTrue(
+                has_action_entitlement(
+                    self.char2, "wizard.training_cantrip", AccessMode.LEARNED
+                )
+            )
+            self.assertTrue(
+                has_action_entitlement(
+                    self.char2, "wizard.training_innate", AccessMode.INNATE
+                )
+            )
+            self.assertTrue(
+                has_spellbook_entry(self.char2, "wizard.training_book_spell")
+            )
+            self.assertTrue(
+                has_action_entitlement(
+                    self.char2, "wizard.training_book_spell", AccessMode.PREPARED
+                )
+            )
+            self.assertEqual(
+                {
+                    action.key
+                    for action in available_actions(self.char2, MagicKind.SPELL)
+                },
+                {
+                    "wizard.training_book_spell",
+                    "wizard.training_cantrip",
+                    "wizard.training_innate",
+                },
+            )

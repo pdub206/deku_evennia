@@ -21,9 +21,12 @@ from systems.magic import (
 )
 from systems.magic_actions import (
     CONCENTRATION_ATTRIBUTE,
+    MAGIC_ACTION_STATE_ATTRIBUTE,
+    MagicActionError,
     cast_action,
     grant_action,
     maintain_concentration,
+    replace_learned_action,
 )
 from systems.magic_resources import restore_resource
 
@@ -113,6 +116,12 @@ class TestConcentration(EvenniaTest):
                 for effect in self.char1.effects.all()
                 if effect.key == _FIRST_EFFECT.key
             )
+            with self.assertRaisesRegex(MagicActionError, "active effect"):
+                replace_learned_action(
+                    self.char1,
+                    "wizard.test_sustain_first",
+                    "wizard.test_sustain_second",
+                )
             restore_resource(self.char1, "wizard.arcane_recovery", 1)
             self._cast("wizard.test_sustain_second")
 
@@ -120,6 +129,23 @@ class TestConcentration(EvenniaTest):
         record = self.char1.attributes.get(CONCENTRATION_ATTRIBUTE)
         self.assertEqual(record["source_key"], "wizard.test_sustain_second")
         self.assertEqual(len(record["effects"]), 1)
+
+    def test_replacement_scans_effect_sources_beyond_concentration_state(self):
+        """An active effect blocks replacement even if its link record is absent."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            self._cast("wizard.test_sustain_first")
+            self.char1.attributes.remove(CONCENTRATION_ATTRIBUTE)
+            with self.assertRaisesRegex(MagicActionError, "active effect"):
+                replace_learned_action(
+                    self.char1,
+                    "wizard.test_sustain_first",
+                    "wizard.test_sustain_second",
+                )
+
+        learned = self.char1.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE)[
+            AccessMode.LEARNED
+        ]
+        self.assertEqual(learned, ["wizard.test_sustain_first"])
 
     def test_removal_or_incapacitation_clears_concentration(self):
         """Independent removal and canonical injury cleanup cannot leave it stuck."""

@@ -157,8 +157,16 @@ HELP_ENTRY_DICTS = [
             nearby, offer your class and that choice, and be willing to train
             you. There is currently no generic practice-point pool or fee.
 
-            Spell preparation, spellbooks, pact-slot recovery, and persistent
-            effects are not currently part of the action service.
+            A listed magic choice is resolved through its class's declared
+            ownership rule: learning a cantrip or spell, gaining an innate
+            action, adding a Wizard spellbook entry, or preparing an eligible
+            spell. The choice must appear in |wpractice|n before a trainer can
+            resolve it; preparation and spellbook ownership remain distinct.
+            Preparing or changing a prepared spell requires a completed Long
+            Rest in a safe rest location.
+            Only released SRD content appears as an option. Pact-slot recovery
+            and persistent effects follow the separate rules documented by
+            their released actions.
         """,
     },
     {

@@ -77,11 +77,17 @@ class SpellAccess:
     pact_slot_level: tuple[int, ...]
     srd_reference: str
     preparation_formula: str | None = None
+    preparation_timing: str = "long_rest"
 
 
 @dataclass(frozen=True)
 class ChoiceSet:
-    """A data-only entitlement ADV-03 can resolve without class-specific code."""
+    """A data-only entitlement ADV-03 can resolve without class-specific code.
+
+    ``option_adapter`` identifies the narrow system that owns the selected
+    stable keys.  It is deliberately not a callable or import path: class
+    progression remains declarative and the adapter enforces its own rules.
+    """
 
     key: str
     count: int
@@ -89,6 +95,7 @@ class ChoiceSet:
     replacement_policy: str
     mutual_exclusions: tuple[tuple[str, ...], ...]
     prerequisite_timing: str
+    option_adapter: str = "skill"
 
 
 @dataclass(frozen=True)
@@ -267,6 +274,13 @@ def build_registry(
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has duplicate legal options."
             )
+        if any(
+            not isinstance(option, str) or not option.strip()
+            for option in choice.legal_options
+        ):
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has an invalid legal option."
+            )
         if choice.replacement_policy not in {"none", "replace_one"}:
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has an invalid replacement policy."
@@ -274,6 +288,16 @@ def build_registry(
         if choice.prerequisite_timing not in {"grant", "resolution"}:
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has invalid prerequisite timing."
+            )
+        if choice.option_adapter not in {
+            "skill",
+            "magic_learned",
+            "magic_prepared",
+            "magic_spellbook",
+            "magic_innate",
+        }:
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has an unavailable option adapter."
             )
 
     payload = {
@@ -440,6 +464,10 @@ def _validate_spell_access(access: SpellAccess) -> None:
     if any(value > 5 for value in access.pact_slot_level):
         raise RegistryValidationError(
             f"Spell access '{access.key}' exceeds fifth-level Pact Magic slots."
+        )
+    if access.preparation_timing not in {"long_rest"}:
+        raise RegistryValidationError(
+            f"Spell access '{access.key}' has an unavailable preparation timing."
         )
     _validate_srd_reference(access.srd_reference, f"Spell access '{access.key}'")
 
@@ -819,6 +847,9 @@ def _default_registry() -> ProgressionRegistry:
                     access_data.get("pact_slots", _NO_PACT_SLOTS),
                     access_data.get("pact_levels", _NO_PACT_SLOTS),
                     access_data["reference"],
+                    preparation_timing=access_data.get(
+                        "preparation_timing", "long_rest"
+                    ),
                 )
             )
             spell_keys = (spell_key,)

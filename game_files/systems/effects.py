@@ -279,6 +279,33 @@ def removal_listener_registered(key: str) -> bool:
     return key in _REMOVAL_LISTENERS
 
 
+def has_active_effect_source(source: Any, source_key: str) -> bool:
+    """Return whether a source action still owns an active effect anywhere.
+
+    Replacement is deliberately rare, so this diagnostic scans character effect
+    records instead of maintaining a second, potentially stale source index.
+    Malformed records that do not belong to the requested source are left for
+    the existing staff repair workflow and cannot block another character.
+    """
+    _validate_key(source_key, "effect source")
+    source_dbref = getattr(source, "dbref", None)
+    if not isinstance(source_dbref, str) or not source_dbref:
+        raise EffectError("An effect source must be a saved object.")
+    from typeclasses.characters import Character
+
+    for owner in Character.objects.filter_family().iterator():
+        try:
+            if any(
+                effect.source_dbref == source_dbref and effect.source_key == source_key
+                for effect in owner.effects.all()
+            ):
+                return True
+        except EffectStorageError:
+            # A malformed unrelated record does not establish a dependency.
+            continue
+    return False
+
+
 @dataclass(frozen=True)
 class ActiveEffect:
     """Read-only view of one persisted effect instance."""

@@ -1,8 +1,9 @@
 """ADV-03's durable class-choice and trainer service.
 
-Only ADV-02 choice sets are interpreted here.  The owning adapter applies an
-option; this release has the built-in ``skill`` adapter. MAGIC-01 now owns
-spell definitions, while MAGIC-02 will add the casting and training adapters.
+Only ADV-02 choice sets are interpreted here.  Each choice names one
+code-owned option adapter; this service never interprets a selected key as a
+command or executable content.  The skill and magic adapters each retain
+ownership of their persistent state and validation rules.
 """
 
 from __future__ import annotations
@@ -13,13 +14,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from systems.progression import (CLASS_PROGRESSION, ChoiceSet,
-                                 RegistryValidationError)
+from systems.progression import CLASS_PROGRESSION, ChoiceSet, RegistryValidationError
 
 CHOICE_STATE_ATTRIBUTE = "progression_choices"
 CHOICE_STATE_VERSION = 1
 TRAINER_PROFILE_ATTRIBUTE = "trainer_profile"
 TRAINER_PROFILE_VERSION = 1
+_MAGIC_CHOICE_MODES = {
+    "magic_learned": "learned",
+    "magic_prepared": "prepared",
+    "magic_innate": "innate",
+}
 
 
 class TrainingError(ValueError):
@@ -268,10 +273,14 @@ def _validate_option(
 ) -> None:
     if option not in choice.legal_options:
         raise TrainingError("That option is not available for this choice.")
-    if option in selected or option in (
+    if option in selected:
+        raise TrainingError("You already know that option.")
+    if choice.option_adapter == "skill" and option in (
         character.attributes.get("skill_proficiencies") or []
     ):
         raise TrainingError("You already know that option.")
+    if choice.option_adapter != "skill":
+        _validate_unowned_magic_option(character, choice, option)
     if any(
         option in group and any(item in group for item in selected)
         for group in choice.mutual_exclusions
@@ -280,10 +289,56 @@ def _validate_option(
 
 
 def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> None:
-    if not choice.key.endswith(".skills"):
-        raise TrainingError("That choice's owning system is unavailable.")
-    known = list(character.attributes.get("skill_proficiencies") or [])
-    character.db.skill_proficiencies = sorted(set(known + options))
+    if choice.option_adapter == "skill":
+        known = list(character.attributes.get("skill_proficiencies") or [])
+        character.db.skill_proficiencies = sorted(set(known + options))
+        return
+    try:
+        from systems.magic_actions import (
+            MagicActionError,
+            grant_action,
+            grant_spellbook_entry,
+        )
+
+        if choice.option_adapter == "magic_spellbook":
+            for option in options:
+                grant_spellbook_entry(character, option)
+            return
+        mode = _MAGIC_CHOICE_MODES.get(choice.option_adapter)
+        if mode is None:
+            raise TrainingError("That choice's owning system is unavailable.")
+        for option in options:
+            grant_action(character, option, mode)
+    except MagicActionError as err:
+        raise TrainingError(str(err)) from err
+
+
+def _validate_unowned_magic_option(
+    character: Any, choice: ChoiceSet, option: str
+) -> None:
+    """Reject an already-owned magic option before consuming a choice."""
+    try:
+        from systems.magic_actions import (
+            MagicActionError,
+            has_action_entitlement,
+            has_spellbook_entry,
+        )
+
+        mode = (
+            "spellbook"
+            if choice.option_adapter == "magic_spellbook"
+            else _MAGIC_CHOICE_MODES.get(choice.option_adapter)
+        )
+        if mode is None:
+            raise TrainingError("That choice's owning system is unavailable.")
+        if mode == "spellbook":
+            owned = has_spellbook_entry(character, option)
+        else:
+            owned = has_action_entitlement(character, option, mode)
+        if owned:
+            raise TrainingError("You already know that option.")
+    except MagicActionError as err:
+        raise TrainingError("Your magic training record needs staff repair.") from err
 
 
 def _validate_trainer(character: Any, trainer: Any, choice_key: str) -> None:

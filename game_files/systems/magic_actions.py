@@ -36,6 +36,8 @@ from systems.magic_resources import MagicResourceError, resource_current, spend_
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
 MAGIC_ACTION_STATE_VERSION = 2
+MAGIC_PREPARATION_ATTRIBUTE = "magic_preparation_window"
+MAGIC_PREPARATION_VERSION = 1
 CONCENTRATION_ATTRIBUTE = "magic_concentration"
 CONCENTRATION_VERSION = 1
 _MAX_CONCENTRATION_EFFECTS = 16
@@ -84,9 +86,11 @@ def grant_action(actor: Any, action_key: str, mode: str) -> None:
         prepare_action(actor, action_key)
         return
     definition = _registry().definition_for(action_key, include_disabled=False)
-    if mode not in definition.access_modes:
+    if mode not in definition.access_modes or not _has_class_access(actor, definition):
         raise MagicActionError("That action cannot be granted through this mode.")
     state = _action_state(actor)
+    if mode == AccessMode.LEARNED and definition.kind == MagicKind.SPELL:
+        _validate_learned_spell(actor, definition, state)
     values = state[mode]
     if action_key not in values:
         values.append(action_key)
@@ -94,19 +98,97 @@ def grant_action(actor: Any, action_key: str, mode: str) -> None:
         _write_action_state(actor, state)
 
 
+def replace_learned_action(
+    actor: Any, old_action_key: str, new_action_key: str
+) -> None:
+    """Atomically replace one inactive learned spell with a legal peer.
+
+    Replacement is intentionally narrower than revocation: it never releases
+    active effects, prepared selections, spellbook entries, or a feature that
+    currently depends on the old key.  Callers must surface a legal
+    progression choice before invoking this boundary.
+    """
+    if (
+        not isinstance(old_action_key, str)
+        or not isinstance(new_action_key, str)
+        or old_action_key == new_action_key
+    ):
+        raise MagicActionError("Choose two different learned spells.")
+    registry = _registry()
+    old_definition = registry.definition_for(old_action_key, include_disabled=True)
+    new_definition = registry.definition_for(new_action_key, include_disabled=False)
+    if (
+        old_definition.kind != MagicKind.SPELL
+        or new_definition.kind != MagicKind.SPELL
+        or (old_definition.spell_level == 0) != (new_definition.spell_level == 0)
+    ):
+        raise MagicActionError("A spell can only replace the same kind of spell.")
+    with transaction.atomic():
+        _lock(actor)
+        state = _action_state(actor)
+        if old_action_key not in state[AccessMode.LEARNED]:
+            raise MagicActionError("You have not learned that spell.")
+        if new_action_key in state[AccessMode.LEARNED]:
+            raise MagicActionError("You already know that replacement spell.")
+        _validate_learned_spell(
+            actor, new_definition, state, replacing_action_key=old_action_key
+        )
+        _reject_replacement_dependency(actor, old_action_key, state)
+        state[AccessMode.LEARNED].remove(old_action_key)
+        state[AccessMode.LEARNED].append(new_action_key)
+        state[AccessMode.LEARNED].sort()
+        _write_action_state(actor, state)
+
+
 def revoke_action(actor: Any, action_key: str, mode: str) -> None:
     """Remove one previously granted entitlement without touching resources."""
     if mode not in _ENTITLEMENT_MODES:
         raise MagicActionError("Magic action mode is invalid.")
-    state = _action_state(actor)
     if mode == AccessMode.PREPARED:
-        if action_key in state[mode]:
-            state[mode].remove(action_key)
-            _write_action_state(actor, state)
+        unprepare_action(actor, action_key)
         return
+    state = _action_state(actor)
     if action_key in state[mode]:
         state[mode].remove(action_key)
         _write_action_state(actor, state)
+
+
+def has_action_entitlement(actor: Any, action_key: str, mode: str) -> bool:
+    """Return whether durable ownership already records one exact action key.
+
+    ADV-03 uses this read-only query to reject a duplicate choice before its
+    resolution transaction can consume the pending entitlement.  Availability
+    and class checks remain the responsibility of the granting operation.
+    """
+    if mode not in _ENTITLEMENT_MODES or not isinstance(action_key, str):
+        raise MagicActionError("Magic action mode is invalid.")
+    return action_key in _action_state(actor)[mode]
+
+
+def has_spellbook_entry(actor: Any, action_key: str) -> bool:
+    """Return whether a Wizard spellbook owns one exact stable spell key."""
+    if not isinstance(action_key, str):
+        raise MagicActionError("Magic action key is invalid.")
+    return action_key in _action_state(actor)[_SPELLBOOK_KEY]
+
+
+def mark_preparation_window(actor: Any, recovery_sequence: int) -> None:
+    """Record a completed Long Rest as the class preparation opportunity.
+
+    Only the shared rest processor calls this after it has verified the full
+    uninterrupted Long Rest.  The latest completed rest is intentionally a
+    single durable opportunity rather than a stackable currency.
+    """
+    if (
+        isinstance(recovery_sequence, bool)
+        or not isinstance(recovery_sequence, int)
+        or recovery_sequence < 1
+    ):
+        raise MagicActionError("Magic preparation timing is invalid.")
+    actor.attributes.add(
+        MAGIC_PREPARATION_ATTRIBUTE,
+        {"version": MAGIC_PREPARATION_VERSION, "recovery_sequence": recovery_sequence},
+    )
 
 
 def grant_spellbook_entry(actor: Any, action_key: str) -> None:
@@ -120,8 +202,10 @@ def grant_spellbook_entry(actor: Any, action_key: str) -> None:
     access, level = _spell_access(actor)
     if (
         definition.kind != MagicKind.SPELL
+        or definition.spell_level == 0
         or AccessMode.PREPARED not in definition.access_modes
         or not _has_class_access(actor, definition)
+        or not _spell_level_available(access, level, definition)
         or access.spellbook_entries[level - 1] < 1
     ):
         raise MagicActionError("That spell cannot be added to your spellbook.")
@@ -142,10 +226,13 @@ def prepare_action(actor: Any, action_key: str) -> None:
     access, level = _spell_access(actor)
     if (
         definition.kind != MagicKind.SPELL
+        or definition.spell_level == 0
         or AccessMode.PREPARED not in definition.access_modes
         or not _has_class_access(actor, definition)
+        or not _spell_level_available(access, level, definition)
     ):
         raise MagicActionError("That spell cannot be prepared.")
+    _require_preparation_window(actor, access)
     state = _action_state(actor)
     if access.spellbook_entries[level - 1] and action_key not in state[_SPELLBOOK_KEY]:
         raise MagicActionError("That spell is not in your spellbook.")
@@ -157,6 +244,19 @@ def prepare_action(actor: Any, action_key: str) -> None:
     prepared.append(action_key)
     prepared.sort()
     _write_action_state(actor, state)
+
+
+def unprepare_action(actor: Any, action_key: str) -> None:
+    """Remove one prepared spell only during its registered preparation time."""
+    definition = _registry().definition_for(action_key, include_disabled=True)
+    access, _level = _spell_access(actor)
+    if definition.kind != MagicKind.SPELL or not _has_class_access(actor, definition):
+        raise MagicActionError("That spell cannot be unprepared.")
+    _require_preparation_window(actor, access)
+    state = _action_state(actor)
+    if action_key in state[AccessMode.PREPARED]:
+        state[AccessMode.PREPARED].remove(action_key)
+        _write_action_state(actor, state)
 
 
 def end_concentration(caster: Any) -> None:
@@ -350,12 +450,14 @@ def _has_access(
     if not _has_class_access(actor, definition):
         return False
     access, level = _spell_access(actor, required=False)
-    if (
-        definition.kind == MagicKind.SPELL
-        and AccessMode.PREPARED in definition.access_modes
-        and access is not None
-        and access.spellbook_entries[level - 1]
-        and definition.key not in state[_SPELLBOOK_KEY]
+    if definition.kind == MagicKind.SPELL and (
+        access is None
+        or not _spell_level_available(access, level, definition)
+        or (
+            AccessMode.PREPARED in definition.access_modes
+            and access.spellbook_entries[level - 1]
+            and definition.key not in state[_SPELLBOOK_KEY]
+        )
     ):
         return False
     return any(
@@ -377,6 +479,80 @@ def _has_class_access(actor: Any, definition: MagicDefinition) -> bool:
             for access in definition.class_access
         )
     )
+
+
+def _spell_level_available(
+    access: Any, level: int, definition: MagicDefinition
+) -> bool:
+    """Return whether a class table makes this spell level available now."""
+    if definition.spell_level == 0:
+        return access.cantrips[level - 1] > 0
+    return definition.spell_level <= access.maximum_spell_level[level - 1]
+
+
+def _validate_learned_spell(
+    actor: Any,
+    definition: MagicDefinition,
+    state: Mapping[str, list[str]],
+    *,
+    replacing_action_key: str | None = None,
+) -> None:
+    """Check one learned-spell grant against the source-controlled table."""
+    if AccessMode.LEARNED not in definition.access_modes or not _has_class_access(
+        actor, definition
+    ):
+        raise MagicActionError("That spell cannot be learned by your class.")
+    access, level = _spell_access(actor)
+    if not _spell_level_available(access, level, definition):
+        raise MagicActionError("That spell level is not available to you.")
+    capacity = (
+        access.cantrips[level - 1]
+        if definition.spell_level == 0
+        else access.spells_known[level - 1]
+    )
+    if capacity < 1:
+        raise MagicActionError("Your class does not learn spells in that way.")
+    known = _learned_spell_keys(state, cantrip=definition.spell_level == 0)
+    if replacing_action_key is not None:
+        known.discard(replacing_action_key)
+    if len(known) >= capacity:
+        raise MagicActionError("You cannot learn another spell right now.")
+
+
+def _learned_spell_keys(state: Mapping[str, list[str]], *, cantrip: bool) -> set[str]:
+    """Return learned spells in one capacity bucket, rejecting stale keys."""
+    keys: set[str] = set()
+    for action_key in state[AccessMode.LEARNED]:
+        try:
+            definition = _registry().definition_for(action_key, include_disabled=True)
+        except MagicRegistryError as err:
+            raise MagicActionError(
+                "Your magic training record needs staff repair."
+            ) from err
+        if (
+            definition.kind == MagicKind.SPELL
+            and (definition.spell_level == 0) == cantrip
+        ):
+            keys.add(action_key)
+    return keys
+
+
+def _reject_replacement_dependency(
+    actor: Any, action_key: str, state: Mapping[str, list[str]]
+) -> None:
+    """Reject replacement while durable state still refers to a learned spell."""
+    if action_key in state[AccessMode.PREPARED] or action_key in state[_SPELLBOOK_KEY]:
+        raise MagicActionError("That spell is still part of another magic selection.")
+    concentration = _concentration_state(actor, required=False)
+    if concentration is not None and concentration["source_key"] == action_key:
+        raise MagicActionError("That spell still has an active effect.")
+    try:
+        from systems.effects import EffectError, has_active_effect_source
+
+        if has_active_effect_source(actor, action_key):
+            raise MagicActionError("That spell still has an active effect.")
+    except EffectError as err:
+        raise MagicActionError("That spell cannot be replaced right now.") from err
 
 
 def _begin_concentration(
@@ -508,6 +684,22 @@ def _spell_access(actor: Any, *, required: bool = True):
     if access is None and required:
         raise MagicActionError("Your class cannot prepare spells.")
     return access, level
+
+
+def _require_preparation_window(actor: Any, access: Any) -> None:
+    """Enforce the class table's completed-Long-Rest preparation timing."""
+    if access.preparation_timing != "long_rest":
+        raise MagicActionError("Your class preparation timing is unavailable.")
+    raw = actor.attributes.get(MAGIC_PREPARATION_ATTRIBUTE)
+    if (
+        not isinstance(raw, Mapping)
+        or set(raw) != {"version", "recovery_sequence"}
+        or raw["version"] != MAGIC_PREPARATION_VERSION
+        or isinstance(raw["recovery_sequence"], bool)
+        or not isinstance(raw["recovery_sequence"], int)
+        or raw["recovery_sequence"] < 1
+    ):
+        raise MagicActionError("You can prepare spells only after a Long Rest.")
 
 
 def _action_category(definition: MagicDefinition) -> ActionCategory:

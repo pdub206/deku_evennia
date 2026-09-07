@@ -90,6 +90,9 @@ def advance_magic_rest(owner: Any, event: PulseEvent) -> MagicRestResult:
     if continuous >= long_pulses and sleep_pulses >= long_sleep_pulses:
         profiles.append("long_rest")
         restored.extend(recover_profile(owner, "long_rest"))
+        from systems.magic_actions import mark_preparation_window
+
+        mark_preparation_window(owner, event.sequence)
         continuous = 0
         sleep_pulses = 0
     _write_state(

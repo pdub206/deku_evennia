@@ -99,6 +99,10 @@ class TestMagicRegistry(EvenniaTest):
         with self.assertRaises(MagicRegistryError):
             build(arcane_bolt(player_help=PlayerHelp("missing", "No entry.")))
         with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(spell_level=10))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(kind=MagicKind.ABILITY, spell_level=1))
+        with self.assertRaises(MagicRegistryError):
             build(
                 arcane_bolt(
                     concentration=True,

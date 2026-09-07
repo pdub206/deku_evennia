@@ -273,6 +273,7 @@ class MagicDefinition:
     handler_key: str
     targeting: Targeting
     range: str
+    spell_level: int = 0
     cost: ResourceCost | None = None
     cast_time: int = 1
     concentration: bool = False
@@ -556,6 +557,9 @@ def _validate_definition(
         raise MagicRegistryError("A magic action needs a bounded display name.")
     if definition.kind not in {MagicKind.SPELL, MagicKind.ABILITY}:
         raise MagicRegistryError("A magic action has an invalid kind.")
+    _validate_nonnegative_int(definition.spell_level, "spell level", maximum=9)
+    if definition.kind == MagicKind.ABILITY and definition.spell_level:
+        raise MagicRegistryError("Only spells may have a spell level.")
     _validate_key(definition.school, "school")
     _validate_key(definition.action_category, "action category")
     _validate_key(definition.handler_key, "handler")
@@ -977,6 +981,13 @@ def _validate_nonnegative_int(value: Any, label: str, *, maximum: int) -> None:
 def _render_player_help(definition: MagicDefinition) -> str:
     """Render only declared, player-safe metadata; hidden policies stay hidden."""
     parts = [definition.player_help.summary]  # validated by ``player_help_entry``
+    if definition.kind == MagicKind.SPELL:
+        level = (
+            "Cantrip"
+            if definition.spell_level == 0
+            else f"Level {definition.spell_level} spell"
+        )
+        parts.append(f"{level}.")
     parts.append(f"Target: {definition.targeting.mode}. Range: {definition.range}.")
     if definition.cost is not None:
         parts.append(f"Cost: {definition.cost.amount} {definition.cost.resource_key}.")
