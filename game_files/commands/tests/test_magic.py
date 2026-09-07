@@ -19,6 +19,7 @@ from systems.magic import (
     RangeCategory,
     ResourceCost,
     Save,
+    Scaling,
     Targeting,
     TargetingMode,
     build_magic_registry,
@@ -192,6 +193,32 @@ def _slot_registry(class_key: str = "Wizard"):
     )
 
 
+def _scaled_slot_healing_registry():
+    """Build a declared upcast healing spell for cast-level scaling coverage."""
+    action = MagicDefinition(
+        key="wizard.test_scaled_healing",
+        display_name="Test Scaled Healing",
+        aliases=("scaled healing",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("arcane",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="manipulate",
+        handler_key="healing",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        spell_level=1,
+        uses_spell_slot=True,
+        healing=DiceExpression(1, 4),
+        scaling=Scaling(levels=(2, 3), healing_per_step=1),
+        player_help=PlayerHelp("test scaled healing", "A scaling test spell."),
+    )
+    return build_magic_registry(
+        (action,), class_keys=("Wizard",), help_keys=("test scaled healing",)
+    )
+
+
 class TestMagicCommands(EvenniaCommandTest):
     """Commands use one entitlement and resource service rather than strings."""
 
@@ -258,7 +285,9 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(
             _parse_cast("'slot spell' 2 Char2"), ("slot spell", "Char2", 2)
         )
-        self.assertEqual(_parse_cast("'slot spell' Char2"), ("slot spell", "Char2", None))
+        self.assertEqual(
+            _parse_cast("'slot spell' Char2"), ("slot spell", "Char2", None)
+        )
         self.assertIsNone(_parse_cast("'slot spell' 10"))
         self.assertIsNone(_parse_cast("slot spell using 2"))
 
@@ -274,6 +303,19 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(
             dict(result.snapshot.resource_reservation), {"warlock.pact_slot": 1}
         )
+
+    def test_slot_level_applies_only_its_declared_healing_thresholds(self):
+        """An upcast uses its snapshot level, never an undeclared bonus formula."""
+        self.char1.db.level = 5
+        self.char1.db.hp_current = 1
+        with patch("systems.magic.MAGIC_REGISTRY", _scaled_slot_healing_registry()):
+            grant_action(self.char1, "wizard.test_scaled_healing", AccessMode.INNATE)
+            with patch("systems.magic_actions._roll_dice", return_value=7) as roller:
+                result = cast_action(self.char1, "scaled healing", slot_level=3)
+
+        self.assertEqual(result.snapshot.cast_level, 3)
+        self.assertEqual(result.amount, 7)
+        roller.assert_called_once_with(DiceExpression(3, 4))
 
     def test_effect_actions_use_rules03_storage_and_reject_without_spending(self):
         """Effect actions retain source, duration, and RULES-03 stacking policy."""

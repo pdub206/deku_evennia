@@ -10,6 +10,7 @@ from systems.progression import (
     RegistryValidationError,
     build_registry,
 )
+from systems.srd_class_features import SRD_CLASS_FEATURES, SRD_SUBCLASS_FEATURES
 
 
 class TestClassProgressionRegistry(EvenniaTest):
@@ -31,19 +32,64 @@ class TestClassProgressionRegistry(EvenniaTest):
             self.assertTrue(definition.srd_reference.startswith("SRD 5.2.1 "))
             self.assertIn(class_key, definition.srd_reference)
 
-    def test_level_one_choice_and_repeated_feature_keys_resolve(self):
+    def test_cited_catalogue_matches_every_source_feature_level(self):
+        """Source data is visible to progression without claiming mechanics work."""
         for definition in CLASS_PROGRESSION.definitions.values():
             first = definition.grants_at(1)
             self.assertIn(definition.skill_choice_key, first.choice_keys)
-            self.assertTrue(first.automatic_feature_keys)
-            self.assertEqual(
-                first.automatic_feature_keys,
-                definition.grants_at(MAX_CLASS_LEVEL).automatic_feature_keys,
-            )
-            self.assertEqual(
-                CLASS_PROGRESSION.features[first.automatic_feature_keys[0]].repeat_mode,
-                "upgrade",
-            )
+            self.assertEqual(first.automatic_feature_keys, ())
+            table = SRD_CLASS_FEATURES[definition.key]
+            for level in range(1, MAX_CLASS_LEVEL + 1):
+                grants = definition.grants_at(level)
+                entries = tuple(
+                    CLASS_PROGRESSION.features[key]
+                    for key in grants.catalogued_feature_keys
+                )
+                self.assertEqual(
+                    tuple(entry.display_name for entry in entries),
+                    table.features_at(level),
+                )
+                self.assertTrue(
+                    all(entry.release_state == "catalogued" for entry in entries)
+                )
+                self.assertTrue(
+                    all(entry.srd_reference == table.srd_reference for entry in entries)
+                )
+                self.assertTrue(
+                    all(entry.feature_shape != "unclassified" for entry in entries)
+                )
+                self.assertTrue(all(entry.release_adapter for entry in entries))
+
+    def test_catalogued_subclasses_require_selection_without_granting_mechanics(self):
+        """Subclass source data records its dependency but is not selectable yet."""
+        for definition in CLASS_PROGRESSION.definitions.values():
+            table = SRD_SUBCLASS_FEATURES[definition.key]
+            selection = definition.grants_at(3).catalogued_subclass_choice_keys
+            self.assertEqual(len(selection), 1)
+            selection_key = selection[0]
+            selection_definition = CLASS_PROGRESSION.features[selection_key]
+            self.assertEqual(selection_definition.display_name, table.subclass_name)
+            self.assertEqual(selection_definition.grant_mode, "choice")
+            self.assertEqual(selection_definition.feature_shape, "choice")
+            self.assertEqual(selection_definition.release_state, "catalogued")
+            self.assertEqual(selection_definition.srd_reference, table.srd_reference)
+            for level in range(1, MAX_CLASS_LEVEL + 1):
+                grants = definition.grants_at(level)
+                entries = tuple(
+                    CLASS_PROGRESSION.features[key]
+                    for key in grants.catalogued_subclass_feature_keys
+                )
+                self.assertEqual(
+                    tuple(entry.display_name for entry in entries),
+                    table.features_at(level),
+                )
+                self.assertTrue(
+                    all(entry.prerequisites == (selection_key,) for entry in entries)
+                )
+                self.assertTrue(
+                    all(entry.feature_shape != "unclassified" for entry in entries)
+                )
+                self.assertTrue(all(entry.release_adapter for entry in entries))
 
     def test_srd_spell_access_tables_retain_slots_and_pact_magic_separately(self):
         """Slot counts use their class tables rather than generic resource curves."""
@@ -76,7 +122,7 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
-        self.assertEqual(CLASS_PROGRESSION.version, 2)
+        self.assertEqual(CLASS_PROGRESSION.version, 6)
 
     def test_invalid_level_gap_and_unknown_feature_fail_closed(self):
         fighter = CLASS_PROGRESSION.class_for("Fighter")
@@ -115,4 +161,61 @@ class TestClassProgressionRegistry(EvenniaTest):
                 CLASS_PROGRESSION.resources.values(),
                 CLASS_PROGRESSION.spell_access.values(),
                 CLASS_PROGRESSION.choices.values(),
+            )
+
+        catalogued_key = fighter.grants_at(1).catalogued_feature_keys[0]
+        unreleased_grant = replace(
+            fighter.grants_at(1), automatic_feature_keys=(catalogued_key,)
+        )
+        unreleased = replace(fighter, levels=(unreleased_grant,) + fighter.levels[1:])
+        definitions[definitions.index(invalid)] = unreleased
+        with self.assertRaises(RegistryValidationError):
+            build_registry(
+                definitions,
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+            )
+
+        catalogued = CLASS_PROGRESSION.features[catalogued_key]
+        adapterless_release = replace(
+            catalogued,
+            owner="advancement",
+            release_state="released",
+            release_adapter="",
+        )
+        features = list(CLASS_PROGRESSION.features.values())
+        features[features.index(catalogued)] = adapterless_release
+        with self.assertRaises(RegistryValidationError):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                features,
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+            )
+
+        skill_choice = CLASS_PROGRESSION.choices[fighter.skill_choice_key]
+        uncited_choice = replace(skill_choice, srd_reference="")
+        choices = list(CLASS_PROGRESSION.choices.values())
+        choices[choices.index(skill_choice)] = uncited_choice
+        with self.assertRaises(RegistryValidationError):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                choices,
+            )
+
+        catalogued_choice = replace(skill_choice, release_state="catalogued")
+        choices[choices.index(uncited_choice)] = catalogued_choice
+        with self.assertRaises(RegistryValidationError):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                choices,
             )

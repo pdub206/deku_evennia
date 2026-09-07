@@ -646,6 +646,10 @@ def _validate_definition(
         _validate_dice(definition.healing)
     _validate_save(definition.save)
     _validate_scaling(definition.scaling)
+    if definition.scaling.dice_per_step and definition.damage is None:
+        raise MagicRegistryError("Damage scaling needs a damage consequence.")
+    if definition.scaling.healing_per_step and definition.healing is None:
+        raise MagicRegistryError("Healing scaling needs a healing consequence.")
     if definition.stacking not in {
         StackingPolicy.REJECT,
         StackingPolicy.REFRESH,
@@ -845,6 +849,10 @@ def _validate_scaling(scaling: Scaling) -> None:
         raise MagicRegistryError("A scaling rule must change damage or healing.")
     if not scaling.levels and (scaling.dice_per_step or scaling.healing_per_step):
         raise MagicRegistryError("A scaling amount needs explicit levels.")
+    if scaling.dice_per_step and scaling.healing_per_step:
+        raise MagicRegistryError(
+            "A scaling rule may change damage or healing, not both."
+        )
 
 
 def _validate_help(help_data: PlayerHelp | None, available: frozenset[str]) -> None:

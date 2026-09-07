@@ -25,6 +25,7 @@ from systems.injury import (
 from systems.magic import (
     AccessMode,
     CastSnapshot,
+    DiceExpression,
     MagicDefinition,
     MagicKind,
     MagicRegistry,
@@ -926,7 +927,7 @@ def _execute(
     if definition.handler_key == "utility":
         return MagicActionResult(True, "cast", definition, target, snapshot)
     if definition.handler_key == "healing":
-        amount = _roll_dice(definition.healing)
+        amount = _roll_dice(_scaled_healing(definition, snapshot))
         result = apply_healing(target, amount, emit_messages=False)
         if not result.accepted:
             raise MagicActionError("That target cannot be healed.")
@@ -1026,7 +1027,7 @@ def _spell_attack(
     if roll_value + (snapshot.attack_bonus or 0) < target.stats.armor_class:
         _message(caster, target, definition, "You miss")
         return MagicActionResult(True, "miss", definition, target, snapshot)
-    amount = _roll_dice(definition.damage.dice)
+    amount = _roll_dice(_scaled_damage(definition, snapshot))
     injury = apply_damage(
         target, amount, emit_messages=False, source=caster, source_kind="magic"
     )
@@ -1058,7 +1059,7 @@ def _saving_throw_damage(
     save = roll_check(
         target.stats.saving_throw_bonus(definition.save.ability), snapshot.save_dc
     )
-    rolled_damage = _roll_dice(definition.damage.dice)
+    rolled_damage = _roll_dice(_scaled_damage(definition, snapshot))
     if save.success and definition.save.on_success == "negate":
         amount = 0
     elif save.success and definition.save.on_success == "half":
@@ -1095,6 +1096,44 @@ def _roll_dice(dice: Any) -> int:
     from systems.dice import roll
 
     return sum(roll(dice.sides) for _ in range(dice.count)) + dice.bonus
+
+
+def _scaled_damage(
+    definition: MagicDefinition, snapshot: CastSnapshot
+) -> DiceExpression:
+    """Return declared damage dice after the selected slot's valid thresholds."""
+    if definition.damage is None:
+        raise MagicActionError("That action's damage is not available.")
+    return _scaled_dice(
+        definition.damage.dice, definition.scaling.dice_per_step, definition, snapshot
+    )
+
+
+def _scaled_healing(
+    definition: MagicDefinition, snapshot: CastSnapshot
+) -> DiceExpression:
+    """Return declared healing dice after the selected slot's valid thresholds."""
+    if definition.healing is None:
+        raise MagicActionError("That action's healing is not available.")
+    return _scaled_dice(
+        definition.healing, definition.scaling.healing_per_step, definition, snapshot
+    )
+
+
+def _scaled_dice(
+    dice: DiceExpression,
+    dice_per_step: int,
+    definition: MagicDefinition,
+    snapshot: CastSnapshot,
+) -> DiceExpression:
+    """Apply only threshold levels reached by the snapshotted cast slot.
+
+    The registry stores the complete list of slot levels at which an action
+    improves. Counting those thresholds prevents an undeclared higher slot
+    from increasing damage or healing merely because it was spent.
+    """
+    steps = sum(level <= snapshot.cast_level for level in definition.scaling.levels)
+    return DiceExpression(dice.count + steps * dice_per_step, dice.sides, dice.bonus)
 
 
 def _message(caster: Any, target: Any, definition: MagicDefinition, text: str) -> None:

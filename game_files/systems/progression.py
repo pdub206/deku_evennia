@@ -9,14 +9,15 @@ useful for later reconciliation rather than silently changing existing PCs.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 MAX_CLASS_LEVEL = 20
-# Version 2 replaces provisional spell-access curves with SRD 5.2.1 tables.
-CLASS_REGISTRY_VERSION = 2
+# Version 6 records each catalogue feature's reviewed shape and release adapter.
+CLASS_REGISTRY_VERSION = 6
 MAX_SRD_REFERENCE_LENGTH = 160
 SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
 SELECTABLE_CLASS_NAMES = (
@@ -41,7 +42,13 @@ class RegistryValidationError(ValueError):
 
 @dataclass(frozen=True)
 class FeatureDefinition:
-    """A stable feature key and the system which owns its eventual effects."""
+    """A cited feature identity and the adapter that may eventually release it.
+
+    A catalogued feature is source data only. It cannot be placed in an
+    automatic grant until a code-owned adapter has promoted it to ``released``.
+    This keeps the progression table truthful without treating an SRD name as
+    implemented player-facing mechanics.
+    """
 
     key: str
     owner: str
@@ -49,6 +56,11 @@ class FeatureDefinition:
     grant_mode: str
     repeat_mode: str
     help_key: str
+    display_name: str
+    srd_reference: str
+    release_state: str = "catalogued"
+    feature_shape: str = "unclassified"
+    release_adapter: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,17 +108,22 @@ class ChoiceSet:
     mutual_exclusions: tuple[tuple[str, ...], ...]
     prerequisite_timing: str
     option_adapter: str = "skill"
+    srd_reference: str = ""
+    release_state: str = "released"
 
 
 @dataclass(frozen=True)
 class LevelGrants:
-    """The stable keys granted or made available at one level."""
+    """The released grants and cited-but-unreleased entries at one level."""
 
     level: int
     automatic_feature_keys: tuple[str, ...] = ()
     resource_keys: tuple[str, ...] = ()
     spell_access_keys: tuple[str, ...] = ()
     choice_keys: tuple[str, ...] = ()
+    catalogued_feature_keys: tuple[str, ...] = ()
+    catalogued_subclass_choice_keys: tuple[str, ...] = ()
+    catalogued_subclass_feature_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -200,7 +217,12 @@ def build_registry(
     choices: Iterable[ChoiceSet],
     *,
     version: int = CLASS_REGISTRY_VERSION,
-    available_owners: Iterable[str] = ("advancement", "magic", "resources"),
+    available_owners: Iterable[str] = (
+        "advancement",
+        "catalogue",
+        "magic",
+        "resources",
+    ),
     required_help_keys: Iterable[str] = ("class progression",),
 ) -> ProgressionRegistry:
     """Validate and freeze a complete class-progression graph.
@@ -232,6 +254,54 @@ def build_registry(
         if feature.help_key not in help_keys:
             raise RegistryValidationError(
                 f"Feature '{feature.key}' references missing help '{feature.help_key}'."
+            )
+        if (
+            not isinstance(feature.display_name, str)
+            or not feature.display_name.strip()
+        ):
+            raise RegistryValidationError(
+                f"Feature '{feature.key}' needs a player-safe display name."
+            )
+        _validate_srd_reference(feature.srd_reference, f"Feature '{feature.key}'")
+        if feature.release_state not in {"catalogued", "released"}:
+            raise RegistryValidationError(
+                f"Feature '{feature.key}' has an invalid release state."
+            )
+        if feature.release_state == "catalogued" and feature.owner != "catalogue":
+            raise RegistryValidationError(
+                f"Catalogued feature '{feature.key}' cannot claim an action adapter."
+            )
+        if feature.release_state == "released" and feature.owner == "catalogue":
+            raise RegistryValidationError(
+                f"Released feature '{feature.key}' needs an owning adapter."
+            )
+        if feature.feature_shape not in {
+            "unclassified",
+            "passive",
+            "active",
+            "resource",
+            "choice",
+        }:
+            raise RegistryValidationError(
+                f"Feature '{feature.key}' has an invalid implementation shape."
+            )
+        if feature.release_adapter not in {
+            "advancement.choice",
+            "advancement.passive",
+            "combat.class_feature",
+            "magic.class_feature",
+            "resources.class_feature",
+            "subclass.feature",
+        }:
+            raise RegistryValidationError(
+                f"Feature '{feature.key}' has an invalid release adapter."
+            )
+        if (
+            feature.release_state == "released"
+            and feature.feature_shape == "unclassified"
+        ):
+            raise RegistryValidationError(
+                f"Released feature '{feature.key}' needs an implementation shape."
             )
         if feature.grant_mode not in {"automatic", "choice"}:
             raise RegistryValidationError(
@@ -266,6 +336,11 @@ def build_registry(
     for access in spells_by_key.values():
         _validate_spell_access(access)
     for choice in choices_by_key.values():
+        _validate_srd_reference(choice.srd_reference, f"Choice '{choice.key}'")
+        if choice.release_state not in {"catalogued", "released"}:
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has an invalid release state."
+            )
         if choice.count < 1 or choice.count > len(choice.legal_options):
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has an impossible count."
@@ -376,6 +451,10 @@ def _validate_class(
                 raise RegistryValidationError(
                     f"Class '{definition.key}' references unknown feature '{key}'."
                 )
+            if features[key].release_state != "released":
+                raise RegistryValidationError(
+                    f"Class '{definition.key}' cannot grant unreleased feature '{key}'."
+                )
         for key in grants.resource_keys:
             if key not in resources:
                 raise RegistryValidationError(
@@ -390,6 +469,15 @@ def _validate_class(
             if key not in choices:
                 raise RegistryValidationError(
                     f"Class '{definition.key}' references unknown choice '{key}'."
+                )
+            if choices[key].release_state != "released":
+                raise RegistryValidationError(
+                    f"Class '{definition.key}' cannot grant catalogued choice '{key}'."
+                )
+        for key in grants.catalogued_feature_keys:
+            if key not in features:
+                raise RegistryValidationError(
+                    f"Class '{definition.key}' references unknown catalogued feature '{key}'."
                 )
 
 
@@ -481,6 +569,114 @@ def _validate_spell_access(access: SpellAccess) -> None:
 
 def _one_or_many(values: tuple[str, ...]) -> str | list[str]:
     return values[0] if len(values) == 1 else list(values)
+
+
+def _catalogued_srd_features() -> (
+    tuple[list[FeatureDefinition], Mapping[str, tuple[tuple[str, ...], ...]]]
+):
+    """Project cited SRD feature tables into stable, non-released registry keys.
+
+    The source table deliberately remains separate from game behaviour. These
+    entries establish the immutable identity and exact level at which a future
+    adapter must promote a feature; they do not create a player entitlement.
+    """
+    from systems.srd_class_features import SRD_CLASS_FEATURES, classify_srd_feature
+
+    definitions: list[FeatureDefinition] = []
+    keys_by_class: dict[str, tuple[tuple[str, ...], ...]] = {}
+    for class_name, table in SRD_CLASS_FEATURES.items():
+        class_key = class_name.casefold()
+        labels = tuple(label for row in table.level_features for label in row)
+        counts = {label: labels.count(label) for label in set(labels)}
+        keys_by_label: dict[str, str] = {}
+        for label in dict.fromkeys(labels):
+            classification = classify_srd_feature(label)
+            feature_key = f"{class_key}.{_catalogue_slug(label)}"
+            keys_by_label[label] = feature_key
+            definitions.append(
+                FeatureDefinition(
+                    feature_key,
+                    "catalogue",
+                    (),
+                    "automatic",
+                    "repeat" if counts[label] > 1 else "once",
+                    "class progression",
+                    label,
+                    table.srd_reference,
+                    feature_shape=classification.feature_shape,
+                    release_adapter=classification.release_adapter,
+                )
+            )
+        keys_by_class[class_name] = tuple(
+            tuple(keys_by_label[label] for label in row) for row in table.level_features
+        )
+    return definitions, MappingProxyType(keys_by_class)
+
+
+def _catalogued_srd_subclasses() -> tuple[
+    list[FeatureDefinition],
+    Mapping[str, tuple[str, tuple[tuple[str, ...], ...]]],
+]:
+    """Project SRD subclass selections and features without releasing them.
+
+    The stored prerequisite means a future subclass resolver must select the
+    named subclass before its feature adapter can grant anything.
+    """
+    from systems.srd_class_features import SRD_SUBCLASS_FEATURES, classify_srd_feature
+
+    definitions: list[FeatureDefinition] = []
+    records: dict[str, tuple[str, tuple[tuple[str, ...], ...]]] = {}
+    for class_name, table in SRD_SUBCLASS_FEATURES.items():
+        class_key = class_name.casefold()
+        choice_key = f"{class_key}.{_catalogue_slug(table.subclass_name)}"
+        definitions.append(
+            FeatureDefinition(
+                choice_key,
+                "catalogue",
+                (),
+                "choice",
+                "once",
+                "class progression",
+                table.subclass_name,
+                table.srd_reference,
+                feature_shape="choice",
+                release_adapter="advancement.choice",
+            )
+        )
+        labels = tuple(label for row in table.level_features for label in row)
+        counts = {label: labels.count(label) for label in set(labels)}
+        keys_by_label: dict[str, str] = {}
+        for label in dict.fromkeys(labels):
+            classification = classify_srd_feature(label)
+            feature_key = f"{choice_key}.{_catalogue_slug(label)}"
+            keys_by_label[label] = feature_key
+            definitions.append(
+                FeatureDefinition(
+                    feature_key,
+                    "catalogue",
+                    (choice_key,),
+                    "automatic",
+                    "repeat" if counts[label] > 1 else "once",
+                    "class progression",
+                    label,
+                    table.srd_reference,
+                    feature_shape=classification.feature_shape,
+                    release_adapter=classification.release_adapter,
+                )
+            )
+        records[class_name] = (
+            choice_key,
+            tuple(
+                tuple(keys_by_label[label] for label in row)
+                for row in table.level_features
+            ),
+        )
+    return definitions, MappingProxyType(records)
+
+
+def _catalogue_slug(value: str) -> str:
+    """Return a stable ASCII key component for an SRD-provided display name."""
+    return re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")
 
 
 # SRD 5.2.1 full-caster tables (Bard, Cleric, Druid, Sorcerer, Wizard),
@@ -793,7 +989,9 @@ def _default_registry() -> ProgressionRegistry:
             "reference": "SRD 5.2.1 p.77: Wizard Features table",
         },
     }
-    features: list[FeatureDefinition] = []
+    features, catalogued_feature_keys = _catalogued_srd_features()
+    subclass_features, catalogued_subclasses = _catalogued_srd_subclasses()
+    features.extend(subclass_features)
     resources: list[ResourceProgression] = []
     spell_access: list[SpellAccess] = []
     choices: list[ChoiceSet] = []
@@ -810,17 +1008,7 @@ def _default_registry() -> ProgressionRegistry:
                 "none",
                 (),
                 "grant",
-            )
-        )
-        feature_key = f"{key}.class_features"
-        features.append(
-            FeatureDefinition(
-                feature_key,
-                "advancement",
-                (),
-                "automatic",
-                "upgrade",
-                "class progression",
+                srd_reference=class_references[name],
             )
         )
         resource_keys: tuple[str, ...] = ()
@@ -863,10 +1051,13 @@ def _default_registry() -> ProgressionRegistry:
         levels = tuple(
             LevelGrants(
                 level,
-                (feature_key,),
+                (),
                 resource_keys,
                 spell_keys,
                 (skill_choice_key,) if level == 1 else (),
+                catalogued_feature_keys[name][level - 1],
+                (catalogued_subclasses[name][0],) if level == 3 else (),
+                catalogued_subclasses[name][1][level - 1],
             )
             for level in range(1, 21)
         )

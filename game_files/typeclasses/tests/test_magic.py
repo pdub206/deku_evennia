@@ -16,6 +16,7 @@ from systems.magic import (
     RangeCategory,
     ResourceCost,
     Save,
+    Scaling,
     Targeting,
     TargetingMode,
     build_magic_registry,
@@ -104,6 +105,8 @@ class TestMagicRegistry(EvenniaTest):
             build(arcane_bolt(kind=MagicKind.ABILITY, spell_level=1))
         with self.assertRaises(MagicRegistryError):
             build(arcane_bolt(spell_level=1, uses_spell_slot=True))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(scaling=Scaling(levels=(2,), healing_per_step=1)))
         with self.assertRaises(MagicRegistryError):
             build(
                 arcane_bolt(

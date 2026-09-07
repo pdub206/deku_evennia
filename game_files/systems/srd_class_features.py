@@ -30,6 +30,30 @@ class SRDClassFeatureTable:
         return self.level_features[level - 1]
 
 
+@dataclass(frozen=True)
+class SRDSubclassFeatureTable:
+    """One cited SRD subclass and the features it introduces by class level."""
+
+    class_key: str
+    subclass_name: str
+    level_features: tuple[tuple[str, ...], ...]
+    srd_reference: str
+
+    def features_at(self, level: int) -> tuple[str, ...]:
+        """Return this subclass's exact feature names at one class level."""
+        if not 1 <= level <= MAX_CLASS_LEVEL:
+            raise KeyError(f"Class level must be 1 through {MAX_CLASS_LEVEL}.")
+        return self.level_features[level - 1]
+
+
+@dataclass(frozen=True)
+class SRDFeatureClassification:
+    """The reviewed release shape and future system owner for one feature."""
+
+    feature_shape: str
+    release_adapter: str
+
+
 def _table(
     class_key: str, page: int, levels: tuple[tuple[str, ...], ...]
 ) -> SRDClassFeatureTable:
@@ -40,6 +64,23 @@ def _table(
         class_key,
         levels,
         f"SRD 5.2.1 p.{page}: {class_key} Features table",
+    )
+
+
+def _subclass_table(
+    class_key: str,
+    page: int,
+    subclass_name: str,
+    features: Mapping[int, tuple[str, ...]],
+) -> SRDSubclassFeatureTable:
+    """Build a complete subclass table from its sparse feature-level mapping."""
+    if any(not 1 <= level <= MAX_CLASS_LEVEL for level in features):
+        raise ValueError(f"{subclass_name} has an invalid class level.")
+    return SRDSubclassFeatureTable(
+        class_key,
+        subclass_name,
+        tuple(features.get(level, ()) for level in range(1, MAX_CLASS_LEVEL + 1)),
+        f"SRD 5.2.1 p.{page}: {class_key} Subclass: {subclass_name}",
     )
 
 
@@ -361,5 +402,261 @@ SRD_CLASS_FEATURES: Mapping[str, SRDClassFeatureTable] = MappingProxyType(
 )
 
 
+# SRD 5.2.1 supplies one representative subclass for each base class. These
+# tables record only names and source levels; progression keeps them catalogued
+# until their own selection and mechanics adapters are implemented.
+SRD_SUBCLASS_FEATURES: Mapping[str, SRDSubclassFeatureTable] = MappingProxyType(
+    {
+        "Barbarian": _subclass_table(
+            "Barbarian",
+            30,
+            "Path of the Berserker",
+            {
+                3: ("Frenzy",),
+                6: ("Mindless Rage",),
+                10: ("Retaliation",),
+                14: ("Intimidating Presence",),
+            },
+        ),
+        "Bard": _subclass_table(
+            "Bard",
+            35,
+            "College of Lore",
+            {
+                3: ("Bonus Proficiencies", "Cutting Words"),
+                6: ("Magical Discoveries",),
+                14: ("Peerless Skill",),
+            },
+        ),
+        "Cleric": _subclass_table(
+            "Cleric",
+            40,
+            "Life Domain",
+            {
+                3: ("Disciple of Life", "Preserve Life"),
+                6: ("Blessed Healer",),
+                17: ("Supreme Healing",),
+            },
+        ),
+        "Druid": _subclass_table(
+            "Druid",
+            46,
+            "Circle of the Land",
+            {
+                3: ("Circle of the Land Spells", "Land's Aid"),
+                6: ("Natural Recovery",),
+                10: ("Nature's Ward",),
+                14: ("Nature's Sanctuary",),
+            },
+        ),
+        "Fighter": _subclass_table(
+            "Fighter",
+            49,
+            "Champion",
+            {
+                3: ("Improved Critical", "Remarkable Athlete"),
+                7: ("Additional Fighting Style",),
+                10: ("Heroic Warrior",),
+                15: ("Superior Critical",),
+                18: ("Survivor",),
+            },
+        ),
+        "Monk": _subclass_table(
+            "Monk",
+            52,
+            "Warrior of the Open Hand",
+            {
+                3: ("Open Hand Technique",),
+                6: ("Wholeness of Body",),
+                11: ("Fleet Step",),
+                17: ("Quivering Palm",),
+            },
+        ),
+        "Paladin": _subclass_table(
+            "Paladin",
+            56,
+            "Oath of Devotion",
+            {
+                3: ("Oath of Devotion Spells", "Sacred Weapon"),
+                7: ("Aura of Devotion",),
+                15: ("Smite of Protection",),
+                20: ("Holy Nimbus",),
+            },
+        ),
+        "Ranger": _subclass_table(
+            "Ranger",
+            61,
+            "Hunter",
+            {
+                3: ("Hunter's Lore", "Hunter's Prey"),
+                7: ("Defensive Tactics",),
+                11: ("Superior Hunter's Prey",),
+                15: ("Superior Hunter's Defense",),
+            },
+        ),
+        "Rogue": _subclass_table(
+            "Rogue",
+            64,
+            "Thief",
+            {
+                3: ("Fast Hands", "Second-Story Work"),
+                9: ("Supreme Sneak",),
+                13: ("Use Magic Device",),
+                17: ("Thief's Reflexes",),
+            },
+        ),
+        "Sorcerer": _subclass_table(
+            "Sorcerer",
+            69,
+            "Draconic Sorcery",
+            {
+                3: ("Draconic Resilience", "Draconic Spells"),
+                6: ("Elemental Affinity",),
+                14: ("Dragon Wings",),
+                18: ("Dragon Companion",),
+            },
+        ),
+        "Warlock": _subclass_table(
+            "Warlock",
+            76,
+            "Fiend Patron",
+            {
+                3: ("Dark One's Blessing", "Fiend Spells"),
+                6: ("Dark One's Own Luck",),
+                10: ("Fiendish Resilience",),
+                14: ("Hurl Through Hell",),
+            },
+        ),
+        "Wizard": _subclass_table(
+            "Wizard",
+            82,
+            "Evoker",
+            {
+                3: ("Potent Cantrip",),
+                6: ("Sculpt Spells",),
+                10: ("Empowered Evocation",),
+                14: ("Overchannel",),
+            },
+        ),
+    }
+)
+
+
 if tuple(SRD_CLASS_FEATURES) != SELECTABLE_CLASS_NAMES:
     raise RuntimeError("SRD class-feature tables must cover every selectable class.")
+if tuple(SRD_SUBCLASS_FEATURES) != SELECTABLE_CLASS_NAMES:
+    raise RuntimeError("SRD subclass tables must cover every selectable class.")
+
+
+# These are feature identities whose SRD text requires the player to make a
+# selection. The actual options remain catalogued until their narrow owning
+# adapter is implemented.
+_CHOICE_FEATURES = frozenset(
+    {
+        "Ability Score Improvement",
+        "Additional Fighting Style",
+        "Bard Subclass",
+        "Barbarian Subclass",
+        "Bonus Proficiencies",
+        "Cleric Subclass",
+        "Circle of the Land Spells",
+        "Divine Order",
+        "Draconic Spells",
+        "Druid Subclass",
+        "Eldritch Invocations",
+        "Epic Boon",
+        "Expertise",
+        "Fighter Subclass",
+        "Fighting Style",
+        "Fiend Spells",
+        "Hunter's Lore",
+        "Hunter's Prey",
+        "Magical Secrets",
+        "Metamagic",
+        "Monk Subclass",
+        "Mystic Arcanum",
+        "Oath of Devotion Spells",
+        "Paladin Subclass",
+        "Primal Knowledge",
+        "Primal Order",
+        "Ranger Subclass",
+        "Rogue Subclass",
+        "Sorcerer Subclass",
+        "Warlock Subclass",
+        "Weapon Mastery",
+        "Wizard Subclass",
+    }
+)
+_RESOURCE_FEATURES = frozenset(
+    {
+        "Bardic Inspiration",
+        "Channel Divinity",
+        "Font of Inspiration",
+        "Font of Magic",
+        "Lay On Hands",
+        "Monk's Focus",
+        "Pact Magic",
+        "Rage",
+        "Uncanny Metabolism",
+        "Wild Resurgence",
+        "Wild Shape",
+    }
+)
+_MAGIC_FEATURES = frozenset(
+    {
+        "Arcane Apotheosis",
+        "Arcane Recovery",
+        "Archdruid",
+        "Beast Spells",
+        "Divine Intervention",
+        "Greater Divine Intervention",
+        "Magical Cunning",
+        "Memorize Spell",
+        "Ritual Adept",
+        "Spell Mastery",
+        "Spellcasting",
+        "Words of Creation",
+    }
+)
+_ACTIVE_FEATURES = frozenset(
+    {
+        "Abjure Foes",
+        "Action Surge",
+        "Brutal Strike",
+        "Cunning Action",
+        "Cunning Strike",
+        "Deflect Attacks",
+        "Deflect Energy",
+        "Divine Smite",
+        "Frenzy",
+        "Intimidating Presence",
+        "Open Hand Technique",
+        "Paladin's Smite",
+        "Reckless Attack",
+        "Second Wind",
+        "Stunning Strike",
+        "Tactical Shift",
+    }
+)
+
+
+def classify_srd_feature(feature_name: str) -> SRDFeatureClassification:
+    """Return the reviewed non-executable ownership classification for a name.
+
+    This deliberately assigns an adapter category rather than a callable. A
+    catalogue entry cannot become released until code provides that adapter.
+    Unlisted feature names are automatic passive grants owned by ADV-02's
+    passive-stat bridge; their detailed modifier implementation remains a
+    separate release requirement.
+    """
+    if feature_name in _CHOICE_FEATURES:
+        return SRDFeatureClassification("choice", "advancement.choice")
+    if feature_name in _RESOURCE_FEATURES:
+        return SRDFeatureClassification("resource", "resources.class_feature")
+    if feature_name in _MAGIC_FEATURES:
+        return SRDFeatureClassification("active", "magic.class_feature")
+    if feature_name in _ACTIVE_FEATURES:
+        return SRDFeatureClassification("active", "combat.class_feature")
+    if feature_name == "Subclass Feature":
+        return SRDFeatureClassification("passive", "subclass.feature")
+    return SRDFeatureClassification("passive", "advancement.passive")
