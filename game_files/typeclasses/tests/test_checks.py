@@ -9,6 +9,7 @@ from systems.checks import (
     passive_check,
     resolve_check,
     resolve_opposed_check,
+    resolve_saving_throw,
     validate_dc,
 )
 
@@ -95,3 +96,18 @@ class TestChecks(EvenniaTest):
             for attribute in self.char1.attributes.all()
         )
         self.assertEqual(after, before)
+
+    def test_saving_throw_uses_class_proficiency_and_allows_damage_dc(self):
+        """Saving throws retain their own proficiency and extended SRD DC range."""
+        self.char1.db.constitution = 14
+        result = resolve_saving_throw(
+            self.char1,
+            "Constitution",
+            50,
+            action_key="concentration",
+            roller=lambda _: 20,
+        )
+        self.assertEqual(result.ability, "Constitution")
+        self.assertEqual(result.target_dc, 50)
+        self.assertEqual(result.proficiency_contribution, 2)
+        self.assertFalse(result.success)

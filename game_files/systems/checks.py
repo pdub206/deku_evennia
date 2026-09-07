@@ -20,6 +20,7 @@ from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT, SKILLS
 
 MIN_CHECK_DC = 5
 MAX_CHECK_DC = 30
+MAX_SAVING_THROW_DC = 100000
 
 _ABILITIES = {
     **{name.casefold(): name for name in ABILITY_NAMES},
@@ -293,6 +294,59 @@ def resolve_check(
         "",
         advantage,
         disadvantage,
+    )
+
+
+def resolve_saving_throw(
+    actor: Any,
+    ability: str,
+    dc: int,
+    *,
+    action_key: str,
+    roller: Callable[[int], int] = roll,
+) -> CheckResult:
+    """Resolve one canonical saving throw with its distinct class proficiency.
+
+    Saving throws share dice, ability, and named check modifiers with ADV-04
+    checks, but derive their proficiency contribution from the character's
+    saving-throw table.  Their DC range permits high-damage concentration
+    checks without relaxing ordinary player-facing check validation.
+    """
+    if not hasattr(actor, "stats"):
+        raise CheckError("Saving throws require a character actor.")
+    canonical = canonical_ability(ability)
+    if (
+        isinstance(dc, bool)
+        or not isinstance(dc, int)
+        or not 1 <= dc <= MAX_SAVING_THROW_DC
+    ):
+        raise CheckError("A saving throw DC is outside the supported range.")
+    if not isinstance(action_key, str) or not action_key or len(action_key) > 48:
+        raise CheckError("A saving throw needs a bounded action key.")
+    ability_modifier = actor.stats.ability_modifier(canonical)
+    saving_throw_bonus = actor.stats.saving_throw_bonus(canonical)
+    proficiency = saving_throw_bonus - ability_modifier
+    modifiers = _modifier_total(
+        actor,
+        "check_bonus",
+        f"check:{action_key.casefold()}",
+        f"check:ability:{canonical.casefold()}",
+    )
+    roll_result = roll_check(saving_throw_bonus + modifiers, dc, roller=roller)
+    return CheckResult(
+        action_key,
+        canonical,
+        None,
+        None,
+        RollMode.STRAIGHT,
+        roll_result.die_roll,
+        ability_modifier,
+        proficiency,
+        modifiers,
+        roll_result.total,
+        dc,
+        None,
+        roll_result.success,
     )
 
 

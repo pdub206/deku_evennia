@@ -23,6 +23,7 @@ from systems.magic_actions import (
     CONCENTRATION_ATTRIBUTE,
     cast_action,
     grant_action,
+    maintain_concentration,
 )
 from systems.magic_resources import restore_resource
 
@@ -142,3 +143,27 @@ class TestConcentration(EvenniaTest):
         self.assertFalse(
             any(active.key == _SECOND_EFFECT.key for active in self.char1.effects.all())
         )
+
+    def test_damage_maintenance_uses_srd_dc_and_cleans_up_on_failure(self):
+        """A failed Constitution save ends every effect linked to concentration."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            self._cast("wizard.test_sustain_first")
+        result = maintain_concentration(self.char1, 40, roller=lambda _: 1)
+
+        self.assertTrue(result.attempted)
+        self.assertFalse(result.maintained)
+        self.assertEqual(result.dc, 20)
+        self.assertEqual(result.reason, "failed")
+        self.assertIsNone(self.char1.attributes.get(CONCENTRATION_ATTRIBUTE))
+        self.assertFalse(self.char1.effects.has(_FIRST_EFFECT.key))
+
+    def test_canonical_damage_invokes_concentration_maintenance(self):
+        """Every non-terminal injury path delegates maintenance to MAGIC-03."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            self._cast("wizard.test_sustain_first")
+        with (
+            patch("systems.injury._is_staff_immune", return_value=False),
+            patch("systems.magic_actions.maintain_concentration") as maintained,
+        ):
+            apply_damage(self.char1, 1, emit_messages=False)
+        maintained.assert_called_once_with(self.char1, 1)

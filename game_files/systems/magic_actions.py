@@ -8,7 +8,7 @@ NPCs, and items call this service directly, never by constructing command text.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -59,6 +59,17 @@ class MagicActionResult:
     target: Any | None = None
     snapshot: CastSnapshot | None = None
     amount: int = 0
+
+
+@dataclass(frozen=True)
+class ConcentrationResult:
+    """The auditable outcome of one concentration maintenance check."""
+
+    attempted: bool
+    maintained: bool
+    dc: int | None = None
+    check: Any | None = None
+    reason: str = ""
 
 
 def grant_action(actor: Any, action_key: str, mode: str) -> None:
@@ -171,6 +182,47 @@ def end_concentration(caster: Any) -> None:
             )
 
 
+def maintain_concentration(
+    caster: Any, damage: int, *, roller: Callable[[int], int] | None = None
+) -> ConcentrationResult:
+    """Resolve SRD concentration after one positive canonical damage event.
+
+    The DC is 10 or half the damage, whichever is higher.  A failed saving
+    throw ends the exact durable relationship through the same cleanup path as
+    replacement and effect removal; it cannot leave linked effects orphaned.
+    """
+    if isinstance(damage, bool) or not isinstance(damage, int) or damage < 0:
+        raise MagicActionError("Concentration damage is invalid.")
+    state = _concentration_state(caster, required=False)
+    if state is None or damage == 0:
+        return ConcentrationResult(False, True, reason="not_concentrating")
+    dc = max(10, damage // 2)
+    try:
+        from systems.checks import CheckError, resolve_saving_throw
+
+        if roller is None:
+            check = resolve_saving_throw(
+                caster, "Constitution", dc, action_key="concentration"
+            )
+        else:
+            check = resolve_saving_throw(
+                caster,
+                "Constitution",
+                dc,
+                action_key="concentration",
+                roller=roller,
+            )
+    except CheckError:
+        # A malformed character must not retain a condition whose required
+        # maintenance cannot be resolved.
+        end_concentration(caster)
+        return ConcentrationResult(True, False, dc, reason="invalid_check")
+    if check.success:
+        return ConcentrationResult(True, True, dc, check, "maintained")
+    end_concentration(caster)
+    return ConcentrationResult(True, False, dc, check, "failed")
+
+
 def available_actions(actor: Any, kind: str) -> tuple[MagicDefinition, ...]:
     """Return only actions this actor both has and may currently select."""
     if kind not in {MagicKind.SPELL, MagicKind.ABILITY}:
@@ -236,6 +288,14 @@ def cast_action(
         raise
     except Exception as err:
         raise MagicActionError("Your magic fails to take hold.") from err
+    if definition.kind == MagicKind.SPELL:
+        try:
+            from systems.magic_rest import interrupt_magic_rest
+
+            interrupt_magic_rest(caster)
+        except Exception:
+            # A malformed rest record cannot undo an otherwise committed spell.
+            pass
     return result
 
 

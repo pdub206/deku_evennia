@@ -24,7 +24,14 @@ from systems.magic import (
     build_magic_registry,
 )
 from systems.magic_actions import cast_action, grant_action
+from systems.magic_rest import (
+    MAGIC_REST_ATTRIBUTE,
+    SAFE_REST_TAG,
+    SAFE_REST_TAG_CATEGORY,
+    advance_magic_rest,
+)
 from systems.magic_resources import resource_current, restore_resource
+from systems.pulses import PulseEvent, PulseLane
 
 _WARD_EFFECT = EffectDefinition(
     key="test.magic.ward",
@@ -188,6 +195,20 @@ class TestMagicCommands(EvenniaCommandTest):
             self.assertIn("You cast", self.call(CmdCast(), "spark"))
             self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 0)
             self.assertIn("enough magical resources", self.call(CmdCast(), "spark"))
+
+    def test_completed_spellcasting_interrupts_safe_rest_progress(self):
+        """A committed spell cannot leave pre-cast rest credit intact."""
+        self.room1.tags.add(SAFE_REST_TAG, category=SAFE_REST_TAG_CATEGORY)
+        self.char1.db.position = "resting"
+        advance_magic_rest(self.char1, PulseEvent(60, PulseLane.RECOVERY, 1))
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
+            result = cast_action(self.char1, "spark")
+
+        self.assertTrue(result.accepted)
+        self.assertEqual(
+            self.char1.attributes.get(MAGIC_REST_ATTRIBUTE)["continuous_pulses"], 0
+        )
 
     def test_target_grammar_and_kind_specific_lists_fail_safely(self):
         """Target text is explicit, and spells never leak into ability listings."""

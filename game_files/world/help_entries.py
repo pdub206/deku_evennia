@@ -404,6 +404,17 @@ HELP_ENTRY_DICTS = [
             amount. Fractions round down. You do not recover while incapacitated,
             dying, dead, at 0 HP, or while your character is offline or stowed.
 
+            Resting or sleeping also advances class-resource rest progress. At
+            the default one-minute recovery cadence, 10 uninterrupted pulses
+            finish a Short Rest. A Long Rest needs 80 uninterrupted pulses,
+            including 60 while sleeping. Class-resource rests require a safe
+            rest location. Damage, combat, movement, spellcasting, leaving a
+            resting or sleeping posture, or time while offline interrupts that
+            progress.
+            A completed Short Rest restores only resources that say they recover
+            on a Short Rest; a completed Long Rest restores both short- and
+            long-rest resources. Only released class resources use this system.
+
             ## Identity
 
               |wClass|n, |wBackground|n, |wSpecies|n, |wAlignment|n, |wLanguages|n

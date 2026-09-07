@@ -20,10 +20,13 @@ from systems.effects import EffectHandler, EffectStorageError
 from systems.encumbrance import character_load
 from systems.equipment import WEAR_LOCATIONS, EquipmentHandler
 from systems.injury import InjuryError, imposed_position
-from systems.lifecycle import (UnavailabilityCause, deliver_character_notices,
-                               mark_character_available,
-                               mark_character_unavailable,
-                               resolve_unavailability_cause)
+from systems.lifecycle import (
+    UnavailabilityCause,
+    deliver_character_notices,
+    mark_character_available,
+    mark_character_unavailable,
+    resolve_unavailability_cause,
+)
 
 from .objects import ObjectParent
 
@@ -151,8 +154,15 @@ class Character(ObjectParent, DefaultCharacter):
         """Repair combat immediately after any forced relocation or extraction."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
-            from systems.mobile_specials import (SpecialEvent,
-                                                 dispatch_room_specials)
+            try:
+                from systems.magic_rest import interrupt_magic_rest
+
+                interrupt_magic_rest(self)
+            except Exception:
+                # Movement must remain reliable if a rest record is malformed;
+                # the recovery lane will isolate it for staff repair.
+                pass
+            from systems.mobile_specials import SpecialEvent, dispatch_room_specials
 
             if source_location is not None:
                 dispatch_room_specials(

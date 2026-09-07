@@ -65,6 +65,11 @@ GAME_PULSE_CADENCES = {
     "weather": 300,
     "resets": 60,
 }
+# MAGIC-03 uses the one-minute recovery lane as its real-time clock. These
+# compressed durations represent one in-world hour per ten real minutes.
+MAGIC_SHORT_REST_RECOVERY_PULSES = 10
+MAGIC_LONG_REST_RECOVERY_PULSES = 80
+MAGIC_LONG_REST_SLEEP_PULSES = 60
 # Combat action clocks are measured in combat-pulse tokens. CharacterStats
 # adjusts this base cadence through its Reaction-derived ``combat_delay`` API.
 GAME_COMBAT_BASE_DELAY = 1.0

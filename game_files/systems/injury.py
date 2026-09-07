@@ -197,6 +197,14 @@ def apply_damage(
     reason = prediction.reason
 
     _write(owner, next_record, source=source)
+    try:
+        from systems.magic_rest import interrupt_magic_rest
+
+        interrupt_magic_rest(owner)
+    except Exception:
+        logger.log_trace(
+            f"Could not interrupt magic rest for #{getattr(owner, 'id', '?')}."
+        )
     # Combat is a distinct event from injury/death, so encounter specials can
     # observe a legal hit without taking ownership of the damage transaction.
     try:
@@ -232,6 +240,15 @@ def apply_damage(
         except Exception:
             logger.log_trace(
                 f"Could not end concentration for #{getattr(owner, 'id', '?')}."
+            )
+    else:
+        try:
+            from systems.magic_actions import maintain_concentration
+
+            maintain_concentration(owner, amount)
+        except Exception:
+            logger.log_trace(
+                f"Could not maintain concentration for #{getattr(owner, 'id', '?')}."
             )
     if emit_messages and result.state is not record.state:
         _announce(owner, result)

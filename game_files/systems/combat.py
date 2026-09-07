@@ -15,12 +15,17 @@ from typing import Any
 from django.conf import settings
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
-from systems.lifecycle import (CharacterAvailability, CharacterLifecycleEvent,
-                               LifecycleConsumer, LifecycleError,
-                               ServerLifecycleEvent, ServerTransitionPhase,
-                               UnavailabilityCause,
-                               register_lifecycle_consumer,
-                               unregister_lifecycle_consumer)
+from systems.lifecycle import (
+    CharacterAvailability,
+    CharacterLifecycleEvent,
+    LifecycleConsumer,
+    LifecycleError,
+    ServerLifecycleEvent,
+    ServerTransitionPhase,
+    UnavailabilityCause,
+    register_lifecycle_consumer,
+    unregister_lifecycle_consumer,
+)
 from systems.pulses import PulseEvent, PulseLane
 
 COMBAT_CONFIG_KEY = "combat_registry"
@@ -102,7 +107,9 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
             changed = _set_target(state, actor_encounter, actor_id, target_id)
             _write_state(state)
             _refresh_prompts(actor, target)
-            return CombatOperationResult(True, changed, actor_encounter)
+            result = CombatOperationResult(True, changed, actor_encounter)
+            _interrupt_magic_rests(actor, target)
+            return result
         encounter_id = _merge_encounters(
             state, actor_encounter, target_encounter, actor_id, target_id
         )
@@ -130,7 +137,22 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
     _repair_state(state)
     _write_state(state)
     _refresh_prompts(actor, target)
-    return CombatOperationResult(True, True, encounter_id)
+    result = CombatOperationResult(True, True, encounter_id)
+    _interrupt_magic_rests(actor, target)
+    return result
+
+
+def _interrupt_magic_rests(*participants: Any) -> None:
+    """Discard rest credit as soon as combat initiative begins."""
+    try:
+        from systems.magic_rest import interrupt_magic_rest
+
+        for participant in participants:
+            interrupt_magic_rest(participant)
+    except Exception:
+        # Combat remains available if a rest record needs staff repair; the
+        # recovery lane will also isolate and report malformed progress.
+        return
 
 
 def join_fight(actor: Any, target: Any) -> CombatOperationResult:
