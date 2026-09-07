@@ -1,6 +1,6 @@
 """ADV-03 command integration coverage."""
 
-from commands.training import CmdPractice, CmdTrain
+from commands.training import CmdPractice, CmdTrain, _parse_training
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
@@ -32,7 +32,23 @@ class TestTrainingCommands(EvenniaCommandTest):
 
     def test_train_uses_explicit_grammar_and_nearby_trainer(self):
         """A valid selection reaches the transactional service through the command."""
-        output = self.call(CmdTrain(), "fighter.skills = Athletics at Armsmaster")
+        output = self.call(CmdTrain(), "fighter.skills Athletics at Armsmaster")
 
         self.assertIn("Athletics", output)
         self.assertFalse(self.char1.db.skill_proficiencies or [])
+
+    def test_replacement_grammar_keeps_both_stable_option_keys(self):
+        """Replacement parsing cannot mistake the old action for a trainer name."""
+        self.assertEqual(
+            _parse_training(
+                "wizard.test_learned replace wizard.old_cantrip with "
+                "wizard.new_cantrip at Arcanist"
+            ),
+            (
+                "wizard.test_learned",
+                "wizard.old_cantrip",
+                "wizard.new_cantrip",
+                "Arcanist",
+            ),
+        )
+        self.assertIsNone(_parse_training("fighter.skills = Athletics"))

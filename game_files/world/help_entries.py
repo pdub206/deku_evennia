@@ -152,10 +152,13 @@ HELP_ENTRY_DICTS = [
             XP raises your level, hit points, and automatic class benefits
             immediately. A trainer never holds an earned level hostage.
             Training is only for a listed class choice. To make one, use
-            |wtrain <choice> = <option>|n, or name an NPC explicitly with
-            |wtrain <choice> = <option> at <trainer>|n. The trainer must be
+            |wtrain <choice> <option>|n, or name an NPC explicitly with
+            |wtrain <choice> <option> at <trainer>|n. The trainer must be
             nearby, offer your class and that choice, and be willing to train
-            you. There is currently no generic practice-point pool or fee.
+            you. A choice that explicitly allows replacement uses
+            |wtrain <choice> replace <old option> with <new option>|n through
+            the same trainer. There is currently no generic practice-point
+            pool or fee.
 
             A listed magic choice is resolved through its class's declared
             ownership rule: learning a cantrip or spell, gaining an innate

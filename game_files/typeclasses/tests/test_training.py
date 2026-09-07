@@ -31,6 +31,7 @@ from systems.training import (
     default_trainer_profile,
     initialize_choice_entitlements,
     practice_view,
+    replace_training_option,
     resolve_training,
     set_trainer_profile,
 )
@@ -67,6 +68,11 @@ def _magic_registry():
             (AccessMode.LEARNED,),
         ),
         _magic_definition(
+            "wizard.training_replacement_cantrip",
+            "Replacement Cantrip",
+            (AccessMode.LEARNED,),
+        ),
+        _magic_definition(
             "wizard.training_innate",
             "Training Innate",
             (AccessMode.INNATE,),
@@ -97,8 +103,8 @@ def _registry_with_magic_choices():
         ChoiceSet(
             "wizard.test_learned",
             1,
-            ("wizard.training_cantrip",),
-            "none",
+            ("wizard.training_cantrip", "wizard.training_replacement_cantrip"),
+            "replace_one",
             (),
             "resolution",
             "magic_learned",
@@ -321,4 +327,24 @@ class TestTrainingService(EvenniaTest):
                     "wizard.training_cantrip",
                     "wizard.training_innate",
                 },
+            )
+            replacement = replace_training_option(
+                self.char2,
+                "wizard.test_learned",
+                "wizard.training_cantrip",
+                "wizard.training_replacement_cantrip",
+                self.trainer,
+            )
+            self.assertEqual(replacement.reason, "replaced")
+            self.assertFalse(
+                has_action_entitlement(
+                    self.char2, "wizard.training_cantrip", AccessMode.LEARNED
+                )
+            )
+            self.assertTrue(
+                has_action_entitlement(
+                    self.char2,
+                    "wizard.training_replacement_cantrip",
+                    AccessMode.LEARNED,
+                )
             )

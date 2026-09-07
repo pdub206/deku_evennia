@@ -217,6 +217,53 @@ def resolve_training(
         )
 
 
+def replace_training_option(
+    character: Any,
+    choice_key: str,
+    old_option: str,
+    new_option: str,
+    trainer: Any,
+) -> TrainingResult:
+    """Atomically replace one resolved learned-spell choice through a trainer."""
+    if not all(
+        isinstance(value, str) for value in (choice_key, old_option, new_option)
+    ):
+        raise TrainingError("Training choice and options are required.")
+    with transaction.atomic():
+        _lock(character)
+        _lock(trainer)
+        _validate_trainer(character, trainer, choice_key)
+        state = _choice_state(character, create=False)
+        if state is None:
+            raise TrainingError("Your training record needs staff repair.")
+        resolved = next(
+            (item for item in state["resolved"] if item["choice_key"] == choice_key),
+            None,
+        )
+        choice = CLASS_PROGRESSION.choices.get(choice_key)
+        if (
+            resolved is None
+            or choice is None
+            or choice.replacement_policy != "replace_one"
+            or choice.option_adapter != "magic_learned"
+        ):
+            raise TrainingError("That choice cannot be replaced.")
+        selected = list(resolved["selected"])
+        if old_option not in selected or new_option == old_option:
+            raise TrainingError("That selected option cannot be replaced.")
+        replacement_selected = [option for option in selected if option != old_option]
+        _validate_option(character, choice, new_option, replacement_selected)
+        try:
+            from systems.magic_actions import MagicActionError, replace_learned_action
+
+            replace_learned_action(character, old_option, new_option)
+        except MagicActionError as err:
+            raise TrainingError(str(err)) from err
+        resolved["selected"] = sorted((*replacement_selected, new_option))
+        _write_choice_state(character, state)
+        return TrainingResult(True, "replaced", choice_key, new_option)
+
+
 def find_trainer(actor: Any, name: str | None = None) -> Any:
     """Find one explicit or unambiguous colocated trainer without leaking profiles."""
     location = getattr(actor, "location", None)

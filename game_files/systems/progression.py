@@ -299,6 +299,13 @@ def build_registry(
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has an unavailable option adapter."
             )
+        if (
+            choice.replacement_policy == "replace_one"
+            and choice.option_adapter != "magic_learned"
+        ):
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has no safe replacement adapter."
+            )
 
     payload = {
         "version": version,
