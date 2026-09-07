@@ -3,11 +3,11 @@
 from unittest.mock import patch
 
 from commands.default_cmdsets import CharacterCmdSet
-from commands.magic import CmdAbilities, CmdCast, CmdSpells
+from commands.magic import CmdAbilities, CmdCast, CmdSpells, _parse_cast
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
-from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.dice import RollResult
+from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.magic import (
     AccessMode,
     ClassAccess,
@@ -24,13 +24,13 @@ from systems.magic import (
     build_magic_registry,
 )
 from systems.magic_actions import cast_action, grant_action
+from systems.magic_resources import resource_current, restore_resource
 from systems.magic_rest import (
     MAGIC_REST_ATTRIBUTE,
     SAFE_REST_TAG,
     SAFE_REST_TAG_CATEGORY,
     advance_magic_rest,
 )
-from systems.magic_resources import resource_current, restore_resource
 from systems.pulses import PulseEvent, PulseLane
 
 _WARD_EFFECT = EffectDefinition(
@@ -168,6 +168,30 @@ def _damage_save_registry():
     )
 
 
+def _slot_registry(class_key: str = "Wizard"):
+    """Build a level-one slot spell for casting-resource integration tests."""
+    action = MagicDefinition(
+        key=f"{class_key.casefold()}.test_slot_spell",
+        display_name="Test Slot Spell",
+        aliases=("slot spell",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("arcane",),
+        class_access=(ClassAccess(class_key, 1),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="manipulate",
+        handler_key="utility",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        spell_level=1,
+        uses_spell_slot=True,
+        player_help=PlayerHelp("test slot spell", "A slot-cost test spell."),
+    )
+    return build_magic_registry(
+        (action,), class_keys=(class_key,), help_keys=("test slot spell",)
+    )
+
+
 class TestMagicCommands(EvenniaCommandTest):
     """Commands use one entitlement and resource service rather than strings."""
 
@@ -211,11 +235,45 @@ class TestMagicCommands(EvenniaCommandTest):
         )
 
     def test_target_grammar_and_kind_specific_lists_fail_safely(self):
-        """Target text is explicit, and spells never leak into ability listings."""
+        """Positional targets stay safe, and spells never leak into abilities."""
         with patch("systems.magic.MAGIC_REGISTRY", self.registry):
             grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
-            self.assertIn("only target you", self.call(CmdCast(), "spark at Char2"))
+            self.assertIn("only target you", self.call(CmdCast(), "'spark' Char2"))
             self.assertIn("None.", self.call(CmdAbilities(), ""))
+
+    def test_slot_casts_snapshot_and_spend_the_selected_spell_slot(self):
+        """Leveled spells reserve one ordinary slot instead of a generic resource."""
+        with patch("systems.magic.MAGIC_REGISTRY", _slot_registry()):
+            grant_action(self.char1, "wizard.test_slot_spell", AccessMode.INNATE)
+            result = cast_action(self.char1, "slot spell", slot_level=1)
+
+        self.assertEqual(result.snapshot.cast_level, 1)
+        self.assertEqual(
+            dict(result.snapshot.resource_reservation), {"wizard.spell_slot.1": 1}
+        )
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+
+    def test_slot_cast_grammar_is_positional_and_bounded(self):
+        """The command accepts positional level and target without marker words."""
+        self.assertEqual(
+            _parse_cast("'slot spell' 2 Char2"), ("slot spell", "Char2", 2)
+        )
+        self.assertEqual(_parse_cast("'slot spell' Char2"), ("slot spell", "Char2", None))
+        self.assertIsNone(_parse_cast("'slot spell' 10"))
+        self.assertIsNone(_parse_cast("slot spell using 2"))
+
+    def test_slot_cast_uses_warlock_pact_magic_at_its_table_level(self):
+        """Pact Magic casts cannot spend an ordinary slot or choose its level."""
+        self.char1.db.char_class = "Warlock"
+        self.char1.db.level = 5
+        with patch("systems.magic.MAGIC_REGISTRY", _slot_registry("Warlock")):
+            grant_action(self.char1, "warlock.test_slot_spell", AccessMode.INNATE)
+            result = cast_action(self.char1, "slot spell", slot_level=3)
+
+        self.assertEqual(result.snapshot.cast_level, 3)
+        self.assertEqual(
+            dict(result.snapshot.resource_reservation), {"warlock.pact_slot": 1}
+        )
 
     def test_effect_actions_use_rules03_storage_and_reject_without_spending(self):
         """Effect actions retain source, duration, and RULES-03 stacking policy."""

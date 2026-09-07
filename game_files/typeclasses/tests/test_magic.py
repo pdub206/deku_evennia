@@ -103,6 +103,8 @@ class TestMagicRegistry(EvenniaTest):
         with self.assertRaises(MagicRegistryError):
             build(arcane_bolt(kind=MagicKind.ABILITY, spell_level=1))
         with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(spell_level=1, uses_spell_slot=True))
+        with self.assertRaises(MagicRegistryError):
             build(
                 arcane_bolt(
                     concentration=True,

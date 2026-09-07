@@ -32,7 +32,13 @@ from systems.magic import (
     RangeCategory,
     TargetingMode,
 )
-from systems.magic_resources import MagicResourceError, resource_current, spend_resource
+from systems.magic_resources import (
+    MagicResourceError,
+    SpellSlotOption,
+    resource_current,
+    spell_slot_options,
+    spend_resource,
+)
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
 MAGIC_ACTION_STATE_VERSION = 2
@@ -394,6 +400,7 @@ def cast_action(
     action_name: str,
     *,
     target_name: str | None = None,
+    slot_level: int | None = None,
     registry: MagicRegistry | None = None,
 ) -> MagicActionResult:
     """Accept and resolve one instant action through the shared policy path.
@@ -419,7 +426,7 @@ def cast_action(
     if not decision.allowed:
         raise MagicActionError(decision.message)
     target = _resolve_target(caster, definition, target_name)
-    snapshot = _snapshot(caster, definition, target, active_registry)
+    snapshot = _snapshot(caster, definition, target, active_registry, slot_level)
 
     try:
         with transaction.atomic():
@@ -428,12 +435,10 @@ def cast_action(
                 _lock(target)
             # State that can change between parsing and execution is checked a
             # second time while the relevant character rows are locked.
-            _revalidate(caster, definition, target)
+            _revalidate(caster, definition, target, snapshot)
             result = _execute(caster, definition, target, snapshot)
-            if definition.cost is not None:
-                spend_resource(
-                    caster, definition.cost.resource_key, definition.cost.amount
-                )
+            for resource_key, amount in snapshot.resource_reservation.items():
+                spend_resource(caster, resource_key, amount)
     except MagicResourceError as err:
         raise MagicActionError("You do not have enough magical resources.") from err
     except MagicActionError:
@@ -835,7 +840,11 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
 
 
 def _snapshot(
-    caster: Any, definition: MagicDefinition, target: Any, registry: MagicRegistry
+    caster: Any,
+    definition: MagicDefinition,
+    target: Any,
+    registry: MagicRegistry,
+    slot_level: int | None,
 ) -> CastSnapshot:
     """Freeze potency and the exact resource cost before effect resolution."""
     class_key = caster.attributes.get("char_class")
@@ -847,43 +856,67 @@ def _snapshot(
         ability = definition_class.spellcasting_ability if definition_class else None
     modifier = caster.stats.ability_modifier(ability) if ability else 0
     proficiency = caster.stats.proficiency_bonus
-    reservation = (
-        {definition.cost.resource_key: definition.cost.amount}
-        if definition.cost is not None
-        else {}
-    )
-    if (
-        definition.cost is not None
-        and resource_current(caster, definition.cost.resource_key)
-        < definition.cost.amount
-    ):
-        raise MagicActionError("You do not have enough magical resources.")
+    cast_level = max(1, definition.spell_level)
+    reservation: dict[str, int] = {}
+    if definition.uses_spell_slot:
+        option = _spell_slot_option(caster, definition, slot_level)
+        cast_level = option.slot_level
+        reservation[option.resource_key] = 1
+    elif slot_level is not None:
+        raise MagicActionError("That spell does not use a spell slot.")
+    elif definition.cost is not None:
+        reservation[definition.cost.resource_key] = definition.cost.amount
+    for resource_key, amount in reservation.items():
+        if resource_current(caster, resource_key) < amount:
+            raise MagicActionError("You do not have enough magical resources.")
     return CastSnapshot(
         definition.key,
         registry.version,
         caster.id,
         (target.id,),
-        caster.stats.level,
+        cast_level,
         8 + proficiency + modifier if definition.save is not None else None,
         proficiency + modifier if definition.handler_key == "spell_attack" else None,
         MappingProxyType(reservation),
     )
 
 
-def _revalidate(caster: Any, definition: MagicDefinition, target: Any) -> None:
+def _revalidate(
+    caster: Any,
+    definition: MagicDefinition,
+    target: Any,
+    snapshot: CastSnapshot,
+) -> None:
     """Repeat mutable actor, target, and resource checks just before commit."""
     decision = caster.actions.check(_action_category(definition))
     if not decision.allowed:
         raise MagicActionError(decision.message)
-    if target is caster:
-        return
-    _validate_target(caster, definition, target)
-    if (
-        definition.cost is not None
-        and resource_current(caster, definition.cost.resource_key)
-        < definition.cost.amount
+    if any(
+        resource_current(caster, resource_key) < amount
+        for resource_key, amount in snapshot.resource_reservation.items()
     ):
         raise MagicActionError("You do not have enough magical resources.")
+    if target is not caster:
+        _validate_target(caster, definition, target)
+
+
+def _spell_slot_option(
+    caster: Any, definition: MagicDefinition, requested: int | None
+) -> SpellSlotOption:
+    """Select the declared or lowest legal slot for a leveled spell cast."""
+    if requested is not None and (
+        isinstance(requested, bool) or not isinstance(requested, int)
+    ):
+        raise MagicActionError("Spell slot level is invalid.")
+    try:
+        options = spell_slot_options(caster, definition.spell_level)
+    except MagicResourceError as err:
+        raise MagicActionError("You do not have a legal spell slot.") from err
+    desired = definition.spell_level if requested is None else requested
+    option = next((item for item in options if item.slot_level == desired), None)
+    if option is None:
+        raise MagicActionError("You do not have that spell slot.")
+    return option
 
 
 def _execute(

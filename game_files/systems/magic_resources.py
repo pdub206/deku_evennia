@@ -8,6 +8,7 @@ from the actor's current ADV-02 class and level.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from systems.progression import CLASS_PROGRESSION
@@ -21,6 +22,16 @@ _RECOVERY_PROFILES = frozenset({"short_rest", "long_rest"})
 
 class MagicResourceError(ValueError):
     """A magic resource is unavailable, malformed, or cannot be spent."""
+
+
+@dataclass(frozen=True)
+class SpellSlotOption:
+    """One currently legal slot choice for a declared leveled spell."""
+
+    resource_key: str
+    slot_level: int
+    current: int
+    maximum: int
 
 
 def resource_maximum(actor: Any, resource_key: str) -> int:
@@ -105,6 +116,51 @@ def resource_view(actor: Any) -> tuple[tuple[str, int, int], ...]:
         (key, resource_current(actor, key), resource_maximum(actor, key))
         for key in keys
     )
+
+
+def spell_slot_options(actor: Any, spell_level: int) -> tuple[SpellSlotOption, ...]:
+    """Return legal slot choices for one spell level without spending one.
+
+    A cantrip has no slot option. Ordinary casters may choose any available
+    slot at or above the spell's level, while Pact Magic exposes exactly its
+    single shared slot level.  The return value includes current capacity so a
+    command can present legal upcasts without duplicating class-table logic.
+    """
+    if (
+        isinstance(spell_level, bool)
+        or not isinstance(spell_level, int)
+        or not 0 <= spell_level <= 9
+    ):
+        raise MagicResourceError("Spell level is invalid.")
+    if spell_level == 0:
+        return ()
+    class_key, level = _class_and_level(actor)
+    access = _spell_access(class_key)
+    if access is None:
+        raise MagicResourceError("Magic resource is unavailable.")
+    prefix = f"{class_key.casefold()}."
+    if access.pact_slots[level - 1]:
+        pact_level = access.pact_slot_level[level - 1]
+        if pact_level < spell_level:
+            return ()
+        key = f"{prefix}{_PACT_SLOT_RESOURCE}"
+        return (
+            SpellSlotOption(
+                key,
+                pact_level,
+                resource_current(actor, key),
+                resource_maximum(actor, key),
+            ),
+        )
+    options: list[SpellSlotOption] = []
+    for slot_level in range(spell_level, len(access.spell_slots) + 1):
+        key = f"{prefix}{_SLOT_RESOURCE_PREFIX}{slot_level}"
+        maximum = _slot_maximum(class_key, level, key)
+        if maximum:
+            options.append(
+                SpellSlotOption(key, slot_level, resource_current(actor, key), maximum)
+            )
+    return tuple(options)
 
 
 def recover_profile(actor: Any, profile: str) -> tuple[tuple[str, int], ...]:
@@ -194,6 +250,20 @@ def _write_state(actor: Any, current: Mapping[str, int]) -> None:
 def _spell_access(class_key: str):
     """Return one class's spell-access table without exposing a raw mapping."""
     return CLASS_PROGRESSION.spell_access.get(f"{class_key.casefold()}.spell_access")
+
+
+def _class_and_level(actor: Any) -> tuple[str, int]:
+    """Read the effective class row once for slot-option resolution."""
+    class_key = actor.attributes.get("char_class")
+    level = actor.attributes.get("level", 1)
+    if (
+        not isinstance(class_key, str)
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= 20
+    ):
+        raise MagicResourceError("Magic resource is unavailable.")
+    return class_key, level
 
 
 def _slot_maximum(class_key: str, level: int, resource_key: str) -> int | None:

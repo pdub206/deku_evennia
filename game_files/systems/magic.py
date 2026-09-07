@@ -274,6 +274,7 @@ class MagicDefinition:
     targeting: Targeting
     range: str
     spell_level: int = 0
+    uses_spell_slot: bool = False
     cost: ResourceCost | None = None
     cast_time: int = 1
     concentration: bool = False
@@ -560,6 +561,16 @@ def _validate_definition(
     _validate_nonnegative_int(definition.spell_level, "spell level", maximum=9)
     if definition.kind == MagicKind.ABILITY and definition.spell_level:
         raise MagicRegistryError("Only spells may have a spell level.")
+    if not isinstance(definition.uses_spell_slot, bool):
+        raise MagicRegistryError("A magic action has an invalid slot-cost rule.")
+    if definition.uses_spell_slot and (
+        definition.kind != MagicKind.SPELL
+        or definition.spell_level == 0
+        or definition.cost is not None
+    ):
+        raise MagicRegistryError(
+            "A slot-cost spell must be leveled and cannot also have a fixed cost."
+        )
     _validate_key(definition.school, "school")
     _validate_key(definition.action_category, "action category")
     _validate_key(definition.handler_key, "handler")
@@ -989,7 +1000,11 @@ def _render_player_help(definition: MagicDefinition) -> str:
         )
         parts.append(f"{level}.")
     parts.append(f"Target: {definition.targeting.mode}. Range: {definition.range}.")
-    if definition.cost is not None:
+    if definition.uses_spell_slot:
+        parts.append(
+            f"Cost: one spell slot of level {definition.spell_level} or higher."
+        )
+    elif definition.cost is not None:
         parts.append(f"Cost: {definition.cost.amount} {definition.cost.resource_key}.")
     parts.append(
         f"Cast time: {definition.cast_time} action{'s' if definition.cast_time != 1 else ''}."

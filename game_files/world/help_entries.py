@@ -58,7 +58,9 @@ HELP_ENTRY_DICTS = [
 
             Use |wspells|n and |wabilities|n to see only actions you currently
             know or have prepared, along with your class resources. Cast with
-            |wcast <action> at <target>|n, or omit ``at <target>`` for a
+            |wcast '<action>' [slot level] [target]|n. Quote an action name
+            when adding a slot level or target; for example,
+            |wcast 'magic missile' 2 goblin|n. Omit the optional parts for a
             self-only action. An action with a cast time longer than one action
             is unavailable until its interruption-safe casting support arrives.
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shlex
+
 from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.magic import MagicKind
@@ -10,11 +12,12 @@ from systems.magic_resources import MagicResourceError, resource_view
 
 
 class CmdCast(Command):
-    """Cast one known spell or ability at an explicit target.
+    """Cast one known spell or ability with optional positional details.
 
     Usage:
       cast <spell or ability>
-      cast <spell or ability> at <target>
+      cast '<spell or ability>' <target>
+      cast '<spell or ability>' <slot level> [target]
     """
 
     key = "cast"
@@ -25,11 +28,15 @@ class CmdCast(Command):
         """Parse the one unambiguous cast grammar and delegate all policy."""
         parsed = _parse_cast(self.args)
         if parsed is None:
-            self.caller.msg("Usage: cast <spell or ability> [at <target>]")
+            self.caller.msg(
+                "Usage: cast '<spell or ability>' [slot level] [target]"
+            )
             return
-        action, target = parsed
+        action, target, slot_level = parsed
         try:
-            result = cast_action(self.caller, action, target_name=target)
+            result = cast_action(
+                self.caller, action, target_name=target, slot_level=slot_level
+            )
         except (MagicActionError, MagicResourceError) as err:
             self.caller.msg(str(err))
             return
@@ -102,14 +109,37 @@ class CmdAbilities(_MagicListCommand):
     title = "Abilities"
 
 
-def _parse_cast(raw: str) -> tuple[str, str | None] | None:
-    """Split only the final `` at `` marker so multiword actions remain valid."""
+def _parse_cast(raw: str) -> tuple[str, str | None, int | None] | None:
+    """Parse a bare action or a quoted action with positional details.
+
+    Quoting multiword action names makes an optional numeric slot level and
+    target unambiguous without requiring player-facing marker words.
+    """
     value = raw.strip()
-    if not value:
+    if not value or " using " in value or " at " in value:
         return None
-    action, marker, target = value.rpartition(" at ")
-    if marker:
-        if not action.strip() or not target.strip():
+    try:
+        parts = shlex.split(value)
+    except ValueError:
+        return None
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0], None, None
+
+    # A bare multiword string remains an action name. Positional arguments
+    # therefore require the action to be quoted.
+    if value[0] not in {"'", '"'} or len(parts) > 3:
+        return None
+
+    action, second = parts[:2]
+    if second.isdigit():
+        slot_level = int(second)
+        if not 1 <= slot_level <= 9:
             return None
-        return action.strip(), target.strip()
-    return value, None
+        return action, parts[2] if len(parts) == 3 else None, slot_level
+
+    if len(parts) == 2:
+        return action, second, None
+
+    return None
