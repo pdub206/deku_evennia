@@ -3,12 +3,25 @@
 from types import MappingProxyType
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic import (AccessMode, CastSnapshot, ClassAccess, Damage,
-                           DiceExpression, MagicDefinition, MagicKind,
-                           MagicRegistryError, PlayerHelp, RangeCategory,
-                           ResourceCost, Save, Targeting, TargetingMode,
-                           build_magic_registry, deserialize_cast_snapshot,
-                           validate_persistent_magic_state)
+from systems.magic import (
+    AccessMode,
+    CastSnapshot,
+    ClassAccess,
+    Damage,
+    DiceExpression,
+    MagicDefinition,
+    MagicKind,
+    MagicRegistryError,
+    PlayerHelp,
+    RangeCategory,
+    ResourceCost,
+    Save,
+    Targeting,
+    TargetingMode,
+    build_magic_registry,
+    deserialize_cast_snapshot,
+    validate_persistent_magic_state,
+)
 
 
 def arcane_bolt(**changes):
@@ -85,6 +98,64 @@ class TestMagicRegistry(EvenniaTest):
             build(arcane_bolt(handler_key="healing"))
         with self.assertRaises(MagicRegistryError):
             build(arcane_bolt(player_help=PlayerHelp("missing", "No entry.")))
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    concentration=True,
+                    maintenance="concentration",
+                    duration=3,
+                )
+            )
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    key="cleric.no_consequence",
+                    display_name="No Consequence",
+                    aliases=("none",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                    handler_key="saving_throw",
+                    targeting=Targeting(TargetingMode.CREATURE),
+                    damage=None,
+                    save=Save("Wisdom"),
+                    player_help=PlayerHelp("radiant ward", "An invalid save."),
+                )
+            )
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    key="cleric.partial_save",
+                    display_name="Partial Save",
+                    aliases=("partial",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                    handler_key="saving_throw",
+                    targeting=Targeting(TargetingMode.CREATURE),
+                    damage=None,
+                    save=Save("Wisdom", on_success="half"),
+                    effect_keys=("blessed",),
+                    player_help=PlayerHelp("radiant ward", "A partial test."),
+                )
+            )
+
+    def test_released_registry_requires_an_srd_reference(self):
+        """Production content cannot register without its SRD 5.2.1 citation."""
+        with self.assertRaises(MagicRegistryError):
+            build_magic_registry(
+                (arcane_bolt(),),
+                class_keys=("Wizard",),
+                resource_keys=("arcane_energy",),
+                damage_types=("force",),
+                help_keys=("arcane bolt",),
+                require_srd_references=True,
+            )
+        registry = build_magic_registry(
+            (arcane_bolt(srd_reference="SRD 5.2.1 p.107: Spell Descriptions"),),
+            class_keys=("Wizard",),
+            resource_keys=("arcane_energy",),
+            damage_types=("force",),
+            help_keys=("arcane bolt",),
+            require_srd_references=True,
+        )
+        self.assertTrue(registry.requires_srd_references)
 
     def test_save_effect_and_disabled_entries_are_safe(self):
         definition = arcane_bolt(

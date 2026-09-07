@@ -15,7 +15,10 @@ from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 MAX_CLASS_LEVEL = 20
-CLASS_REGISTRY_VERSION = 1
+# Version 2 replaces provisional spell-access curves with SRD 5.2.1 tables.
+CLASS_REGISTRY_VERSION = 2
+MAX_SRD_REFERENCE_LENGTH = 160
+SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
 SELECTABLE_CLASS_NAMES = (
     "Barbarian",
     "Bard",
@@ -69,6 +72,10 @@ class SpellAccess:
     spells_prepared: tuple[int, ...]
     spellbook_entries: tuple[int, ...]
     maximum_spell_level: tuple[int, ...]
+    spell_slots: tuple[tuple[int, ...], ...]
+    pact_slots: tuple[int, ...]
+    pact_slot_level: tuple[int, ...]
+    srd_reference: str
     preparation_formula: str | None = None
 
 
@@ -113,6 +120,7 @@ class ClassDefinition:
     weapon_profs: str
     complexity: str
     skill_choice_key: str
+    srd_reference: str
     levels: tuple[LevelGrants, ...]
 
     def grants_at(self, level: int) -> LevelGrants:
@@ -306,6 +314,7 @@ def _validate_class(
     spells: Mapping[str, SpellAccess],
     choices: Mapping[str, ChoiceSet],
 ) -> None:
+    _validate_srd_reference(definition.srd_reference, f"Class '{definition.key}'")
     if (
         definition.hit_die not in {6, 8, 10, 12}
         or definition.fixed_hp_gain != definition.hit_die // 2 + 1
@@ -384,6 +393,18 @@ def _validate_non_decreasing(values: tuple[int, ...], label: str) -> None:
         raise RegistryValidationError(f"{label} cannot decrease.")
 
 
+def _validate_srd_reference(value: object, label: str) -> None:
+    """Require a concise, reviewable citation for source-controlled data."""
+    if (
+        not isinstance(value, str)
+        or not value.startswith(SRD_REFERENCE_PREFIX)
+        or len(value) > MAX_SRD_REFERENCE_LENGTH
+    ):
+        raise RegistryValidationError(
+            f"{label} needs an SRD 5.2.1 section or table reference."
+        )
+
+
 def _validate_spell_access(access: SpellAccess) -> None:
     for name in (
         "cantrips",
@@ -398,30 +419,98 @@ def _validate_spell_access(access: SpellAccess) -> None:
         raise RegistryValidationError(
             f"Spell access '{access.key}' exceeds ninth-level spells."
         )
+    if len(access.spell_slots) != 9:
+        raise RegistryValidationError(
+            f"Spell access '{access.key}' needs nine spell-slot columns."
+        )
+    for spell_level, slots in enumerate(access.spell_slots, start=1):
+        _validate_non_decreasing(
+            slots, f"Spell access '{access.key}' level-{spell_level} slots"
+        )
+        if any(value > 4 for value in slots):
+            raise RegistryValidationError(
+                f"Spell access '{access.key}' has an invalid slot maximum."
+            )
+    _validate_non_decreasing(
+        access.pact_slots, f"Spell access '{access.key}' pact slots"
+    )
+    _validate_non_decreasing(
+        access.pact_slot_level, f"Spell access '{access.key}' pact slot level"
+    )
+    if any(value > 5 for value in access.pact_slot_level):
+        raise RegistryValidationError(
+            f"Spell access '{access.key}' exceeds fifth-level Pact Magic slots."
+        )
+    _validate_srd_reference(access.srd_reference, f"Spell access '{access.key}'")
 
 
 def _one_or_many(values: tuple[str, ...]) -> str | list[str]:
     return values[0] if len(values) == 1 else list(values)
 
 
-def _spell_levels(kind: str) -> tuple[int, ...]:
-    if kind == "full":
-        thresholds = (1, 3, 5, 7, 9, 11, 13, 15, 17)
-    elif kind == "half":
-        thresholds = (2, 5, 9, 13, 17)
-    elif kind == "pact":
-        thresholds = (1, 3, 5, 7, 9)
-    else:
-        return (0,) * MAX_CLASS_LEVEL
+# SRD 5.2.1 full-caster tables (Bard, Cleric, Druid, Sorcerer, Wizard),
+# normalized as one row per character level and nine columns for spell levels.
+_FULL_SPELL_SLOTS = (
+    (2, 0, 0, 0, 0, 0, 0, 0, 0),
+    (3, 0, 0, 0, 0, 0, 0, 0, 0),
+    (4, 2, 0, 0, 0, 0, 0, 0, 0),
+    (4, 3, 0, 0, 0, 0, 0, 0, 0),
+    (4, 3, 2, 0, 0, 0, 0, 0, 0),
+    (4, 3, 3, 0, 0, 0, 0, 0, 0),
+    (4, 3, 3, 1, 0, 0, 0, 0, 0),
+    (4, 3, 3, 2, 0, 0, 0, 0, 0),
+    (4, 3, 3, 3, 1, 0, 0, 0, 0),
+    (4, 3, 3, 3, 2, 0, 0, 0, 0),
+    (4, 3, 3, 3, 2, 1, 0, 0, 0),
+    (4, 3, 3, 3, 2, 1, 0, 0, 0),
+    (4, 3, 3, 3, 2, 1, 1, 0, 0),
+    (4, 3, 3, 3, 2, 1, 1, 0, 0),
+    (4, 3, 3, 3, 2, 1, 1, 1, 0),
+    (4, 3, 3, 3, 2, 1, 1, 1, 0),
+    (4, 3, 3, 3, 2, 1, 1, 1, 1),
+    (4, 3, 3, 3, 3, 1, 1, 1, 1),
+    (4, 3, 3, 3, 3, 2, 1, 1, 1),
+    (4, 3, 3, 3, 3, 2, 2, 1, 1),
+)
+# SRD 5.2.1 Paladin and Ranger tables, likewise one row per character level.
+_HALF_SPELL_SLOTS = (
+    (2, 0, 0, 0, 0),
+    (2, 0, 0, 0, 0),
+    (3, 0, 0, 0, 0),
+    (3, 0, 0, 0, 0),
+    (4, 2, 0, 0, 0),
+    (4, 2, 0, 0, 0),
+    (4, 3, 0, 0, 0),
+    (4, 3, 0, 0, 0),
+    (4, 3, 2, 0, 0),
+    (4, 3, 2, 0, 0),
+    (4, 3, 3, 0, 0),
+    (4, 3, 3, 0, 0),
+    (4, 3, 3, 1, 0),
+    (4, 3, 3, 1, 0),
+    (4, 3, 3, 2, 0),
+    (4, 3, 3, 2, 0),
+    (4, 3, 3, 3, 1),
+    (4, 3, 3, 3, 1),
+    (4, 3, 3, 3, 2),
+    (4, 3, 3, 3, 2),
+)
+_NO_SPELL_SLOTS = tuple((0,) * 9 for _ in range(MAX_CLASS_LEVEL))
+_NO_PACT_SLOTS = (0,) * MAX_CLASS_LEVEL
+
+
+def _slot_columns(
+    rows: tuple[tuple[int, ...], ...], *, slot_levels: int
+) -> tuple[tuple[int, ...], ...]:
+    """Transpose source-table rows into stable level-keyed slot columns."""
     return tuple(
-        sum(level >= threshold for threshold in thresholds) for level in range(1, 21)
+        tuple(row[spell_level] if spell_level < slot_levels else 0 for row in rows)
+        for spell_level in range(9)
     )
 
 
-def _cantrips(kind: str) -> tuple[int, ...]:
-    if kind == "none":
-        return (0,) * MAX_CLASS_LEVEL
-    return tuple(2 + (level >= 4) + (level >= 10) for level in range(1, 21))
+_FULL_SLOT_COLUMNS = _slot_columns(_FULL_SPELL_SLOTS, slot_levels=9)
+_HALF_SLOT_COLUMNS = _slot_columns(_HALF_SPELL_SLOTS, slot_levels=5)
 
 
 def _default_registry() -> ProgressionRegistry:
@@ -429,16 +518,6 @@ def _default_registry() -> ProgressionRegistry:
     # class source.  The registry is the sole public authoritative interface.
     from world.chargen_data import _CLASS_SUMMARIES
 
-    caster_kinds = {
-        "Bard": "full",
-        "Cleric": "full",
-        "Druid": "full",
-        "Sorcerer": "full",
-        "Wizard": "full",
-        "Paladin": "half",
-        "Ranger": "half",
-        "Warlock": "pact",
-    }
     resources_by_class = {
         "Barbarian": ("rage", "long_rest"),
         "Bard": ("bardic_inspiration", "long_rest"),
@@ -452,6 +531,232 @@ def _default_registry() -> ProgressionRegistry:
         "Sorcerer": ("sorcery_points", "long_rest"),
         "Warlock": ("pact_magic", "short_rest"),
         "Wizard": ("arcane_recovery", "long_rest"),
+    }
+    class_references = {
+        "Barbarian": "SRD 5.2.1 p.28: Barbarian Features table",
+        "Bard": "SRD 5.2.1 p.31: Bard Features table",
+        "Cleric": "SRD 5.2.1 p.36: Cleric Features table",
+        "Druid": "SRD 5.2.1 p.41: Druid Features table",
+        "Fighter": "SRD 5.2.1 p.46: Fighter Features table",
+        "Monk": "SRD 5.2.1 p.50: Monk Features table",
+        "Paladin": "SRD 5.2.1 p.53: Paladin Features table",
+        "Ranger": "SRD 5.2.1 p.56: Ranger Features table",
+        "Rogue": "SRD 5.2.1 p.61: Rogue Features table",
+        "Sorcerer": "SRD 5.2.1 p.64: Sorcerer Features table",
+        "Warlock": "SRD 5.2.1 p.70: Warlock Features table",
+        "Wizard": "SRD 5.2.1 p.77: Wizard Features table",
+    }
+    full_maximum_spell_level = (
+        1,
+        1,
+        2,
+        2,
+        3,
+        3,
+        4,
+        4,
+        5,
+        5,
+        6,
+        6,
+        7,
+        7,
+        8,
+        8,
+        9,
+        9,
+        9,
+        9,
+    )
+    half_maximum_spell_level = (
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3,
+        3,
+        4,
+        4,
+        4,
+        4,
+        5,
+        5,
+        5,
+        5,
+    )
+    prepared_full = (
+        4,
+        5,
+        6,
+        7,
+        9,
+        10,
+        11,
+        12,
+        14,
+        15,
+        16,
+        16,
+        17,
+        17,
+        18,
+        18,
+        19,
+        20,
+        21,
+        22,
+    )
+    prepared_half = (
+        2,
+        3,
+        4,
+        5,
+        6,
+        6,
+        7,
+        7,
+        9,
+        9,
+        10,
+        10,
+        11,
+        11,
+        12,
+        12,
+        14,
+        14,
+        15,
+        15,
+    )
+    spell_access_data = {
+        "Bard": {
+            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
+            "prepared": prepared_full,
+            "maximum": full_maximum_spell_level,
+            "slots": _FULL_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.31: Bard Features table",
+        },
+        "Cleric": {
+            "cantrips": (3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
+            "prepared": prepared_full,
+            "maximum": full_maximum_spell_level,
+            "slots": _FULL_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.36: Cleric Features table",
+        },
+        "Druid": {
+            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
+            "prepared": prepared_full,
+            "maximum": full_maximum_spell_level,
+            "slots": _FULL_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.41: Druid Features table",
+        },
+        "Paladin": {
+            "cantrips": (0,) * MAX_CLASS_LEVEL,
+            "prepared": prepared_half,
+            "maximum": half_maximum_spell_level,
+            "slots": _HALF_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.53: Paladin Features table",
+        },
+        "Ranger": {
+            "cantrips": (0,) * MAX_CLASS_LEVEL,
+            "prepared": prepared_half,
+            "maximum": half_maximum_spell_level,
+            "slots": _HALF_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.57: Ranger Features table",
+        },
+        "Sorcerer": {
+            "cantrips": (4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),
+            "prepared": (
+                2,
+                4,
+                6,
+                7,
+                9,
+                10,
+                11,
+                12,
+                14,
+                15,
+                16,
+                16,
+                17,
+                17,
+                18,
+                18,
+                19,
+                20,
+                21,
+                22,
+            ),
+            "maximum": full_maximum_spell_level,
+            "slots": _FULL_SLOT_COLUMNS,
+            "reference": "SRD 5.2.1 p.64: Sorcerer Features table",
+        },
+        "Warlock": {
+            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
+            "prepared": (
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                10,
+                11,
+                11,
+                12,
+                12,
+                13,
+                13,
+                14,
+                14,
+                15,
+                15,
+            ),
+            "maximum": full_maximum_spell_level,
+            "slots": _slot_columns(_NO_SPELL_SLOTS, slot_levels=9),
+            "pact_slots": (1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4),
+            "pact_levels": (1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
+            "reference": "SRD 5.2.1 p.70: Warlock Features table",
+        },
+        "Wizard": {
+            "cantrips": (3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
+            "prepared": (
+                4,
+                5,
+                6,
+                7,
+                9,
+                10,
+                11,
+                12,
+                14,
+                15,
+                16,
+                16,
+                17,
+                18,
+                19,
+                21,
+                22,
+                23,
+                24,
+                25,
+            ),
+            "maximum": full_maximum_spell_level,
+            "slots": _FULL_SLOT_COLUMNS,
+            "spellbook_entries": tuple(6 + 2 * (level - 1) for level in range(1, 21)),
+            "reference": "SRD 5.2.1 p.77: Wizard Features table",
+        },
     }
     features: list[FeatureDefinition] = []
     resources: list[ResourceProgression] = []
@@ -494,10 +799,9 @@ def _default_registry() -> ProgressionRegistry:
             )
             resource_keys = (resource_key,)
         spell_keys: tuple[str, ...] = ()
-        if name in caster_kinds:
-            kind = caster_kinds[name]
+        if name in spell_access_data:
+            access_data = spell_access_data[name]
             spell_key = f"{key}.spell_access"
-            maximum = _spell_levels(kind)
             spell_access.append(
                 SpellAccess(
                     spell_key,
@@ -506,24 +810,15 @@ def _default_registry() -> ProgressionRegistry:
                         if isinstance(summary["primary_ability"], str)
                         else summary["primary_ability"][-1]
                     ),
-                    _cantrips("none" if name in {"Paladin", "Ranger"} else kind),
+                    access_data["cantrips"],
                     (0,) * MAX_CLASS_LEVEL,
-                    (
-                        tuple(maximum[level - 1] for level in range(1, 21))
-                        if name in {"Cleric", "Druid", "Paladin", "Ranger"}
-                        else (0,) * MAX_CLASS_LEVEL
-                    ),
-                    (
-                        tuple(6 + 2 * (level - 1) for level in range(1, 21))
-                        if name == "Wizard"
-                        else (0,) * MAX_CLASS_LEVEL
-                    ),
-                    maximum,
-                    (
-                        "casting_ability_modifier + class_level"
-                        if name in {"Cleric", "Druid", "Paladin", "Ranger"}
-                        else None
-                    ),
+                    access_data["prepared"],
+                    access_data.get("spellbook_entries", (0,) * MAX_CLASS_LEVEL),
+                    access_data["maximum"],
+                    access_data["slots"],
+                    access_data.get("pact_slots", _NO_PACT_SLOTS),
+                    access_data.get("pact_levels", _NO_PACT_SLOTS),
+                    access_data["reference"],
                 )
             )
             spell_keys = (spell_key,)
@@ -546,8 +841,8 @@ def _default_registry() -> ProgressionRegistry:
                 (primary,) if isinstance(primary, str) else tuple(primary),
                 (
                     primary
-                    if isinstance(primary, str) and name in caster_kinds
-                    else (primary[-1] if name in caster_kinds else None)
+                    if isinstance(primary, str) and name in spell_access_data
+                    else (primary[-1] if name in spell_access_data else None)
                 ),
                 summary["hit_die"],
                 summary["hit_die"] // 2 + 1,
@@ -558,6 +853,7 @@ def _default_registry() -> ProgressionRegistry:
                 summary["weapon_profs"],
                 summary["complexity"],
                 skill_choice_key,
+                class_references[name],
                 levels,
             )
         )

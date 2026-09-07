@@ -220,6 +220,19 @@ def apply_damage(
     result = _result(
         True, previous_hp, final_hp, next_record, reason, cleanup, previous=record
     )
+    if result.state in {
+        InjuryState.DYING,
+        InjuryState.INCAPACITATED,
+        InjuryState.DEAD,
+    }:
+        try:
+            from systems.magic_actions import end_concentration
+
+            end_concentration(owner)
+        except Exception:
+            logger.log_trace(
+                f"Could not end concentration for #{getattr(owner, 'id', '?')}."
+            )
     if emit_messages and result.state is not record.state:
         _announce(owner, result)
     _refresh_combat_controls(owner, previous_hp, final_hp)

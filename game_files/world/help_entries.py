@@ -62,11 +62,10 @@ HELP_ENTRY_DICTS = [
             self-only action. An action with a cast time longer than one action
             is unavailable until its interruption-safe casting support arrives.
 
-            Class resources have a current value and a level-based maximum.
-            An action never spends more than its declared cost, and commands
-            cannot set resource values or bypass those rules. Rest recovery,
-            concentration, and longer cast times will become available with
-            their interruption-safe supporting systems.
+            Class spell and ability content is unavailable until it can be
+            implemented from the SRD 5.2.1 rules with its required resources,
+            targeting, effects, and recovery. Individual action help will state
+            its actual target, cost, cast time, and limitations when released.
         """,
     },
     {
@@ -158,10 +157,8 @@ HELP_ENTRY_DICTS = [
             nearby, offer your class and that choice, and be willing to train
             you. There is currently no generic practice-point pool or fee.
 
-            Some spellcasting classes will later distinguish spells known,
-            prepared spells, and spellbooks. Until their spell rules are
-            released, |wpractice|n only reports the class access you have
-            earned; it cannot teach unregistered spells.
+            Spell preparation, spellbooks, pact-slot recovery, and persistent
+            effects are not currently part of the action service.
         """,
     },
     {

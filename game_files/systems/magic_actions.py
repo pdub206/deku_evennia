@@ -15,19 +15,34 @@ from typing import Any
 
 from django.db import transaction
 from systems.action_policy import ActionCategory
-from systems.injury import (InjuryError, InjuryState, apply_damage,
-                            apply_healing, injury_record)
-from systems.magic import (AccessMode, CastSnapshot, MagicDefinition,
-                           MagicKind, MagicRegistry, MagicRegistryError,
-                           RangeCategory, TargetingMode)
-from systems.magic_resources import (MagicResourceError, resource_current,
-                                     spend_resource)
+from systems.injury import (
+    InjuryError,
+    InjuryState,
+    apply_damage,
+    apply_healing,
+    injury_record,
+)
+from systems.magic import (
+    AccessMode,
+    CastSnapshot,
+    MagicDefinition,
+    MagicKind,
+    MagicRegistry,
+    MagicRegistryError,
+    RangeCategory,
+    TargetingMode,
+)
+from systems.magic_resources import MagicResourceError, resource_current, spend_resource
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
-MAGIC_ACTION_STATE_VERSION = 1
+MAGIC_ACTION_STATE_VERSION = 2
+CONCENTRATION_ATTRIBUTE = "magic_concentration"
+CONCENTRATION_VERSION = 1
+_MAX_CONCENTRATION_EFFECTS = 16
 _ENTITLEMENT_MODES = frozenset(
     {AccessMode.LEARNED, AccessMode.PREPARED, AccessMode.INNATE}
 )
+_SPELLBOOK_KEY = "spellbook"
 
 
 class MagicActionError(ValueError):
@@ -54,6 +69,9 @@ def grant_action(actor: Any, action_key: str, mode: str) -> None:
     """
     if mode not in _ENTITLEMENT_MODES:
         raise MagicActionError("Magic action mode is invalid.")
+    if mode == AccessMode.PREPARED:
+        prepare_action(actor, action_key)
+        return
     definition = _registry().definition_for(action_key, include_disabled=False)
     if mode not in definition.access_modes:
         raise MagicActionError("That action cannot be granted through this mode.")
@@ -70,9 +88,87 @@ def revoke_action(actor: Any, action_key: str, mode: str) -> None:
     if mode not in _ENTITLEMENT_MODES:
         raise MagicActionError("Magic action mode is invalid.")
     state = _action_state(actor)
+    if mode == AccessMode.PREPARED:
+        if action_key in state[mode]:
+            state[mode].remove(action_key)
+            _write_action_state(actor, state)
+        return
     if action_key in state[mode]:
         state[mode].remove(action_key)
         _write_action_state(actor, state)
+
+
+def grant_spellbook_entry(actor: Any, action_key: str) -> None:
+    """Add one Wizard spellbook entry without also preparing that spell.
+
+    Spellbook capacity and preparation capacity are separate SRD tables. This
+    method is the durable ownership boundary used by future learning and loot
+    adapters; it deliberately cannot create a prepared entitlement by itself.
+    """
+    definition = _registry().definition_for(action_key, include_disabled=False)
+    access, level = _spell_access(actor)
+    if (
+        definition.kind != MagicKind.SPELL
+        or AccessMode.PREPARED not in definition.access_modes
+        or not _has_class_access(actor, definition)
+        or access.spellbook_entries[level - 1] < 1
+    ):
+        raise MagicActionError("That spell cannot be added to your spellbook.")
+    state = _action_state(actor)
+    entries = state[_SPELLBOOK_KEY]
+    if action_key in entries:
+        return
+    if len(entries) >= access.spellbook_entries[level - 1]:
+        raise MagicActionError("Your spellbook cannot hold another spell.")
+    entries.append(action_key)
+    entries.sort()
+    _write_action_state(actor, state)
+
+
+def prepare_action(actor: Any, action_key: str) -> None:
+    """Prepare one eligible spell through the class's durable access model."""
+    definition = _registry().definition_for(action_key, include_disabled=False)
+    access, level = _spell_access(actor)
+    if (
+        definition.kind != MagicKind.SPELL
+        or AccessMode.PREPARED not in definition.access_modes
+        or not _has_class_access(actor, definition)
+    ):
+        raise MagicActionError("That spell cannot be prepared.")
+    state = _action_state(actor)
+    if access.spellbook_entries[level - 1] and action_key not in state[_SPELLBOOK_KEY]:
+        raise MagicActionError("That spell is not in your spellbook.")
+    prepared = state[AccessMode.PREPARED]
+    if action_key in prepared:
+        return
+    if len(prepared) >= access.spells_prepared[level - 1]:
+        raise MagicActionError("You cannot prepare another spell right now.")
+    prepared.append(action_key)
+    prepared.sort()
+    _write_action_state(actor, state)
+
+
+def end_concentration(caster: Any) -> None:
+    """End the caster's current concentration and its linked effect instances.
+
+    The record is removed before effects so their post-removal listener cannot
+    observe a half-finished concentration relationship.  Missing targets and
+    already-removed instances are harmless: a reload or independent dispel
+    must never leave concentration stuck on the caster.
+    """
+    state = _concentration_state(caster, required=False)
+    caster.attributes.remove(CONCENTRATION_ATTRIBUTE)
+    if state is None:
+        return
+    from evennia.objects.models import ObjectDB
+    from systems.effects import RemovalReason
+
+    for link in state["effects"]:
+        owner = ObjectDB.objects.filter(id=link["owner_id"]).first()
+        if owner is not None and hasattr(owner, "effects"):
+            owner.effects.remove(
+                link["instance_id"], reason=RemovalReason.SOURCE, quiet=True
+            )
 
 
 def available_actions(actor: Any, kind: str) -> tuple[MagicDefinition, ...]:
@@ -154,14 +250,20 @@ def _action_state(actor: Any) -> dict[str, list[str]]:
     """Read detached, primitive entitlement state and reject malformed records."""
     raw = actor.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE)
     if raw is None:
-        return {mode: [] for mode in _ENTITLEMENT_MODES}
-    if not isinstance(raw, Mapping) or set(raw) != {"version", *_ENTITLEMENT_MODES}:
+        return {mode: [] for mode in (*_ENTITLEMENT_MODES, _SPELLBOOK_KEY)}
+    if not isinstance(raw, Mapping):
         raise MagicActionError("Your magic training record needs staff repair.")
-    if raw["version"] != MAGIC_ACTION_STATE_VERSION:
+    version = raw.get("version")
+    expected = {"version", *_ENTITLEMENT_MODES}
+    if version == MAGIC_ACTION_STATE_VERSION:
+        expected.add(_SPELLBOOK_KEY)
+    elif version != 1:
+        raise MagicActionError("Your magic training record needs staff repair.")
+    if set(raw) != expected:
         raise MagicActionError("Your magic training record needs staff repair.")
     state: dict[str, list[str]] = {}
-    for mode in _ENTITLEMENT_MODES:
-        values = raw[mode]
+    for mode in (*_ENTITLEMENT_MODES, _SPELLBOOK_KEY):
+        values = raw.get(mode, [])
         if (
             isinstance(values, (str, bytes))
             or not isinstance(values, Sequence)
@@ -177,6 +279,7 @@ def _write_action_state(actor: Any, state: Mapping[str, list[str]]) -> None:
     """Persist one detached entitlement record after complete validation."""
     payload = {"version": MAGIC_ACTION_STATE_VERSION}
     payload.update({mode: list(state[mode]) for mode in _ENTITLEMENT_MODES})
+    payload[_SPELLBOOK_KEY] = list(state[_SPELLBOOK_KEY])
     actor.attributes.add(MAGIC_ACTION_STATE_ATTRIBUTE, payload)
 
 
@@ -184,23 +287,167 @@ def _has_access(
     actor: Any, definition: MagicDefinition, state: Mapping[str, list[str]]
 ) -> bool:
     """Combine class/level availability with the required durable entitlement."""
-    class_key = actor.attributes.get("char_class")
-    level = actor.attributes.get("level", 1)
-    if (
-        not isinstance(class_key, str)
-        or isinstance(level, bool)
-        or not isinstance(level, int)
-    ):
+    if not _has_class_access(actor, definition):
         return False
-    if not any(
-        access.class_key == class_key and access.minimum_level <= level
-        for access in definition.class_access
+    access, level = _spell_access(actor, required=False)
+    if (
+        definition.kind == MagicKind.SPELL
+        and AccessMode.PREPARED in definition.access_modes
+        and access is not None
+        and access.spellbook_entries[level - 1]
+        and definition.key not in state[_SPELLBOOK_KEY]
     ):
         return False
     return any(
         mode in definition.access_modes and definition.key in state[mode]
         for mode in _ENTITLEMENT_MODES
     )
+
+
+def _has_class_access(actor: Any, definition: MagicDefinition) -> bool:
+    """Check an action's source-controlled class and level gate."""
+    class_key = actor.attributes.get("char_class")
+    level = actor.attributes.get("level", 1)
+    return (
+        isinstance(class_key, str)
+        and not isinstance(level, bool)
+        and isinstance(level, int)
+        and any(
+            access.class_key == class_key and access.minimum_level <= level
+            for access in definition.class_access
+        )
+    )
+
+
+def _begin_concentration(
+    caster: Any, source_key: str, effects: Sequence[Mapping[str, Any]]
+) -> None:
+    """Replace prior concentration only after new linked instances exist."""
+    links = _validated_concentration_links(effects)
+    end_concentration(caster)
+    caster.attributes.add(
+        CONCENTRATION_ATTRIBUTE,
+        {
+            "version": CONCENTRATION_VERSION,
+            "source_key": source_key,
+            "effects": links,
+        },
+    )
+
+
+def _concentration_state(
+    caster: Any, *, required: bool = True
+) -> dict[str, Any] | None:
+    """Return one detached concentration record, failing closed when requested."""
+    raw = caster.attributes.get(CONCENTRATION_ATTRIBUTE)
+    if raw is None:
+        return None
+    try:
+        if (
+            not isinstance(raw, Mapping)
+            or set(raw) != {"version", "source_key", "effects"}
+            or raw["version"] != CONCENTRATION_VERSION
+            or not isinstance(raw["source_key"], str)
+            or not raw["source_key"]
+        ):
+            raise ValueError
+        return {
+            "source_key": raw["source_key"],
+            "effects": _validated_concentration_links(raw["effects"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        if required:
+            raise MagicActionError("Your concentration record needs staff repair.")
+        return None
+
+
+def _validated_concentration_links(
+    values: Sequence[Mapping[str, Any]],
+) -> list[dict[str, int | str]]:
+    """Validate primitive effect identities owned by one concentration record."""
+    if (
+        isinstance(values, (str, bytes))
+        or not isinstance(values, Sequence)
+        or not 1 <= len(values) <= _MAX_CONCENTRATION_EFFECTS
+    ):
+        raise ValueError
+    links: list[dict[str, int | str]] = []
+    seen: set[tuple[int, str]] = set()
+    for value in values:
+        if not isinstance(value, Mapping) or set(value) != {"owner_id", "instance_id"}:
+            raise ValueError
+        owner_id, instance_id = value["owner_id"], value["instance_id"]
+        if (
+            isinstance(owner_id, bool)
+            or not isinstance(owner_id, int)
+            or owner_id <= 0
+            or not isinstance(instance_id, str)
+            or not 1 <= len(instance_id) <= 64
+            or (owner_id, instance_id) in seen
+        ):
+            raise ValueError
+        seen.add((owner_id, instance_id))
+        links.append({"owner_id": owner_id, "instance_id": instance_id})
+    return links
+
+
+def _on_concentration_effect_removed(effect: Any, _reason: Any) -> None:
+    """Unlink an independently removed effect and end empty concentration."""
+    caster = getattr(effect, "source", None)
+    if caster is None or not hasattr(caster, "attributes"):
+        return
+    state = _concentration_state(caster, required=False)
+    if state is None:
+        return
+    link = (getattr(effect.owner, "id", None), getattr(effect, "instance_id", None))
+    remaining = [
+        item
+        for item in state["effects"]
+        if (item["owner_id"], item["instance_id"]) != link
+    ]
+    if len(remaining) == len(state["effects"]):
+        return
+    if not remaining:
+        caster.attributes.remove(CONCENTRATION_ATTRIBUTE)
+        return
+    caster.attributes.add(
+        CONCENTRATION_ATTRIBUTE,
+        {
+            "version": CONCENTRATION_VERSION,
+            "source_key": state["source_key"],
+            "effects": remaining,
+        },
+    )
+
+
+def _register_concentration_removal_listener() -> None:
+    """Register this reload-safe effect adapter exactly once per process."""
+    from systems.effects import register_removal_listener, removal_listener_registered
+
+    listener_key = "magic.concentration"
+    if not removal_listener_registered(listener_key):
+        register_removal_listener(listener_key, _on_concentration_effect_removed)
+
+
+def _spell_access(actor: Any, *, required: bool = True):
+    """Return the actor's class spell table and validated effective level."""
+    class_key = actor.attributes.get("char_class")
+    level = actor.attributes.get("level", 1)
+    if (
+        not isinstance(class_key, str)
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= 20
+    ):
+        if required:
+            raise MagicActionError("Your magic training record needs staff repair.")
+        return None, 0
+    from systems.progression import CLASS_PROGRESSION
+
+    access = CLASS_PROGRESSION.spell_access.get(f"{class_key.casefold()}.spell_access")
+    if access is None and required:
+        raise MagicActionError("Your class cannot prepare spells.")
+    return access, level
 
 
 def _action_category(definition: MagicDefinition) -> ActionCategory:
@@ -355,10 +602,81 @@ def _execute(
         return MagicActionResult(True, "healed", definition, target, snapshot, amount)
     if definition.handler_key == "spell_attack":
         return _spell_attack(caster, definition, target, snapshot)
-    # Effect, movement, areas, and saving throw consequences require their
-    # owning MAGIC-04/INTERACT adapters.  Rejecting them is safer than a
-    # partial cast that spends a resource without a declared consequence.
+    if definition.handler_key == "saving_throw":
+        if definition.damage is not None:
+            return _saving_throw_damage(caster, definition, target, snapshot)
+        return _apply_effects(caster, definition, target, snapshot)
+    if definition.handler_key == "effect":
+        return _apply_effects(caster, definition, target, snapshot)
+    # Movement and area consequences require their owning MAGIC-04/INTERACT
+    # adapters. Rejecting them is safer than a partial cast that spends a
+    # resource without a declared consequence.
     raise MagicActionError("That action's effect is not available yet.")
+
+
+def _apply_effects(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Apply declared persistent effects through RULES-03's owned API.
+
+    The definition supplies only effect keys and a duration.  RULES-03 retains
+    ownership of stacking, storage, removal, and effect-specific modifiers;
+    the action key becomes the durable source for dispelling and diagnostics.
+    """
+    from systems.effects import ApplyOutcome, EffectError, SaveRule
+
+    handler = getattr(target, "effects", None)
+    if handler is None:
+        raise MagicActionError("That target cannot carry magical effects.")
+    save = None
+    if definition.save is not None:
+        if definition.save.on_success != "negate" or snapshot.save_dc is None:
+            raise MagicActionError("That action's saving throw is not available.")
+        save = SaveRule(definition.save.ability, snapshot.save_dc)
+
+    applied = 0
+    saved = 0
+    concentration_links: list[dict[str, int | str]] = []
+    for effect_key in definition.effect_keys:
+        try:
+            result = handler.add(
+                effect_key,
+                source=caster,
+                source_key=definition.key,
+                duration=definition.duration,
+                save=save,
+            )
+        except EffectError as err:
+            raise MagicActionError(
+                "That action's effect is not available yet."
+            ) from err
+        if result.outcome is ApplyOutcome.REJECTED:
+            raise MagicActionError("That magical effect is already active.")
+        if result.outcome is ApplyOutcome.SAVED:
+            saved += 1
+        elif result.effect is not None:
+            applied += 1
+
+            if definition.concentration:
+                concentration_links.append(
+                    {
+                        "owner_id": target.id,
+                        "instance_id": result.effect.instance_id,
+                    }
+                )
+
+    if concentration_links:
+        _begin_concentration(caster, definition.key, concentration_links)
+    if applied:
+        _message(caster, target, definition, "You surround")
+    return MagicActionResult(
+        True,
+        "effect_applied" if applied else "saved",
+        definition,
+        target,
+        snapshot,
+        applied + saved,
+    )
 
 
 def _spell_attack(
@@ -386,6 +704,55 @@ def _spell_attack(
     return MagicActionResult(True, "hit", definition, target, snapshot, amount)
 
 
+def _saving_throw_damage(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Resolve one hostile save-versus-damage action through canonical injury.
+
+    This intentionally supports only one damage consequence.  A spell that
+    combines damage with a condition needs a combined-resolution adapter so it
+    cannot accidentally roll separate saves or apply a condition after a save
+    that should have prevented it.
+    """
+    if definition.save is None or definition.damage is None or snapshot.save_dc is None:
+        raise MagicActionError("That action's saving throw is not available.")
+    from systems.dice import roll_check
+
+    save = roll_check(
+        target.stats.saving_throw_bonus(definition.save.ability), snapshot.save_dc
+    )
+    rolled_damage = _roll_dice(definition.damage.dice)
+    if save.success and definition.save.on_success == "negate":
+        amount = 0
+    elif save.success and definition.save.on_success == "half":
+        amount = rolled_damage // 2
+    else:
+        amount = rolled_damage
+    injury = apply_damage(
+        target, amount, emit_messages=False, source=caster, source_kind="magic"
+    )
+    if not injury.accepted:
+        raise MagicActionError("That target cannot be affected right now.")
+    if amount:
+        from systems.combat import start_fight
+
+        start_fight(caster, target)
+        _message(
+            caster,
+            target,
+            definition,
+            f"You strike {target.get_display_name(caster)} with",
+        )
+    return MagicActionResult(
+        True,
+        "saved" if save.success else "hit",
+        definition,
+        target,
+        snapshot,
+        amount,
+    )
+
+
 def _roll_dice(dice: Any) -> int:
     """Roll validated MAGIC-01 dice exclusively through the shared dice API."""
     from systems.dice import roll
@@ -408,3 +775,6 @@ def _lock(obj: Any) -> None:
     ):
         raise MagicActionError("Magic requires a saved character.")
     obj.__class__.objects.select_for_update().get(pk=identifier)
+
+
+_register_concentration_removal_listener()

@@ -3,9 +3,13 @@
 from dataclasses import replace
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.progression import (CLASS_PROGRESSION, MAX_CLASS_LEVEL,
-                                 SELECTABLE_CLASS_NAMES,
-                                 RegistryValidationError, build_registry)
+from systems.progression import (
+    CLASS_PROGRESSION,
+    MAX_CLASS_LEVEL,
+    SELECTABLE_CLASS_NAMES,
+    RegistryValidationError,
+    build_registry,
+)
 
 
 class TestClassProgressionRegistry(EvenniaTest):
@@ -24,6 +28,8 @@ class TestClassProgressionRegistry(EvenniaTest):
                 CLASS_PROGRESSION.chargen_summary(class_key)["hit_die"],
                 definition.hit_die,
             )
+            self.assertTrue(definition.srd_reference.startswith("SRD 5.2.1 "))
+            self.assertIn(class_key, definition.srd_reference)
 
     def test_level_one_choice_and_repeated_feature_keys_resolve(self):
         for definition in CLASS_PROGRESSION.definitions.values():
@@ -39,6 +45,29 @@ class TestClassProgressionRegistry(EvenniaTest):
                 "upgrade",
             )
 
+    def test_srd_spell_access_tables_retain_slots_and_pact_magic_separately(self):
+        """Slot counts use their class tables rather than generic resource curves."""
+        bard = CLASS_PROGRESSION.spell_access["bard.spell_access"]
+        self.assertEqual(bard.cantrips[0], 2)
+        self.assertEqual(bard.spells_prepared[0], 4)
+        self.assertEqual(bard.spell_slots[0][0], 2)
+        self.assertEqual(bard.spell_slots[1][2], 2)
+        self.assertEqual(bard.spell_slots[8][16], 1)
+        self.assertEqual(bard.pact_slots, (0,) * MAX_CLASS_LEVEL)
+
+        paladin = CLASS_PROGRESSION.spell_access["paladin.spell_access"]
+        self.assertEqual(paladin.spell_slots[0][0], 2)
+        self.assertEqual(paladin.spell_slots[1][4], 2)
+        self.assertEqual(paladin.spell_slots[4][16], 1)
+
+        warlock = CLASS_PROGRESSION.spell_access["warlock.spell_access"]
+        self.assertEqual(warlock.spell_slots, ((0,) * MAX_CLASS_LEVEL,) * 9)
+        self.assertEqual(warlock.pact_slots[0], 1)
+        self.assertEqual(warlock.pact_slots[10], 3)
+        self.assertEqual(warlock.pact_slot_level[8], 5)
+        self.assertEqual(warlock.maximum_spell_level[10], 6)
+        self.assertTrue(warlock.srd_reference.startswith("SRD 5.2.1 "))
+
     def test_registry_projection_is_immutable_and_deterministic(self):
         summaries = CLASS_PROGRESSION.chargen_summaries()
         with self.assertRaises(TypeError):
@@ -47,6 +76,7 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
+        self.assertEqual(CLASS_PROGRESSION.version, 2)
 
     def test_invalid_level_gap_and_unknown_feature_fail_closed(self):
         fighter = CLASS_PROGRESSION.class_for("Fighter")
@@ -62,11 +92,22 @@ class TestClassProgressionRegistry(EvenniaTest):
                 CLASS_PROGRESSION.choices.values(),
             )
 
+        invalid_reference = replace(fighter, srd_reference="unreviewed source")
+        definitions[definitions.index(incomplete)] = invalid_reference
+        with self.assertRaises(RegistryValidationError):
+            build_registry(
+                definitions,
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+            )
+
         bad_level = replace(
             fighter.grants_at(1), automatic_feature_keys=("missing.feature",)
         )
         invalid = replace(fighter, levels=(bad_level,) + fighter.levels[1:])
-        definitions[definitions.index(incomplete)] = invalid
+        definitions[definitions.index(invalid_reference)] = invalid
         with self.assertRaises(RegistryValidationError):
             build_registry(
                 definitions,

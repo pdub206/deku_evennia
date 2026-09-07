@@ -5,8 +5,7 @@ from __future__ import annotations
 from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.magic import MagicKind
-from systems.magic_actions import (MagicActionError, available_actions,
-                                   cast_action)
+from systems.magic_actions import MagicActionError, available_actions, cast_action
 from systems.magic_resources import MagicResourceError, resource_view
 
 
@@ -34,7 +33,7 @@ class CmdCast(Command):
         except (MagicActionError, MagicResourceError) as err:
             self.caller.msg(str(err))
             return
-        if result.reason == "cast":
+        if result.accepted:
             self.caller.msg(f"You cast |w{result.definition.display_name}|n.")
 
 

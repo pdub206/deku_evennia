@@ -268,6 +268,17 @@ def register_removal_listener(key: str, listener: EffectRemovalListener) -> None
     _REMOVAL_LISTENERS[key] = listener
 
 
+def removal_listener_registered(key: str) -> bool:
+    """Return whether a lifecycle adapter already owns ``key``.
+
+    Reload-safe systems use this narrow query before registering their module
+    callback again.  Callers still cannot replace or remove another system's
+    listener.
+    """
+    _validate_key(key, "effect removal listener")
+    return key in _REMOVAL_LISTENERS
+
+
 @dataclass(frozen=True)
 class ActiveEffect:
     """Read-only view of one persisted effect instance."""

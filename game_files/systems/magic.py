@@ -30,6 +30,7 @@ MAX_DIE_SIZE = 100
 MAX_DICE_BONUS = 100
 MAX_SCALING_STEPS = 20
 MAX_HELP_SUMMARY = 320
+MAX_SRD_REFERENCE = 160
 
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9 .'-]{0,63}$")
@@ -286,6 +287,7 @@ class MagicDefinition:
     stacking: str = StackingPolicy.REJECT
     messages: Mapping[str, str] = field(default_factory=dict)
     player_help: PlayerHelp | None = None
+    srd_reference: str = ""
     enabled: bool = True
 
 
@@ -298,6 +300,7 @@ class MagicRegistry:
     aliases: Mapping[str, str]
     handlers: Mapping[str, HandlerContract]
     fingerprint: str
+    requires_srd_references: bool = False
 
     def definition_for(
         self, key: str, *, include_disabled: bool = True
@@ -391,6 +394,7 @@ def build_magic_registry(
     damage_types: Iterable[str] = DAMAGE_TYPES,
     effect_keys: Iterable[str] = (),
     help_keys: Iterable[str] = (),
+    require_srd_references: bool = False,
 ) -> MagicRegistry:
     """Validate and freeze a whole magic graph before it becomes selectable."""
     _validate_positive_int(version, "Registry version", maximum=1000000)
@@ -410,7 +414,14 @@ def build_magic_registry(
                 "Magic registry entries must be MagicDefinition values."
             )
         _validate_definition(
-            definition, handler_map, classes, resources, damages, effects, help_lookup
+            definition,
+            handler_map,
+            classes,
+            resources,
+            damages,
+            effects,
+            help_lookup,
+            require_srd_references,
         )
         if definition.key in indexed:
             raise MagicRegistryError(f"Duplicate magic key '{definition.key}'.")
@@ -438,6 +449,7 @@ def build_magic_registry(
         MappingProxyType(aliases),
         MappingProxyType(handler_map),
         fingerprint,
+        require_srd_references,
     )
 
 
@@ -533,6 +545,7 @@ def _validate_definition(
     damages: frozenset[str],
     effects: frozenset[str],
     help_keys: frozenset[str],
+    require_srd_references: bool,
 ) -> None:
     _validate_key(definition.key, "magic key")
     if (
@@ -635,8 +648,45 @@ def _validate_definition(
         raise MagicRegistryError(
             "A magic action references an unknown or duplicate effect."
         )
+    if definition.concentration and (
+        definition.duration is None or not definition.effect_keys
+    ):
+        raise MagicRegistryError(
+            "A concentration action needs a timed registered effect."
+        )
+    if definition.handler_key == "saving_throw" and (
+        bool(definition.damage) == bool(definition.effect_keys)
+    ):
+        raise MagicRegistryError(
+            "A saving-throw action needs exactly one supported consequence."
+        )
+    if (
+        definition.handler_key == "saving_throw"
+        and definition.damage is not None
+        and definition.targeting.mode != TargetingMode.HOSTILE
+    ):
+        raise MagicRegistryError(
+            "A damaging saving-throw action must use hostile targeting."
+        )
+    if (
+        definition.handler_key in {"effect", "saving_throw"}
+        and definition.effect_keys
+        and definition.save is not None
+        and definition.save.on_success != "negate"
+    ):
+        raise MagicRegistryError(
+            "A saving-throw effect currently supports only negated application."
+        )
     _validate_messages(definition.messages)
     _validate_help(definition.player_help, help_keys)
+    if require_srd_references and (
+        not isinstance(definition.srd_reference, str)
+        or not definition.srd_reference.startswith("SRD 5.2.1 ")
+        or len(definition.srd_reference) > MAX_SRD_REFERENCE
+    ):
+        raise MagicRegistryError(
+            "A released magic action needs an SRD 5.2.1 reference."
+        )
     supplied = {
         "damage" if definition.damage else "",
         "healing" if definition.healing else "",
@@ -950,7 +1000,7 @@ def _render_player_help(definition: MagicDefinition) -> str:
     return "\n\n".join(parts)
 
 
-# MAGIC-03 supplies class-complete content.  An empty registry is intentional:
-# it lets all current consumers fail closed rather than advertising placeholder
-# spells before their effects, resources, and orchestration exist.
-MAGIC_REGISTRY = build_magic_registry(())
+# SRD content is registered only after its class feature, resource, effect, and
+# casting adapters exist.  An empty registry fails closed rather than exposing
+# invented or mechanically incomplete actions.
+MAGIC_REGISTRY = build_magic_registry((), require_srd_references=True)
