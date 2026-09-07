@@ -21,6 +21,7 @@ from systems.magic_actions import (
     grant_action,
     grant_spellbook_entry,
     has_action_entitlement,
+    inspect_magic_ownership,
     mark_preparation_window,
     prepare_action,
     replace_learned_action,
@@ -171,4 +172,22 @@ class TestSpellOwnership(EvenniaTest):
                 "wizard.test_cantrip_3",
                 "wizard.test_cantrip_4",
             ],
+        )
+
+    def test_class_change_diagnostic_preserves_incompatible_magic_state(self):
+        """A reconciliation check reports, rather than erases, old selections."""
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            grant_action(self.char1, "wizard.test_cantrip_1", AccessMode.LEARNED)
+            before = self.char1.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE)
+            self.char1.db.char_class = "Fighter"
+
+            diagnostic = inspect_magic_ownership(self.char1)
+
+        self.assertFalse(diagnostic.compatible)
+        self.assertEqual(
+            diagnostic.issues,
+            ("class_or_level:learned:wizard.test_cantrip_1",),
+        )
+        self.assertEqual(
+            self.char1.attributes.get(MAGIC_ACTION_STATE_ATTRIBUTE), before
         )

@@ -74,6 +74,14 @@ class ConcentrationResult:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class MagicOwnershipDiagnostic:
+    """A non-mutating compatibility report for durable magic selections."""
+
+    compatible: bool
+    issues: tuple[str, ...]
+
+
 def grant_action(actor: Any, action_key: str, mode: str) -> None:
     """Grant a validated learned, prepared, or innate action to an actor.
 
@@ -170,6 +178,50 @@ def has_spellbook_entry(actor: Any, action_key: str) -> bool:
     if not isinstance(action_key, str):
         raise MagicActionError("Magic action key is invalid.")
     return action_key in _action_state(actor)[_SPELLBOOK_KEY]
+
+
+def inspect_magic_ownership(actor: Any) -> MagicOwnershipDiagnostic:
+    """Report class-change incompatibilities without rewriting player choices.
+
+    ADV reconciliation and staff tools use this before accepting a changed
+    class progression.  A registry change or class change must never silently
+    delete a durable selection; callers receive stable diagnostics and leave
+    all ownership records exactly as they were.
+    """
+    try:
+        state = _action_state(actor)
+    except MagicActionError:
+        return MagicOwnershipDiagnostic(False, ("magic_action_state_invalid",))
+    try:
+        access, level = _spell_access(actor)
+    except MagicActionError:
+        access, level = None, 0
+    issues: list[str] = []
+    registry = _registry()
+    for mode in (*_ENTITLEMENT_MODES, _SPELLBOOK_KEY):
+        for action_key in state[mode]:
+            try:
+                definition = registry.definition_for(action_key, include_disabled=True)
+            except MagicRegistryError:
+                issues.append(f"unknown:{mode}:{action_key}")
+                continue
+            if not definition.enabled:
+                issues.append(f"disabled:{mode}:{action_key}")
+            if not _has_class_access(actor, definition):
+                issues.append(f"class_or_level:{mode}:{action_key}")
+            if mode != _SPELLBOOK_KEY and mode not in definition.access_modes:
+                issues.append(f"mode:{mode}:{action_key}")
+            if mode == _SPELLBOOK_KEY and (
+                definition.kind != MagicKind.SPELL
+                or definition.spell_level == 0
+                or AccessMode.PREPARED not in definition.access_modes
+                or access is None
+                or level < 1
+                or not _spell_level_available(access, level, definition)
+                or access.spellbook_entries[level - 1] < 1
+            ):
+                issues.append(f"spellbook:{action_key}")
+    return MagicOwnershipDiagnostic(not issues, tuple(sorted(set(issues))))
 
 
 def mark_preparation_window(actor: Any, recovery_sequence: int) -> None:
