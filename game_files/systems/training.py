@@ -14,7 +14,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from systems.progression import CLASS_PROGRESSION, ChoiceSet, RegistryValidationError
+from systems.progression import (CLASS_PROGRESSION, ChoiceSet,
+                                 RegistryValidationError)
 
 CHOICE_STATE_ATTRIBUTE = "progression_choices"
 CHOICE_STATE_VERSION = 1
@@ -77,6 +78,11 @@ def record_chargen_choice(
     definition = _class_definition(class_key)
     choice_key = definition.skill_choice_key
     initialize_choice_entitlements(character, definition.key, 1)
+    # Chargen validation may deliberately leave a resumable character with no
+    # confirmed class skills yet.  Preserve the pending entitlement instead of
+    # treating an empty sequence as an invalid attempt to train.
+    if not options:
+        return
     _resolve_without_trainer(character, choice_key, tuple(options), origin="chargen")
 
 
@@ -254,7 +260,8 @@ def replace_training_option(
         replacement_selected = [option for option in selected if option != old_option]
         _validate_option(character, choice, new_option, replacement_selected)
         try:
-            from systems.magic_actions import MagicActionError, replace_learned_action
+            from systems.magic_actions import (MagicActionError,
+                                               replace_learned_action)
 
             replace_learned_action(character, old_option, new_option)
         except MagicActionError as err:
@@ -341,11 +348,8 @@ def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> Non
         character.db.skill_proficiencies = sorted(set(known + options))
         return
     try:
-        from systems.magic_actions import (
-            MagicActionError,
-            grant_action,
-            grant_spellbook_entry,
-        )
+        from systems.magic_actions import (MagicActionError, grant_action,
+                                           grant_spellbook_entry)
 
         if choice.option_adapter == "magic_spellbook":
             for option in options:
@@ -365,11 +369,9 @@ def _validate_unowned_magic_option(
 ) -> None:
     """Reject an already-owned magic option before consuming a choice."""
     try:
-        from systems.magic_actions import (
-            MagicActionError,
-            has_action_entitlement,
-            has_spellbook_entry,
-        )
+        from systems.magic_actions import (MagicActionError,
+                                           has_action_entitlement,
+                                           has_spellbook_entry)
 
         mode = (
             "spellbook"

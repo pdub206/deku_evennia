@@ -1,14 +1,14 @@
 """P-05 fail-closed class-kit release-manifest coverage."""
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic_release_manifest import (
-    MAGIC_03_RELEASE_MANIFEST,
-    MAGIC_RELEASE_MANIFEST_VERSION,
-    NORMAL_LEVEL_CAP,
-    ReleaseManifestError,
-    build_release_manifest,
-    class_level_coverage,
-)
+from systems.magic_release_manifest import (MAGIC_03_RELEASE_MANIFEST,
+                                            MAGIC_RELEASE_MANIFEST_VERSION,
+                                            NORMAL_LEVEL_CAP,
+                                            ReleaseManifestError,
+                                            build_release_manifest,
+                                            class_level_coverage,
+                                            is_level_published,
+                                            published_classes)
 from systems.progression import SELECTABLE_CLASS_NAMES
 
 
@@ -26,6 +26,8 @@ class TestMagicReleaseManifest(EvenniaTest):
         )
         with self.assertRaises(TypeError):
             MAGIC_03_RELEASE_MANIFEST.published_class_levels["Fighter"] = ()
+        self.assertEqual(published_classes(), ())
+        self.assertFalse(is_level_published("Fighter", 1))
 
     def test_matrix_covers_every_source_class_and_level(self):
         matrix = tuple(

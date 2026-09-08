@@ -3,14 +3,11 @@
 from dataclasses import replace
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.progression import (
-    CLASS_PROGRESSION,
-    MAX_CLASS_LEVEL,
-    SELECTABLE_CLASS_NAMES,
-    RegistryValidationError,
-    build_registry,
-)
-from systems.srd_class_features import SRD_CLASS_FEATURES, SRD_SUBCLASS_FEATURES
+from systems.progression import (CLASS_PROGRESSION, MAX_CLASS_LEVEL,
+                                 SELECTABLE_CLASS_NAMES,
+                                 RegistryValidationError, build_registry)
+from systems.srd_class_features import (SRD_CLASS_FEATURES,
+                                        SRD_SUBCLASS_FEATURES)
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
 
 
@@ -140,7 +137,14 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
-        self.assertEqual(CLASS_PROGRESSION.version, 9)
+        self.assertEqual(CLASS_PROGRESSION.version, 10)
+
+    def test_presence_and_implementation_are_distinct(self):
+        """Catalogue data never masquerades as an implemented class kit."""
+        self.assertTrue(CLASS_PROGRESSION.is_available("Fighter"))
+        blockers = CLASS_PROGRESSION.implementation_blockers("Fighter", 1)
+        self.assertIn("catalogued_feature:fighter.fighting_style", blockers)
+        self.assertFalse(CLASS_PROGRESSION.is_implemented("Fighter", 1))
 
     def test_cited_non_spell_resources_are_catalogued_without_a_generic_curve(self):
         """Each resource preserves its own source capacity and cadence."""

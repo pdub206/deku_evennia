@@ -3,7 +3,11 @@
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import (ADVANCEMENT_ATTRIBUTE, MAX_LEVEL,
                                  XP_THRESHOLDS, AdvancementError, award_xp,
-                                 earned_level, initialize_level_one)
+                                 earned_level, initialize_level_one,
+                                 progression_state)
+from systems.advancement_repair import (apply_progression_repair,
+                                        diagnose_progression,
+                                        plan_progression_repair, repair_audit)
 from systems.progression import CLASS_PROGRESSION
 
 
@@ -44,7 +48,7 @@ class TestAdvancement(EvenniaTest):
         self.assertEqual(self.char1.stats.hp_max, 52)
         self.assertEqual(self.char1.stats.hp_current, 45)
 
-    def test_level_one_records_the_registry_identity_without_copying_definitions(self):
+    def test_level_one_records_versioned_occurrence_provenance(self):
         """A later registry edit can be reconciled without rewriting the PC."""
         provenance = self.char1.db.class_progression
 
@@ -52,13 +56,36 @@ class TestAdvancement(EvenniaTest):
         self.assertEqual(provenance["registry_version"], CLASS_PROGRESSION.version)
         self.assertEqual(provenance["fingerprint"], CLASS_PROGRESSION.fingerprint)
         self.assertEqual(
-            provenance["grants"],
-            list(
-                CLASS_PROGRESSION.class_for("Fighter")
-                .grants_at(1)
-                .automatic_feature_keys
-            ),
+            [record["key"] for record in provenance["levels"][0]["records"]],
+            ["fighter.second_wind", "fighter.skills"],
         )
+
+    def test_registry_drift_quarantines_without_rewriting_provenance(self):
+        """A changed registry fingerprint blocks awards until an audit repair."""
+        provenance = dict(self.char1.db.class_progression)
+        provenance["fingerprint"] = "0" * 64
+        self.char1.db.class_progression = provenance
+
+        with self.assertRaises(AdvancementError):
+            award_xp(self.char1, 300, source_kind="quest", source_id="drift")
+
+        self.assertEqual(
+            self.char1.db.advancement_repair_required, "progression_version_drift"
+        )
+
+    def test_supported_legacy_record_has_a_dry_run_and_audited_migration(self):
+        """ADV-06's Phase-1 repair reconstructs provenance without XP replay."""
+        self.char1.attributes.remove("class_progression")
+        diagnosis = diagnose_progression(self.char1)
+        self.assertEqual(diagnosis.issues, ("missing_progression_provenance",))
+        plan = plan_progression_repair(self.char1)
+        self.assertEqual(plan.operations, ("migrate_progression_baseline",))
+
+        repaired = apply_progression_repair(self.char1, plan, reason="legacy import")
+
+        self.assertEqual(repaired.issues, ())
+        self.assertEqual(progression_state(self.char1)["class_key"], "Fighter")
+        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "applied")
 
     def test_duplicate_source_is_a_durable_noop(self):
         """A retry cannot pay an event a second time after reload-safe storage."""

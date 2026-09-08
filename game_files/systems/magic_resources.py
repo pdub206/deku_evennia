@@ -82,6 +82,26 @@ def resource_current(actor: Any, resource_key: str) -> int:
     return current
 
 
+def initialize_resource(actor: Any, resource_key: str) -> int:
+    """Record a newly granted resource's initial capacity exactly once.
+
+    ADV-01 calls this only for a durable new grant occurrence.  Repeating that
+    occurrence preserves the existing current value, so a registry replay or a
+    level-up cannot quietly restore an already-spent resource.
+    """
+    maximum = resource_maximum(actor, resource_key)
+    if resource_key == "hp":
+        return actor.stats.hp_current
+    state = _state(actor)
+    if resource_key not in state:
+        state[resource_key] = maximum
+        _write_state(actor, state)
+    elif state[resource_key] > maximum:
+        state[resource_key] = maximum
+        _write_state(actor, state)
+    return state[resource_key]
+
+
 def spend_resource(actor: Any, resource_key: str, amount: int) -> int:
     """Atomically spend a bounded amount and return the remaining resource."""
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:

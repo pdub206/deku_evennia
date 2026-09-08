@@ -16,12 +16,8 @@ from types import MappingProxyType
 from typing import Mapping
 
 from systems.magic import MAGIC_REGISTRY, MagicRegistry
-from systems.progression import (
-    CLASS_PROGRESSION,
-    MAX_CLASS_LEVEL,
-    ProgressionRegistry,
-    RegistryValidationError,
-)
+from systems.progression import (CLASS_PROGRESSION, MAX_CLASS_LEVEL,
+                                 ProgressionRegistry, RegistryValidationError)
 
 MAGIC_RELEASE_MANIFEST_VERSION = 1
 NORMAL_LEVEL_CAP = 20
@@ -62,6 +58,33 @@ class MagicReleaseManifest:
     published_class_levels: Mapping[str, tuple[int, ...]]
     srd_reference: str
     fingerprint: str
+
+
+def published_classes(
+    manifest: MagicReleaseManifest | None = None,
+) -> tuple[str, ...]:
+    """Return the sole source of player-published class identities.
+
+    An empty tuple is an intentional fail-closed development state, not an
+    invitation for chargen or advancement to fall back to a broader source
+    registry.
+    """
+    active = MAGIC_03_RELEASE_MANIFEST if manifest is None else manifest
+    return tuple(active.published_class_levels)
+
+
+def is_level_published(
+    class_key: object, level: object, *, manifest: MagicReleaseManifest | None = None
+) -> bool:
+    """Return whether one exact class-level coordinate has P-05 approval."""
+    if (
+        not isinstance(class_key, str)
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+    ):
+        return False
+    active = MAGIC_03_RELEASE_MANIFEST if manifest is None else manifest
+    return level in active.published_class_levels.get(class_key, ())
 
 
 def build_release_manifest(

@@ -20,6 +20,8 @@ MAX_LEDGER_ENTRIES = 128
 MAX_COMPACTED_SOURCES = 4096
 ADVANCEMENT_ATTRIBUTE = "advancement_ledger"
 ADVANCEMENT_VERSION = 1
+PROGRESSION_ATTRIBUTE = "class_progression"
+PROGRESSION_VERSION = 2
 
 # SRD 5.2.1, cumulative experience points for character levels 1--20.
 XP_THRESHOLDS = (
@@ -171,18 +173,11 @@ def initialize_level_one(character: Any, *, class_key: str, hp_base: int) -> Non
         character.db.xp = 0
         character.db.level = 1
         character.db.hp_base = max(1, hp_base)
-        character.db.class_progression = {
-            "class_key": definition.key,
-            "registry_version": CLASS_PROGRESSION.version,
-            "fingerprint": CLASS_PROGRESSION.fingerprint,
-            "grants": list(definition.grants_at(1).automatic_feature_keys),
-        }
-        # ADV-03 owns the durable record; ADV-01 only creates earned choice
-        # entitlements and deliberately never selects an option itself.
-        from systems.training import initialize_choice_entitlements
-
-        initialize_choice_entitlements(character, definition.key, 1)
-        _grant_automatic_actions(character, definition.grants_at(1))
+        _write_progression_state(
+            character,
+            _new_progression_state(definition.key, through_level=1),
+        )
+        _apply_level_grants(character, definition, 1)
         _write_ledger(character, _new_ledger())
 
 
@@ -199,17 +194,20 @@ def _apply_levels(
     constitution = character.stats.ability_modifier("Constitution")
     gain = max(1, definition.fixed_hp_gain + constitution)
     character.db.hp_base = character.stats.hp_base + gain * (new_level - old_level)
-    from systems.training import initialize_choice_entitlements
-
     pending: list[str] = []
     grants: list[str] = []
+    progression = _progression_state(character)
+    if progression["class_key"] != definition.key:
+        _mark_repair_required(character, "progression_class_mismatch")
+        raise AdvancementError("Character advancement requires staff repair.")
     for level in range(old_level + 1, new_level + 1):
         level_grants = definition.grants_at(level)
         choices = level_grants.choice_keys
-        initialize_choice_entitlements(character, definition.key, level)
-        _grant_automatic_actions(character, level_grants)
+        _append_level_provenance(progression, definition.key, level)
+        _apply_level_grants(character, definition, level)
         grants.extend(level_grants.automatic_feature_keys)
         pending.extend(choices)
+    _write_progression_state(character, progression)
     return (
         [
             *(f"hp_level_{level}" for level in range(old_level + 1, new_level + 1)),
@@ -217,6 +215,21 @@ def _apply_levels(
         ],
         tuple(pending),
     )
+
+
+def _apply_level_grants(character: Any, definition: Any, level: int) -> None:
+    """Apply one already-recorded level's released grants exactly once.
+
+    The durable progression record is appended before this function is called
+    by the level-up transaction.  The surrounding database transaction makes
+    a failed action/resource/choice adapter roll back both pieces together.
+    """
+    grants = definition.grants_at(level)
+    from systems.training import initialize_choice_entitlements
+
+    initialize_choice_entitlements(character, definition.key, level)
+    _grant_automatic_actions(character, grants)
+    _initialize_granted_resources(character, grants)
 
 
 def _grant_automatic_actions(character: Any, grants: Any) -> None:
@@ -230,6 +243,25 @@ def _grant_automatic_actions(character: Any, grants: Any) -> None:
             if feature.action_key:
                 grant_action(character, feature.action_key, AccessMode.INNATE)
     except (KeyError, MagicActionError) as err:
+        raise AdvancementError("Character advancement requires staff repair.") from err
+
+
+def _initialize_granted_resources(character: Any, grants: Any) -> None:
+    """Create an explicit initial current value for newly released resources.
+
+    A later maximum increase deliberately preserves the existing current
+    value.  This closes the old implicit-default behaviour where a missing
+    resource entry could look like an accidental refill after an upgrade.
+    """
+    if not grants.resource_keys:
+        return
+    try:
+        from systems.magic_resources import (MagicResourceError,
+                                             initialize_resource)
+
+        for resource_key in grants.resource_keys:
+            initialize_resource(character, resource_key)
+    except MagicResourceError as err:
         raise AdvancementError("Character advancement requires staff repair.") from err
 
 
@@ -431,6 +463,228 @@ def _result_from_payload(
         raw["capped"],
         applied,
         reason or raw["reason"],
+    )
+
+
+def progression_state(character: Any) -> Mapping[str, Any]:
+    """Return a detached, validated progression-provenance snapshot.
+
+    Read-only consumers, including ADV-06 diagnosis, use this instead of
+    reverse-engineering grants from a displayed level.  A legacy record is not
+    silently upgraded here: staff must make that migration explicit.
+    """
+    return _progression_state(character)
+
+
+def expected_progression_records(
+    class_key: str, level: int
+) -> tuple[dict[str, Any], ...]:
+    """Return the primitive occurrence records earned through ``level``.
+
+    These records are deliberately references to stable registry keys rather
+    than copies of rules prose or definitions.  They make registry drift and
+    replay visible without granting anything during a read operation.
+    """
+    try:
+        definition = CLASS_PROGRESSION.class_for(class_key)
+    except RegistryValidationError as err:
+        raise AdvancementError("A canonical class is required.") from err
+    if (
+        isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= MAX_LEVEL
+    ):
+        raise AdvancementError("Character level is invalid.")
+    return tuple(
+        record
+        for earned_level in range(1, level + 1)
+        for record in _level_provenance_records(definition.key, earned_level)
+    )
+
+
+def migrate_progression_baseline(character: Any) -> Mapping[str, Any]:
+    """Explicitly migrate one supported pre-provenance character baseline.
+
+    This is the narrow ADV-06 migration seam.  It reconstructs durable
+    occurrence provenance from canonical class/XP/level inputs but never
+    replays equipment, chargen menus, historical consumables, or unresolved
+    player selections.  Idempotent feature ownership is restored only for
+    released automatic actions; resource initialization is equally explicit.
+    """
+    with transaction.atomic():
+        _lock_character(character)
+        xp, level = _stored_xp_and_level(character)
+        if earned_level(xp) != level:
+            _mark_repair_required(character, "level_xp_mismatch")
+            raise AdvancementError("Character advancement requires staff repair.")
+        class_key = character.attributes.get("char_class")
+        try:
+            definition = CLASS_PROGRESSION.class_for(class_key)
+        except RegistryValidationError as err:
+            _mark_repair_required(character, "missing_or_unknown_class")
+            raise AdvancementError(
+                "Character advancement requires staff repair."
+            ) from err
+        raw = character.attributes.get(PROGRESSION_ATTRIBUTE)
+        if raw is not None and _valid_progression_state(raw):
+            if (
+                raw["registry_version"] == CLASS_PROGRESSION.version
+                and raw["fingerprint"] == CLASS_PROGRESSION.fingerprint
+                and raw["class_key"] == definition.key
+            ):
+                return _progression_state(character)
+        state = _new_progression_state(definition.key, through_level=level)
+        _write_progression_state(character, state)
+        for earned in range(1, level + 1):
+            grants = definition.grants_at(earned)
+            _grant_automatic_actions(character, grants)
+            _initialize_granted_resources(character, grants)
+        character.attributes.remove("advancement_repair_required")
+        return _progression_state(character)
+
+
+def _new_progression_state(class_key: str, *, through_level: int) -> dict[str, Any]:
+    """Create a full primitive provenance baseline for a known class level."""
+    return {
+        "version": PROGRESSION_VERSION,
+        "class_key": class_key,
+        "registry_version": CLASS_PROGRESSION.version,
+        "fingerprint": CLASS_PROGRESSION.fingerprint,
+        "levels": [
+            {
+                "level": level,
+                "records": _level_provenance_records(class_key, level),
+            }
+            for level in range(1, through_level + 1)
+        ],
+    }
+
+
+def _progression_state(character: Any) -> dict[str, Any]:
+    """Load provenance without accepting legacy or drifted state as current."""
+    raw = character.attributes.get(PROGRESSION_ATTRIBUTE)
+    if not _valid_progression_state(raw):
+        _mark_repair_required(character, "invalid_or_legacy_progression")
+        raise AdvancementError("Character advancement requires staff repair.")
+    state = {
+        "version": raw["version"],
+        "class_key": raw["class_key"],
+        "registry_version": raw["registry_version"],
+        "fingerprint": raw["fingerprint"],
+        "levels": [
+            {
+                "level": item["level"],
+                "records": [dict(record) for record in item["records"]],
+            }
+            for item in raw["levels"]
+        ],
+    }
+    if (
+        state["registry_version"] != CLASS_PROGRESSION.version
+        or state["fingerprint"] != CLASS_PROGRESSION.fingerprint
+    ):
+        _mark_repair_required(character, "progression_version_drift")
+        raise AdvancementError("Character advancement requires staff repair.")
+    expected = _new_progression_state(
+        state["class_key"], through_level=len(state["levels"])
+    )
+    if state["levels"] != expected["levels"]:
+        _mark_repair_required(character, "progression_provenance_mismatch")
+        raise AdvancementError("Character advancement requires staff repair.")
+    return state
+
+
+def _write_progression_state(character: Any, state: Mapping[str, Any]) -> None:
+    """Persist one validated provenance snapshot without mutable references."""
+    if not _valid_progression_state(state):
+        raise AdvancementError("Progression provenance cannot be persisted.")
+    character.attributes.add(PROGRESSION_ATTRIBUTE, dict(state))
+
+
+def _append_level_provenance(state: dict[str, Any], class_key: str, level: int) -> None:
+    """Append one exact level occurrence or reject an attempted replay."""
+    existing = next((item for item in state["levels"] if item["level"] == level), None)
+    expected = _level_provenance_records(class_key, level)
+    if existing is not None:
+        if existing["records"] != expected:
+            raise AdvancementError("Character advancement requires staff repair.")
+        return
+    if level != len(state["levels"]) + 1:
+        raise AdvancementError("Character advancement requires staff repair.")
+    state["levels"].append({"level": level, "records": expected})
+
+
+def _level_provenance_records(class_key: str, level: int) -> list[dict[str, Any]]:
+    """Build stable records for every released grant entitlement at one level."""
+    definition = CLASS_PROGRESSION.class_for(class_key)
+    grants = definition.grants_at(level)
+    records: list[dict[str, Any]] = []
+    for kind, keys in (
+        ("feature", grants.automatic_feature_keys),
+        ("resource", grants.resource_keys),
+        ("spell_access", grants.spell_access_keys),
+        ("choice", grants.choice_keys),
+    ):
+        for key in keys:
+            records.append(
+                {
+                    "id": f"{class_key.casefold()}:{level}:{kind}:{key}",
+                    "kind": kind,
+                    "key": key,
+                    "level": level,
+                    "registry_version": CLASS_PROGRESSION.version,
+                    "registry_fingerprint": CLASS_PROGRESSION.fingerprint,
+                }
+            )
+    return records
+
+
+def _valid_progression_state(raw: Any) -> bool:
+    """Validate bounded primitive provenance before any advancement mutation."""
+    if (
+        not isinstance(raw, Mapping)
+        or set(raw)
+        != {"version", "class_key", "registry_version", "fingerprint", "levels"}
+        or raw["version"] != PROGRESSION_VERSION
+        or not isinstance(raw["class_key"], str)
+        or isinstance(raw["registry_version"], bool)
+        or not isinstance(raw["registry_version"], int)
+        or not isinstance(raw["fingerprint"], str)
+        or len(raw["fingerprint"]) != 64
+        or not isinstance(raw["levels"], Sequence)
+        or isinstance(raw["levels"], (str, bytes))
+        or not 1 <= len(raw["levels"]) <= MAX_LEVEL
+    ):
+        return False
+    for expected_level, item in enumerate(raw["levels"], start=1):
+        if (
+            not isinstance(item, Mapping)
+            or set(item) != {"level", "records"}
+            or item["level"] != expected_level
+            or not isinstance(item["records"], Sequence)
+            or isinstance(item["records"], (str, bytes))
+            or any(
+                not _valid_provenance_record(record, expected_level, raw)
+                for record in item["records"]
+            )
+        ):
+            return False
+    return True
+
+
+def _valid_provenance_record(record: Any, level: int, state: Mapping[str, Any]) -> bool:
+    """Validate one self-contained primitive occurrence without live inference."""
+    return (
+        isinstance(record, Mapping)
+        and set(record)
+        == {"id", "kind", "key", "level", "registry_version", "registry_fingerprint"}
+        and isinstance(record["id"], str)
+        and isinstance(record["key"], str)
+        and record["kind"] in {"feature", "resource", "spell_access", "choice"}
+        and record["level"] == level
+        and isinstance(record["registry_version"], int)
+        and isinstance(record["registry_fingerprint"], str)
+        and len(record["registry_fingerprint"]) == 64
     )
 
 

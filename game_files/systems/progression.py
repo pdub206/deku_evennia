@@ -16,8 +16,8 @@ from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 MAX_CLASS_LEVEL = 20
-# Version 9 releases Fighter Second Wind and the Barbarian/Monk AC adapters.
-CLASS_REGISTRY_VERSION = 9
+# Version 10 adds durable occurrence provenance for released progression.
+CLASS_REGISTRY_VERSION = 10
 MAX_SRD_REFERENCE_LENGTH = 160
 SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
 SELECTABLE_CLASS_NAMES = (
@@ -184,8 +184,58 @@ class ProgressionRegistry:
             ) from err
 
     def is_available(self, key: object) -> bool:
-        """Return whether a class passed the complete registry validation."""
+        """Return whether a class is present in the validated source registry.
+
+        Presence is intentionally weaker than implementation and publication.
+        Consumers that need player availability must ask the release manifest;
+        this legacy lookup remains for authored-data and repair tooling.
+        """
         return isinstance(key, str) and key in self.definitions
+
+    def implementation_blockers(self, key: str, level: int) -> tuple[str, ...]:
+        """Return deterministic reasons a class level lacks real adapters.
+
+        This is the M3-F02 boundary between a name in the SRD catalogue and a
+        mechanically implemented progression coordinate.  It never claims
+        publication; P-05 combines this output with real action/help/effect
+        evidence before exposing a class to players.
+        """
+        definition = self.class_for(key)
+        if (
+            isinstance(level, bool)
+            or not isinstance(level, int)
+            or not 1 <= level <= MAX_CLASS_LEVEL
+        ):
+            raise RegistryValidationError("Class level must be 1 through 20.")
+        blockers: list[str] = []
+        for grants in definition.levels[:level]:
+            blockers.extend(
+                f"catalogued_feature:{feature_key}"
+                for feature_key in grants.catalogued_feature_keys
+            )
+            blockers.extend(
+                f"catalogued_subclass_choice:{feature_key}"
+                for feature_key in grants.catalogued_subclass_choice_keys
+            )
+            blockers.extend(
+                f"catalogued_subclass_feature:{feature_key}"
+                for feature_key in grants.catalogued_subclass_feature_keys
+            )
+            blockers.extend(
+                f"catalogued_resource:{resource_key}"
+                for resource_key in grants.resource_keys
+                if self.resources[resource_key].release_state != "released"
+            )
+            blockers.extend(
+                f"catalogued_choice:{choice_key}"
+                for choice_key in grants.choice_keys
+                if self.choices[choice_key].release_state != "released"
+            )
+        return tuple(dict.fromkeys(blockers))
+
+    def is_implemented(self, key: str, level: int) -> bool:
+        """Return whether this coordinate has no catalogue-only progression data."""
+        return not self.implementation_blockers(key, level)
 
     def chargen_summary(self, key: str) -> Mapping[str, Any]:
         """Project registry data into the legacy chargen presentation shape."""
@@ -653,16 +703,17 @@ def _one_or_many(values: tuple[str, ...]) -> str | list[str]:
     return values[0] if len(values) == 1 else list(values)
 
 
-def _catalogued_srd_features() -> tuple[
-    list[FeatureDefinition], Mapping[str, tuple[tuple[str, ...], ...]]
-]:
+def _catalogued_srd_features() -> (
+    tuple[list[FeatureDefinition], Mapping[str, tuple[tuple[str, ...], ...]]]
+):
     """Project cited SRD feature tables into stable, non-released registry keys.
 
     The source table deliberately remains separate from game behaviour. These
     entries establish the immutable identity and exact level at which a future
     adapter must promote a feature; they do not create a player entitlement.
     """
-    from systems.srd_class_features import SRD_CLASS_FEATURES, classify_srd_feature
+    from systems.srd_class_features import (SRD_CLASS_FEATURES,
+                                            classify_srd_feature)
 
     definitions: list[FeatureDefinition] = []
     keys_by_class: dict[str, tuple[tuple[str, ...], ...]] = {}
@@ -704,7 +755,8 @@ def _catalogued_srd_subclasses() -> tuple[
     The stored prerequisite means a future subclass resolver must select the
     named subclass before its feature adapter can grant anything.
     """
-    from systems.srd_class_features import SRD_SUBCLASS_FEATURES, classify_srd_feature
+    from systems.srd_class_features import (SRD_SUBCLASS_FEATURES,
+                                            classify_srd_feature)
 
     definitions: list[FeatureDefinition] = []
     records: dict[str, tuple[str, tuple[tuple[str, ...], ...]]] = {}
@@ -1079,15 +1131,17 @@ def _default_registry() -> ProgressionRegistry:
         ),
     }
     features = [
-        replace(
-            feature,
-            owner=released_feature_adapters[feature.key][0],
-            release_state="released",
-            release_adapter=released_feature_adapters[feature.key][1],
-            action_key=released_feature_adapters[feature.key][2],
+        (
+            replace(
+                feature,
+                owner=released_feature_adapters[feature.key][0],
+                release_state="released",
+                release_adapter=released_feature_adapters[feature.key][1],
+                action_key=released_feature_adapters[feature.key][2],
+            )
+            if feature.key in released_feature_adapters
+            else feature
         )
-        if feature.key in released_feature_adapters
-        else feature
         for feature in features
     ]
     features_by_key = {feature.key: feature for feature in features}
