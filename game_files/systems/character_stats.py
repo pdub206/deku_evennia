@@ -13,14 +13,9 @@ from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
 from systems.progression import CLASSES
-from world.chargen_data import (
-    ABILITY_NAMES,
-    ABILITY_SHORT,
-    CARRY_CAPACITY_MULTIPLIER,
-    SKILLS,
-    SPECIES,
-    ability_modifier,
-)
+from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT,
+                                CARRY_CAPACITY_MULTIPLIER, SKILLS, SPECIES,
+                                ability_modifier)
 
 NORMAL_SPEED = 30
 REACTION_DELAY_STEP = 0.02
@@ -227,7 +222,8 @@ class CharacterStats:
         current = self.hp_current
         # COMBAT-09 observes the canonical HP write rather than duplicating
         # damage/healing paths.  The lazy import keeps stats usable at boot.
-        from systems.combat_controls import reconcile_wimpy, refresh_combat_prompt
+        from systems.combat_controls import (reconcile_wimpy,
+                                             refresh_combat_prompt)
 
         # A zero-HP injury transition is written by ``apply_damage`` after this
         # resource write; defer its policy check so a newly dying/dead character
@@ -295,15 +291,24 @@ class CharacterStats:
         return 10 + dexterity
 
     def _has_released_feature(self, feature_key: str) -> bool:
-        """Return whether current class progression grants one released feature."""
-        class_key = self._attribute("char_class")
-        try:
-            from systems.progression import CLASS_PROGRESSION
+        """Return whether durable progression provenance earned one feature.
 
-            grants = CLASS_PROGRESSION.class_for(class_key).levels[: self.level]
-        except (KeyError, ValueError):
+        This intentionally does not infer ownership from the current registry
+        and displayed level.  A legacy or version-drifted character must pass
+        the explicit ADV-06 repair path before a released passive feature can
+        alter live statistics.
+        """
+        try:
+            from systems.advancement import AdvancementError, progression_state
+
+            state = progression_state(self.owner)
+        except AdvancementError:
             return False
-        return any(feature_key in grant.automatic_feature_keys for grant in grants)
+        return any(
+            record["kind"] == "feature" and record["key"] == feature_key
+            for level in state["levels"]
+            for record in level["records"]
+        )
 
     @property
     def reaction_modifier(self) -> int:

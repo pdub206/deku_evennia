@@ -5,6 +5,8 @@ from unittest.mock import patch
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import initialize_level_one
+from systems.advancement_repair import (apply_progression_repair,
+                                        plan_progression_repair)
 from systems.equipment import HIT_LOCATIONS
 
 
@@ -192,6 +194,19 @@ class TestCharacterStats(EvenniaTest):
         self.assertEqual(self.char1.stats.armor_class, 14)
         self.assertIsNotNone(shield)
         self.assertIsNotNone(armor)
+
+    def test_unarmored_defense_requires_durable_feature_provenance(self):
+        """A legacy class/level alone cannot infer a released passive feature."""
+        initialize_level_one(self.char1, class_key="Barbarian", hp_base=12)
+        self.char1.stats.set_ability_score("Dexterity", 14)
+        self.char1.stats.set_ability_score("Constitution", 16)
+        self.char1.attributes.remove("class_progression")
+
+        self.assertEqual(self.char1.stats.armor_class, 12)
+        apply_progression_repair(
+            self.char1, plan_progression_repair(self.char1), reason="legacy import"
+        )
+        self.assertEqual(self.char1.stats.armor_class, 15)
 
     def test_monk_unarmored_defense_excludes_armor_and_shields(self):
         """The released Monk feature uses Wisdom only while wholly unarmored."""

@@ -118,6 +118,9 @@ def _validate_record(record: CensusRecord) -> None:
             "subclass_feature",
             "resource",
             "spell_access",
+            "feat",
+            "creature_reference",
+            "equipment_reference",
             "background",
             "species",
         }
@@ -316,7 +319,105 @@ def _default_records() -> tuple[CensusRecord, ...]:
                 "catalogued",
             )
         )
+    records.extend(_initial_feat_records())
+    records.extend(_initial_equipment_records())
     return tuple(records)
+
+
+def _initial_feat_records() -> tuple[CensusRecord, ...]:
+    """Seed cited feat rows already required by current class/origin tables.
+
+    The list is deliberately additive. P04-A01 remains open until every SRD
+    feat and boon has a corresponding occurrence record.
+    """
+    entries = (
+        ("alert", "Alert", "SRD 5.2.1 p.87: Alert"),
+        ("magic_initiate", "Magic Initiate", "SRD 5.2.1 p.87: Magic Initiate"),
+        ("savage_attacker", "Savage Attacker", "SRD 5.2.1 p.87: Savage Attacker"),
+        ("skilled", "Skilled", "SRD 5.2.1 p.87: Skilled"),
+        ("ability_score_improvement", "Ability Score Improvement", "SRD 5.2.1 p.87: Ability Score Improvement"),
+        ("grappler", "Grappler", "SRD 5.2.1 p.87: Grappler"),
+        ("archery", "Archery", "SRD 5.2.1 p.87: Archery"),
+        ("defense", "Defense", "SRD 5.2.1 p.88: Defense"),
+        ("great_weapon_fighting", "Great Weapon Fighting", "SRD 5.2.1 p.88: Great Weapon Fighting"),
+        ("two_weapon_fighting", "Two-Weapon Fighting", "SRD 5.2.1 p.88: Two-Weapon Fighting"),
+        ("boon_of_combat_prowess", "Boon of Combat Prowess", "SRD 5.2.1 p.88: Boon of Combat Prowess"),
+        ("boon_of_dimensional_travel", "Boon of Dimensional Travel", "SRD 5.2.1 p.88: Boon of Dimensional Travel"),
+        ("boon_of_fate", "Boon of Fate", "SRD 5.2.1 p.88: Boon of Fate"),
+        ("boon_of_irresistible_offense", "Boon of Irresistible Offense", "SRD 5.2.1 p.88: Boon of Irresistible Offense"),
+        ("boon_of_spell_recall", "Boon of Spell Recall", "SRD 5.2.1 p.88: Boon of Spell Recall"),
+        ("boon_of_the_night_spirit", "Boon of the Night Spirit", "SRD 5.2.1 p.88: Boon of the Night Spirit"),
+        ("boon_of_truesight", "Boon of Truesight", "SRD 5.2.1 p.88: Boon of Truesight"),
+    )
+    return tuple(
+        CensusRecord(
+            f"feat:{key}",
+            "feat",
+            name,
+            None,
+            None,
+            reference,
+            "P04-A04",
+            "advancement.choice",
+            "catalogued",
+        )
+        for key, name, reference in entries
+    )
+
+
+def _initial_equipment_records() -> tuple[CensusRecord, ...]:
+    """Catalogue the cited SRD weapon and armor table references.
+
+    These records intentionally describe required equipment references rather
+    than claiming that every weapon property or armor interaction is released.
+    P04-A05 owns their mechanics and promotion.
+    """
+    weapons = (
+        "Club", "Dagger", "Greatclub", "Handaxe", "Javelin", "Light Hammer",
+        "Mace", "Quarterstaff", "Sickle", "Spear", "Dart", "Light Crossbow",
+        "Shortbow", "Sling", "Battleaxe", "Flail", "Glaive", "Greataxe",
+        "Greatsword", "Halberd", "Lance", "Longsword", "Maul", "Morningstar",
+        "Pike", "Rapier", "Scimitar", "Shortsword", "Trident", "Warhammer",
+        "War Pick", "Whip", "Blowgun", "Hand Crossbow", "Heavy Crossbow",
+        "Longbow", "Musket", "Pistol",
+    )
+    armor = (
+        "Padded Armor", "Leather Armor", "Studded Leather Armor", "Hide Armor",
+        "Chain Shirt", "Scale Mail", "Breastplate", "Half Plate Armor",
+        "Ring Mail", "Chain Mail", "Splint Armor", "Plate Armor", "Shield",
+    )
+    return tuple(
+        CensusRecord(
+            f"equipment:weapon:{_slug(name)}",
+            "equipment_reference",
+            name,
+            None,
+            None,
+            "SRD 5.2.1 p.90: Weapons table",
+            "P04-A05",
+            "equipment.weapon",
+            "catalogued",
+        )
+        for name in weapons
+    ) + tuple(
+        CensusRecord(
+            f"equipment:armor:{_slug(name)}",
+            "equipment_reference",
+            name,
+            None,
+            None,
+            "SRD 5.2.1 p.91: Armor table",
+            "P04-A05",
+            "equipment.armor",
+            "catalogued",
+        )
+        for name in armor
+    )
+
+
+def _slug(value: str) -> str:
+    """Return a deterministic non-executable component of a census key."""
+    return value.casefold().replace(" ", "_")
 
 
 def _occurrence_key(feature_key: str, level: int) -> str:

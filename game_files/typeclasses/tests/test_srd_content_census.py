@@ -14,10 +14,13 @@ class TestSRDContentCensus(EvenniaTest):
         report = census_report()
 
         self.assertEqual(SRD_CONTENT_CENSUS.version, 1)
-        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 370)
+        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 438)
         self.assertEqual(len(report["released"]), 3)
         self.assertIn("feature:fighter.second_wind:level:1", report["released"])
         self.assertIn("feature:barbarian.rage:level:1", report["catalogued"])
+        self.assertIn("feat:magic_initiate", report["catalogued"])
+        self.assertIn("equipment:weapon:longbow", report["catalogued"])
+        self.assertIn("equipment:armor:plate_armor", report["catalogued"])
 
     def test_duplicate_or_unowned_record_fails_closed(self):
         first = SRD_CONTENT_CENSUS.records[0]
