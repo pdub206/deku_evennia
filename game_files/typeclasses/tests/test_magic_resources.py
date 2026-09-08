@@ -1,5 +1,8 @@
 """SRD spell-slot and Pact Magic resource coverage."""
 
+from dataclasses import replace
+from unittest.mock import patch
+
 from evennia.utils.test_resources import EvenniaTest
 from systems.magic_resources import (
     MagicResourceError,
@@ -10,6 +13,23 @@ from systems.magic_resources import (
     spell_slot_options,
     spend_resource,
 )
+from systems.progression import CLASS_PROGRESSION, build_registry
+from systems.srd_class_resources import SRD_CLASS_RESOURCES
+
+
+def _registry_with_released_resource(key: str):
+    """Promote one catalogue record solely for resource-service coverage."""
+    original = CLASS_PROGRESSION.resources[key]
+    released = replace(original, owner="resources", release_state="released")
+    resources = list(CLASS_PROGRESSION.resources.values())
+    resources[resources.index(original)] = released
+    return build_registry(
+        CLASS_PROGRESSION.definitions.values(),
+        CLASS_PROGRESSION.features.values(),
+        resources,
+        CLASS_PROGRESSION.spell_access.values(),
+        CLASS_PROGRESSION.choices.values(),
+    )
 
 
 class TestMagicResources(EvenniaTest):
@@ -30,6 +50,64 @@ class TestMagicResources(EvenniaTest):
             resource_view(self.char1)[-2:],
             (("wizard.spell_slot.1", 4, 4), ("wizard.spell_slot.2", 2, 2)),
         )
+
+    def test_catalogued_class_resource_cannot_be_spent_or_recovered_early(self):
+        """Source records never masquerade as released class-feature mechanics."""
+        with self.assertRaises(MagicResourceError):
+            resource_maximum(self.char1, "wizard.arcane_recovery")
+        self.assertNotIn(
+            "wizard.arcane_recovery",
+            tuple(key for key, *_ in resource_view(self.char1)),
+        )
+
+    def test_each_persistent_source_resource_has_atomic_capacity_and_long_recovery(
+        self,
+    ):
+        """Promotion exercises the declared pool without publishing its feature."""
+        for key, source in SRD_CLASS_RESOURCES.items():
+            if source.recovery_profile == "per_eligible_attack":
+                continue
+            registry = _registry_with_released_resource(key)
+            self.char1.db.char_class = key.split(".", maxsplit=1)[0].title()
+            self.char1.db.level = 20
+            self.char1.attributes.remove("magic_resources")
+            with patch("systems.magic_resources.CLASS_PROGRESSION", registry):
+                maximum = resource_maximum(self.char1, key)
+                self.assertGreater(maximum, 0)
+                self.assertEqual(spend_resource(self.char1, key, 1), maximum - 1)
+                self.assertIn((key, maximum), recover_profile(self.char1, "long_rest"))
+                self.assertEqual(resource_current(self.char1, key), maximum)
+
+    def test_source_short_rest_profiles_preserve_partial_and_level_gated_recovery(self):
+        """Rage and Bardic Inspiration retain their distinct short-rest rules."""
+        self.char1.db.char_class = "Barbarian"
+        self.char1.db.level = 1
+        with patch(
+            "systems.magic_resources.CLASS_PROGRESSION",
+            _registry_with_released_resource("barbarian.rage"),
+        ):
+            spend_resource(self.char1, "barbarian.rage", 2)
+            self.assertEqual(
+                recover_profile(self.char1, "short_rest"), (("barbarian.rage", 1),)
+            )
+            self.assertEqual(resource_current(self.char1, "barbarian.rage"), 1)
+
+        self.char1.attributes.remove("magic_resources")
+        self.char1.db.char_class = "Bard"
+        self.char1.db.charisma = 14
+        with patch(
+            "systems.magic_resources.CLASS_PROGRESSION",
+            _registry_with_released_resource("bard.bardic_inspiration"),
+        ):
+            self.char1.db.level = 4
+            maximum = resource_maximum(self.char1, "bard.bardic_inspiration")
+            spend_resource(self.char1, "bard.bardic_inspiration", 1)
+            self.assertEqual(recover_profile(self.char1, "short_rest"), ())
+            self.char1.db.level = 5
+            self.assertEqual(
+                recover_profile(self.char1, "short_rest"),
+                (("bard.bardic_inspiration", maximum),),
+            )
 
     def test_completed_long_rest_profile_restores_ordinary_slots(self):
         """Only an owning rest adapter may restore the declared slot profile."""

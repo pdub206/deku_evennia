@@ -16,8 +16,8 @@ from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 MAX_CLASS_LEVEL = 20
-# Version 6 records each catalogue feature's reviewed shape and release adapter.
-CLASS_REGISTRY_VERSION = 6
+# Version 7 adds cited catalogue-only non-spell resource records.
+CLASS_REGISTRY_VERSION = 7
 MAX_SRD_REFERENCE_LENGTH = 160
 SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
 SELECTABLE_CLASS_NAMES = (
@@ -65,12 +65,17 @@ class FeatureDefinition:
 
 @dataclass(frozen=True)
 class ResourceProgression:
-    """A resource maximum and recovery policy, expressed only as primitives."""
+    """A cited non-spell resource record that remains unavailable until released."""
 
     key: str
     owner: str
     maxima: tuple[int, ...]
     recovery_profile: str
+    display_name: str
+    srd_reference: str
+    spend_profile: str
+    capacity_expression: str = ""
+    release_state: str = "catalogued"
 
 
 @dataclass(frozen=True)
@@ -324,15 +329,70 @@ def build_registry(
             )
     _validate_feature_cycles(features_by_key)
     for resource in resources_by_key.values():
-        if resource.owner not in owners or resource.recovery_profile not in {
-            "short_rest",
-            "long_rest",
-            "none",
+        if resource.owner not in owners:
+            raise RegistryValidationError(
+                f"Resource '{resource.key}' has an unavailable owner."
+            )
+        _validate_srd_reference(resource.srd_reference, f"Resource '{resource.key}'")
+        if resource.release_state not in {"catalogued", "released"}:
+            raise RegistryValidationError(
+                f"Resource '{resource.key}' has an invalid release state."
+            )
+        if resource.release_state == "catalogued" and resource.owner != "catalogue":
+            raise RegistryValidationError(
+                f"Catalogued resource '{resource.key}' cannot claim an action adapter."
+            )
+        if resource.release_state == "released" and resource.owner == "catalogue":
+            raise RegistryValidationError(
+                f"Released resource '{resource.key}' needs an owning adapter."
+            )
+        if resource.recovery_profile not in {
+            "short_rest_one_long_rest_full",
+            "long_rest_full_until_level_4; short_or_long_rest_full_from_level_5",
+            "short_or_long_rest_full",
+            "long_rest_full",
+            "per_eligible_attack",
         }:
             raise RegistryValidationError(
-                f"Resource '{resource.key}' has an unavailable owner or recovery profile."
+                f"Resource '{resource.key}' has an unavailable recovery profile."
             )
-        _validate_non_decreasing(resource.maxima, f"Resource '{resource.key}' maxima")
+        if resource.spend_profile not in {
+            "one_use_per_rage",
+            "one_die_per_inspiration",
+            "one_use_per_channel_divinity_effect",
+            "one_use_per_transformation",
+            "one_use_per_second_wind_or_tactical_mind",
+            "feature_declared_focus_cost",
+            "one_or_more_points_per_healing_or_cure",
+            "one_free_hunters_mark_cast",
+            "forfeit_sneak_attack_dice_on_hit",
+            "feature_declared_sorcery_point_cost",
+            "one_short_rest_use_to_recover_slots_under_level_6_totaling_half_wizard_level_rounded_up",
+        }:
+            raise RegistryValidationError(
+                f"Resource '{resource.key}' has an unavailable spend profile."
+            )
+        if resource.maxima:
+            _validate_non_decreasing(
+                resource.maxima, f"Resource '{resource.key}' maxima"
+            )
+            if resource.capacity_expression:
+                raise RegistryValidationError(
+                    f"Resource '{resource.key}' cannot have two capacity definitions."
+                )
+        elif resource.capacity_expression not in {
+            "max(1, Charisma modifier)",
+        }:
+            raise RegistryValidationError(
+                f"Resource '{resource.key}' needs a complete capacity definition."
+            )
+        if (
+            not isinstance(resource.display_name, str)
+            or not resource.display_name.strip()
+        ):
+            raise RegistryValidationError(
+                f"Resource '{resource.key}' needs a player-safe display name."
+            )
     for access in spells_by_key.values():
         _validate_spell_access(access)
     for choice in choices_by_key.values():
@@ -460,6 +520,10 @@ def _validate_class(
                 raise RegistryValidationError(
                     f"Class '{definition.key}' references unknown resource '{key}'."
                 )
+            if resources[key].release_state != "released":
+                raise RegistryValidationError(
+                    f"Class '{definition.key}' cannot grant catalogued resource '{key}'."
+                )
         for key in grants.spell_access_keys:
             if key not in spells:
                 raise RegistryValidationError(
@@ -571,9 +635,9 @@ def _one_or_many(values: tuple[str, ...]) -> str | list[str]:
     return values[0] if len(values) == 1 else list(values)
 
 
-def _catalogued_srd_features() -> (
-    tuple[list[FeatureDefinition], Mapping[str, tuple[tuple[str, ...], ...]]]
-):
+def _catalogued_srd_features() -> tuple[
+    list[FeatureDefinition], Mapping[str, tuple[tuple[str, ...], ...]]
+]:
     """Project cited SRD feature tables into stable, non-released registry keys.
 
     The source table deliberately remains separate from game behaviour. These
@@ -747,22 +811,9 @@ _HALF_SLOT_COLUMNS = _slot_columns(_HALF_SPELL_SLOTS, slot_levels=5)
 def _default_registry() -> ProgressionRegistry:
     # Kept private in chargen_data so presentation has no competing public
     # class source.  The registry is the sole public authoritative interface.
+    from systems.srd_class_resources import SRD_CLASS_RESOURCES
     from world.chargen_data import _CLASS_SUMMARIES
 
-    resources_by_class = {
-        "Barbarian": ("rage", "long_rest"),
-        "Bard": ("bardic_inspiration", "long_rest"),
-        "Cleric": ("channel_divinity", "short_rest"),
-        "Druid": ("wild_shape", "short_rest"),
-        "Fighter": ("second_wind", "short_rest"),
-        "Monk": ("focus", "short_rest"),
-        "Paladin": ("lay_on_hands", "long_rest"),
-        "Ranger": (),
-        "Rogue": ("cunning_strike", "none"),
-        "Sorcerer": ("sorcery_points", "long_rest"),
-        "Warlock": ("pact_magic", "short_rest"),
-        "Wizard": ("arcane_recovery", "long_rest"),
-    }
     class_references = {
         "Barbarian": "SRD 5.2.1 p.28: Barbarian Features table",
         "Bard": "SRD 5.2.1 p.31: Bard Features table",
@@ -992,7 +1043,19 @@ def _default_registry() -> ProgressionRegistry:
     features, catalogued_feature_keys = _catalogued_srd_features()
     subclass_features, catalogued_subclasses = _catalogued_srd_subclasses()
     features.extend(subclass_features)
-    resources: list[ResourceProgression] = []
+    resources = [
+        ResourceProgression(
+            resource.key,
+            "catalogue",
+            resource.maxima,
+            resource.recovery_profile,
+            resource.display_name,
+            resource.srd_reference,
+            resource.spend_profile,
+            resource.capacity_expression,
+        )
+        for resource in SRD_CLASS_RESOURCES.values()
+    ]
     spell_access: list[SpellAccess] = []
     choices: list[ChoiceSet] = []
     definitions: list[ClassDefinition] = []
@@ -1011,16 +1074,6 @@ def _default_registry() -> ProgressionRegistry:
                 srd_reference=class_references[name],
             )
         )
-        resource_keys: tuple[str, ...] = ()
-        if resources_by_class[name]:
-            resource_name, recovery = resources_by_class[name]
-            resource_key = f"{key}.{resource_name}"
-            # A data-only capacity curve; the owning system decides how a use is spent.
-            maxima = tuple(1 + (level - 1) // 4 for level in range(1, 21))
-            resources.append(
-                ResourceProgression(resource_key, "resources", maxima, recovery)
-            )
-            resource_keys = (resource_key,)
         spell_keys: tuple[str, ...] = ()
         if name in spell_access_data:
             access_data = spell_access_data[name]
@@ -1052,7 +1105,7 @@ def _default_registry() -> ProgressionRegistry:
             LevelGrants(
                 level,
                 (),
-                resource_keys,
+                (),
                 spell_keys,
                 (skill_choice_key,) if level == 1 else (),
                 catalogued_feature_keys[name][level - 1],

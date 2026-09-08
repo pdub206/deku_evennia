@@ -53,9 +53,19 @@ def resource_maximum(actor: Any, resource_key: str) -> int:
             raise MagicResourceError("Magic resource is unavailable.")
         return slot_maximum
     resource = CLASS_PROGRESSION.resources.get(resource_key)
-    if resource is None or not resource_key.startswith(f"{class_key.casefold()}."):
+    if (
+        resource is None
+        or resource.release_state != "released"
+        or not resource_key.startswith(f"{class_key.casefold()}.")
+    ):
         raise MagicResourceError("Magic resource is unavailable.")
-    return resource.maxima[level - 1]
+    if resource.maxima:
+        return resource.maxima[level - 1]
+    if resource.capacity_expression == "max(1, Charisma modifier)":
+        return max(1, actor.stats.ability_modifier("Charisma"))
+    if resource.capacity_expression == "max(1, Wisdom modifier)":
+        return max(1, actor.stats.ability_modifier("Wisdom"))
+    raise MagicResourceError("Magic resource is unavailable.")
 
 
 def resource_current(actor: Any, resource_key: str) -> int:
@@ -109,7 +119,11 @@ def resource_view(actor: Any) -> tuple[tuple[str, int, int], ...]:
         return ()
     prefix = f"{class_key.casefold()}."
     keys = (
-        *(key for key in CLASS_PROGRESSION.resources if key.startswith(prefix)),
+        *(
+            resource.key
+            for resource in CLASS_PROGRESSION.resources.values()
+            if resource.key.startswith(prefix) and resource.release_state == "released"
+        ),
         *_slot_resource_keys(class_key, actor.attributes.get("level", 1)),
     )
     return tuple(
@@ -182,15 +196,13 @@ def recover_profile(actor: Any, profile: str) -> tuple[tuple[str, int], ...]:
         or not 1 <= level <= 20
     ):
         raise MagicResourceError("Magic resource is unavailable.")
-    allowed_profiles = {profile}
-    if profile == "long_rest":
-        allowed_profiles.add("short_rest")
     prefix = f"{class_key.casefold()}."
     keys = [
         resource.key
         for resource in CLASS_PROGRESSION.resources.values()
         if resource.key.startswith(prefix)
-        and resource.recovery_profile in allowed_profiles
+        and resource.release_state == "released"
+        and _recovers_on_rest(resource, profile, level)
     ]
     if profile == "long_rest":
         access = _spell_access(class_key)
@@ -200,7 +212,7 @@ def recover_profile(actor: Any, profile: str) -> tuple[tuple[str, int], ...]:
                 for spell_level, maxima in enumerate(access.spell_slots, start=1)
                 if maxima[level - 1] > 0
             )
-    if profile in allowed_profiles:
+    if profile in {"short_rest", "long_rest"}:
         pact_key = f"{class_key.casefold()}.{_PACT_SLOT_RESOURCE}"
         if _slot_maximum(class_key, level, pact_key):
             keys.append(pact_key)
@@ -208,8 +220,14 @@ def recover_profile(actor: Any, profile: str) -> tuple[tuple[str, int], ...]:
     for key in keys:
         maximum = resource_maximum(actor, key)
         current = resource_current(actor, key)
-        if current < maximum:
-            restored.append((key, restore_resource(actor, key, maximum - current)))
+        resource = CLASS_PROGRESSION.resources.get(key)
+        amount = (
+            _recovery_amount(resource, profile, level, maximum, current)
+            if resource is not None
+            else maximum - current
+        )
+        if amount:
+            restored.append((key, restore_resource(actor, key, amount)))
     return tuple(restored)
 
 
@@ -309,10 +327,47 @@ def _slot_resource_keys(class_key: str, level: Any) -> tuple[str, ...]:
 
 def _known_resource_key(key: str) -> bool:
     """Accept only declared class resources or structurally valid slot keys."""
-    if key in CLASS_PROGRESSION.resources:
+    resource = CLASS_PROGRESSION.resources.get(key)
+    if resource is not None and resource.release_state == "released":
         return True
     for class_key in CLASS_PROGRESSION.definitions:
         for level in range(1, 21):
             if _slot_maximum(class_key, level, key) is not None:
                 return True
     return False
+
+
+def _recovers_on_rest(resource: Any, profile: str, level: int) -> bool:
+    """Return whether one released class resource recovers on this rest."""
+    if profile == "long_rest":
+        return resource.recovery_profile != "per_eligible_attack"
+    if resource.recovery_profile in {
+        "short_rest_one_long_rest_full",
+        "short_or_long_rest_full",
+    }:
+        return True
+    return (
+        resource.recovery_profile
+        == "long_rest_full_until_level_4; short_or_long_rest_full_from_level_5"
+        and level >= 5
+    )
+
+
+def _recovery_amount(
+    resource: Any, profile: str, level: int, maximum: int, current: int
+) -> int:
+    """Calculate a declared rest recovery without bypassing atomic restoration."""
+    if current >= maximum:
+        return 0
+    if profile == "short_rest" and resource.recovery_profile == (
+        "short_rest_one_long_rest_full"
+    ):
+        return 1
+    if (
+        profile == "short_rest"
+        and resource.recovery_profile
+        == "long_rest_full_until_level_4; short_or_long_rest_full_from_level_5"
+        and level < 5
+    ):
+        return 0
+    return maximum - current

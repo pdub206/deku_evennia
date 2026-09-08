@@ -5,8 +5,7 @@ from unittest.mock import patch
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import initialize_level_one
 from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
-from systems.injury import apply_damage
-from systems.injury import InjuryState
+from systems.injury import InjuryState, apply_damage
 from systems.magic import (
     AccessMode,
     ClassAccess,
@@ -62,7 +61,7 @@ def _sustained_action(key: str, name: str, effect_key: str) -> MagicDefinition:
         handler_key="effect",
         targeting=Targeting(TargetingMode.SELF, include_caster=True),
         range=RangeCategory.SELF,
-        cost=ResourceCost("wizard.arcane_recovery", 1),
+        cost=ResourceCost("wizard.spell_slot.1", 1),
         duration=3,
         concentration=True,
         maintenance="concentration",
@@ -82,7 +81,7 @@ def _registry():
     return build_magic_registry(
         (first, second),
         class_keys=("Wizard",),
-        resource_keys=("wizard.arcane_recovery",),
+        resource_keys=("wizard.spell_slot.1",),
         effect_keys=(_FIRST_EFFECT.key, _SECOND_EFFECT.key),
         help_keys=("first sustain", "second sustain"),
     )
@@ -122,7 +121,7 @@ class TestConcentration(EvenniaTest):
                     "wizard.test_sustain_first",
                     "wizard.test_sustain_second",
                 )
-            restore_resource(self.char1, "wizard.arcane_recovery", 1)
+            restore_resource(self.char1, "wizard.spell_slot.1", 1)
             self._cast("wizard.test_sustain_second")
 
         self.assertIsNone(self.char1.effects.get(first.instance_id))
@@ -159,7 +158,7 @@ class TestConcentration(EvenniaTest):
             self.char1.effects.remove(effect.instance_id)
             self.assertIsNone(self.char1.attributes.get(CONCENTRATION_ATTRIBUTE))
 
-            restore_resource(self.char1, "wizard.arcane_recovery", 1)
+            restore_resource(self.char1, "wizard.spell_slot.1", 1)
             self._cast("wizard.test_sustain_second")
 
         with patch("systems.injury._is_staff_immune", return_value=False):

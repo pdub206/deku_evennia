@@ -11,6 +11,7 @@ from systems.progression import (
     build_registry,
 )
 from systems.srd_class_features import SRD_CLASS_FEATURES, SRD_SUBCLASS_FEATURES
+from systems.srd_class_resources import SRD_CLASS_RESOURCES
 
 
 class TestClassProgressionRegistry(EvenniaTest):
@@ -122,7 +123,32 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
-        self.assertEqual(CLASS_PROGRESSION.version, 6)
+        self.assertEqual(CLASS_PROGRESSION.version, 7)
+
+    def test_cited_non_spell_resources_are_catalogued_without_a_generic_curve(self):
+        """Each resource preserves its own source capacity and cadence."""
+        self.assertEqual(tuple(CLASS_PROGRESSION.resources), tuple(SRD_CLASS_RESOURCES))
+        for key, source in SRD_CLASS_RESOURCES.items():
+            resource = CLASS_PROGRESSION.resources[key]
+            self.assertEqual(resource.display_name, source.display_name)
+            self.assertEqual(resource.maxima, source.maxima)
+            self.assertEqual(resource.capacity_expression, source.capacity_expression)
+            self.assertEqual(resource.spend_profile, source.spend_profile)
+            self.assertEqual(resource.recovery_profile, source.recovery_profile)
+            self.assertEqual(resource.srd_reference, source.srd_reference)
+            self.assertEqual(resource.release_state, "catalogued")
+            self.assertEqual(resource.owner, "catalogue")
+        self.assertEqual(
+            CLASS_PROGRESSION.resources["barbarian.rage"].maxima,
+            (2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6),
+        )
+        self.assertEqual(
+            CLASS_PROGRESSION.resources["paladin.lay_on_hands"].maxima[-1], 100
+        )
+        self.assertEqual(
+            CLASS_PROGRESSION.resources["bard.bardic_inspiration"].capacity_expression,
+            "max(1, Charisma modifier)",
+        )
 
     def test_invalid_level_gap_and_unknown_feature_fail_closed(self):
         fighter = CLASS_PROGRESSION.class_for("Fighter")

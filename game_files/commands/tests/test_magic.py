@@ -70,13 +70,13 @@ def _registry():
         handler_key="utility",
         targeting=Targeting(TargetingMode.SELF, include_caster=True),
         range=RangeCategory.SELF,
-        cost=ResourceCost("wizard.arcane_recovery", 1),
+        cost=ResourceCost("wizard.spell_slot.1", 1),
         player_help=PlayerHelp("spark", "A harmless spark."),
     )
     return build_magic_registry(
         (action,),
         class_keys=("Wizard",),
-        resource_keys=("wizard.arcane_recovery",),
+        resource_keys=("wizard.spell_slot.1",),
         help_keys=("spark",),
     )
 
@@ -96,7 +96,7 @@ def _effect_registry():
         handler_key="effect",
         targeting=Targeting(TargetingMode.SELF, include_caster=True),
         range=RangeCategory.SELF,
-        cost=ResourceCost("wizard.arcane_recovery", 1),
+        cost=ResourceCost("wizard.spell_slot.1", 1),
         duration=3,
         effect_keys=(_WARD_EFFECT.key,),
         player_help=PlayerHelp("test ward", "A test ward."),
@@ -104,7 +104,7 @@ def _effect_registry():
     return build_magic_registry(
         (action,),
         class_keys=("Wizard",),
-        resource_keys=("wizard.arcane_recovery",),
+        resource_keys=("wizard.spell_slot.1",),
         effect_keys=(_WARD_EFFECT.key,),
         help_keys=("test ward",),
     )
@@ -125,7 +125,7 @@ def _saving_throw_registry():
         handler_key="saving_throw",
         targeting=Targeting(TargetingMode.CREATURE),
         range=RangeCategory.ROOM,
-        cost=ResourceCost("wizard.arcane_recovery", 1),
+        cost=ResourceCost("wizard.spell_slot.1", 1),
         save=Save("Wisdom"),
         duration=3,
         effect_keys=(_SAVE_EFFECT.key,),
@@ -134,7 +134,7 @@ def _saving_throw_registry():
     return build_magic_registry(
         (action,),
         class_keys=("Wizard",),
-        resource_keys=("wizard.arcane_recovery",),
+        resource_keys=("wizard.spell_slot.1",),
         effect_keys=(_SAVE_EFFECT.key,),
         help_keys=("test resisted",),
     )
@@ -155,7 +155,7 @@ def _damage_save_registry():
         handler_key="saving_throw",
         targeting=Targeting(TargetingMode.HOSTILE),
         range=RangeCategory.ROOM,
-        cost=ResourceCost("wizard.arcane_recovery", 1),
+        cost=ResourceCost("wizard.spell_slot.1", 1),
         damage=Damage(DiceExpression(1, 8), "force"),
         save=Save("Dexterity", on_success="half"),
         player_help=PlayerHelp("test burst", "A resisted burst of force."),
@@ -163,7 +163,7 @@ def _damage_save_registry():
     return build_magic_registry(
         (action,),
         class_keys=("Wizard",),
-        resource_keys=("wizard.arcane_recovery",),
+        resource_keys=("wizard.spell_slot.1",),
         damage_types=("force",),
         help_keys=("test burst",),
     )
@@ -242,9 +242,11 @@ class TestMagicCommands(EvenniaCommandTest):
             self.assertIn("None.", self.call(CmdSpells(), ""))
             grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
             self.assertIn("Spark", self.call(CmdSpells(), ""))
-            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 1)
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 2)
             self.assertIn("You cast", self.call(CmdCast(), "spark"))
-            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 0)
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+            self.assertIn("You cast", self.call(CmdCast(), "spark"))
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 0)
             self.assertIn("enough magical resources", self.call(CmdCast(), "spark"))
 
     def test_completed_spellcasting_interrupts_safe_rest_progress(self):
@@ -330,11 +332,11 @@ class TestMagicCommands(EvenniaCommandTest):
             self.assertEqual(active.source, self.char1)
             self.assertEqual(active.source_key, "wizard.test_ward")
             self.assertEqual(active.remaining_pulses, 3)
-            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 0)
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
 
-            restore_resource(self.char1, "wizard.arcane_recovery", 1)
+            restore_resource(self.char1, "wizard.spell_slot.1", 1)
             self.assertIn("already active", self.call(CmdCast(), "ward"))
-            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 1)
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 2)
 
     def test_saving_throw_effects_snapshot_the_dc_and_apply_only_on_failure(self):
         """A saving-throw action delegates its save and storage to RULES-03."""
@@ -349,9 +351,9 @@ class TestMagicCommands(EvenniaCommandTest):
                 )
             self.assertEqual(result.reason, "saved")
             self.assertFalse(self.char2.effects.has(_SAVE_EFFECT.key))
-            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 0)
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
 
-            restore_resource(self.char1, "wizard.arcane_recovery", 1)
+            restore_resource(self.char1, "wizard.spell_slot.1", 1)
             failed = RollResult(1, 0, 1, 10, False)
             with patch("systems.effects.roll_check", return_value=failed):
                 result = cast_action(
