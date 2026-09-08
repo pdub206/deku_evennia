@@ -17,6 +17,17 @@ from typing import Iterable, Mapping
 
 from systems.progression import CLASS_PROGRESSION, MAX_CLASS_LEVEL
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
+from systems.srd_spell_lists import (SRD_CANTRIP_LISTS,
+                                     SRD_LEVEL_EIGHT_SPELL_LISTS,
+                                     SRD_LEVEL_FIVE_SPELL_LISTS,
+                                     SRD_LEVEL_FOUR_SPELL_LISTS,
+                                     SRD_LEVEL_NINE_SPELL_LISTS,
+                                     SRD_LEVEL_ONE_SPELL_LISTS,
+                                     SRD_LEVEL_SEVEN_SPELL_LISTS,
+                                     SRD_LEVEL_SIX_SPELL_LISTS,
+                                     SRD_LEVEL_THREE_SPELL_LISTS,
+                                     SRD_LEVEL_TWO_SPELL_LISTS,
+                                     SRDSpellListEntry)
 from world.chargen_data import BACKGROUNDS, SPECIES
 
 CONTENT_CENSUS_VERSION = 1
@@ -29,6 +40,16 @@ _P04_TASKS = frozenset(
         "P04-A09",
         "P04-A10",
         "P04-O01",
+        "P04-S00",
+        "P04-S01",
+        "P04-S02",
+        "P04-S03",
+        "P04-S04",
+        "P04-S05",
+        "P04-S06",
+        "P04-S07",
+        "P04-S08",
+        "P04-S09",
     }
 )
 
@@ -118,6 +139,7 @@ def _validate_record(record: CensusRecord) -> None:
             "subclass_feature",
             "resource",
             "spell_access",
+            "spell",
             "feat",
             "creature_reference",
             "equipment_reference",
@@ -136,8 +158,10 @@ def _validate_record(record: CensusRecord) -> None:
         raise ContentCensusError(
             f"Census record '{getattr(record, 'key', '?')}' is invalid."
         )
+    minimum_level = 0 if record.kind == "spell" else 1
     if record.level is not None and (
-        isinstance(record.level, bool) or not 1 <= record.level <= MAX_CLASS_LEVEL
+        isinstance(record.level, bool)
+        or not minimum_level <= record.level <= MAX_CLASS_LEVEL
     ):
         raise ContentCensusError(f"Census record '{record.key}' has an invalid level.")
 
@@ -321,6 +345,16 @@ def _default_records() -> tuple[CensusRecord, ...]:
         )
     records.extend(_initial_feat_records())
     records.extend(_initial_equipment_records())
+    records.extend(_cantrip_records())
+    records.extend(_level_one_spell_records())
+    records.extend(_level_two_spell_records())
+    records.extend(_level_three_spell_records())
+    records.extend(_level_four_spell_records())
+    records.extend(_level_five_spell_records())
+    records.extend(_level_six_spell_records())
+    records.extend(_level_seven_spell_records())
+    records.extend(_level_eight_spell_records())
+    records.extend(_level_nine_spell_records())
     return tuple(records)
 
 
@@ -418,6 +452,77 @@ def _initial_equipment_records() -> tuple[CensusRecord, ...]:
 def _slug(value: str) -> str:
     """Return a deterministic non-executable component of a census key."""
     return value.casefold().replace(" ", "_")
+
+
+def _cantrip_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S00 class-list rows without publishing a spell."""
+    return _spell_records(SRD_CANTRIP_LISTS, "P04-S00")
+
+
+def _level_one_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S01 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_ONE_SPELL_LISTS, "P04-S01")
+
+
+def _level_two_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S02 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_TWO_SPELL_LISTS, "P04-S02")
+
+
+def _level_three_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S03 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_THREE_SPELL_LISTS, "P04-S03")
+
+
+def _level_four_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S04 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_FOUR_SPELL_LISTS, "P04-S04")
+
+
+def _level_five_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S05 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_FIVE_SPELL_LISTS, "P04-S05")
+
+
+def _level_six_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S06 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_SIX_SPELL_LISTS, "P04-S06")
+
+
+def _level_seven_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S07 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_SEVEN_SPELL_LISTS, "P04-S07")
+
+
+def _level_eight_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S08 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_EIGHT_SPELL_LISTS, "P04-S08")
+
+
+def _level_nine_spell_records() -> tuple[CensusRecord, ...]:
+    """Project all P04-S09 class-list rows without publishing a spell."""
+    return _spell_records(SRD_LEVEL_NINE_SPELL_LISTS, "P04-S09")
+
+
+def _spell_records(
+    lists: Mapping[str, tuple[SRDSpellListEntry, ...]], owner_task: str
+) -> tuple[CensusRecord, ...]:
+    """Convert reviewed source rows into catalogue-only census records."""
+    return tuple(
+        CensusRecord(
+            f"spell:{entry.class_key.casefold()}:{_slug(entry.spell_name)}:level:{entry.spell_level}",
+            "spell",
+            entry.spell_name,
+            entry.class_key,
+            entry.spell_level,
+            entry.srd_reference,
+            owner_task,
+            "magic.spell",
+            "catalogued",
+        )
+        for entries in lists.values()
+        for entry in entries
+    )
 
 
 def _occurrence_key(feature_key: str, level: int) -> str:
