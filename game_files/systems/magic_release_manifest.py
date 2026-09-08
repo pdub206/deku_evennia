@@ -60,6 +60,23 @@ class MagicReleaseManifest:
     fingerprint: str
 
 
+@dataclass(frozen=True)
+class ClassAvailability:
+    """One public class-level coordinate's distinct release states.
+
+    Source presence, adapter implementation, and P-05 publication answer
+    different questions.  Consumers should use ``published`` for player
+    entry points and keep ``blockers`` for bounded staff diagnostics only.
+    """
+
+    class_key: str
+    level: int
+    catalogued: bool
+    implemented: bool
+    published: bool
+    blockers: tuple[str, ...]
+
+
 def published_classes(
     manifest: MagicReleaseManifest | None = None,
 ) -> tuple[str, ...]:
@@ -85,6 +102,60 @@ def is_level_published(
         return False
     active = MAGIC_03_RELEASE_MANIFEST if manifest is None else manifest
     return level in active.published_class_levels.get(class_key, ())
+
+
+def class_availability(
+    class_key: object,
+    level: object,
+    *,
+    progression: ProgressionRegistry = CLASS_PROGRESSION,
+    magic: MagicRegistry = MAGIC_REGISTRY,
+    manifest: MagicReleaseManifest | None = None,
+) -> ClassAvailability:
+    """Report catalogue, implementation, and publication without conflating them."""
+    if (
+        not isinstance(class_key, str)
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= NORMAL_LEVEL_CAP
+    ):
+        return ClassAvailability("", 0, False, False, False, ("invalid_coordinate",))
+    try:
+        progression.class_for(class_key)
+    except RegistryValidationError:
+        return ClassAvailability(
+            class_key, level, False, False, False, ("unknown_class",)
+        )
+    coverage = class_level_coverage(
+        class_key, level, progression=progression, magic=magic
+    )
+    implemented = not coverage.blockers
+    published = is_level_published(class_key, level, manifest=manifest)
+    blockers = coverage.blockers if not implemented else ()
+    if not published:
+        blockers = (*blockers, "unpublished")
+    return ClassAvailability(
+        class_key,
+        level,
+        True,
+        implemented,
+        published,
+        tuple(dict.fromkeys(blockers))[:8],
+    )
+
+
+def published_chargen_summaries(
+    *, manifest: MagicReleaseManifest | None = None
+) -> Mapping[str, Mapping[str, object]]:
+    """Return only P-05-published level-one classes for character creation."""
+    active = MAGIC_03_RELEASE_MANIFEST if manifest is None else manifest
+    return MappingProxyType(
+        {
+            class_key: CLASS_PROGRESSION.chargen_summary(class_key)
+            for class_key in published_classes(active)
+            if is_level_published(class_key, 1, manifest=active)
+        }
+    )
 
 
 def build_release_manifest(

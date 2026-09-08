@@ -2,18 +2,13 @@
 
 from evennia.utils.test_resources import EvenniaTest
 from systems.magic_actions import MAGIC_PREPARATION_ATTRIBUTE
-from systems.magic_resources import resource_current, spend_resource
-from systems.magic_rest import (
-    LONG_REST_PULSES,
-    LONG_REST_SLEEP_PULSES,
-    MAGIC_REST_ATTRIBUTE,
-    MAGIC_REST_VERSION,
-    SAFE_REST_TAG,
-    SAFE_REST_TAG_CATEGORY,
-    SHORT_REST_PULSES,
-    advance_magic_rest,
-    interrupt_magic_rest,
-)
+from systems.magic_resources import (initialize_spell_access_resources,
+                                     resource_current, spend_resource)
+from systems.magic_rest import (LONG_REST_PULSES, LONG_REST_SLEEP_PULSES,
+                                MAGIC_REST_ATTRIBUTE, MAGIC_REST_VERSION,
+                                SAFE_REST_TAG, SAFE_REST_TAG_CATEGORY,
+                                SHORT_REST_PULSES, advance_magic_rest,
+                                interrupt_magic_rest)
 from systems.pulses import PulseEvent, PulseLane
 
 
@@ -24,6 +19,7 @@ class TestMagicRest(EvenniaTest):
         super().setUp()
         self.char1.db.char_class = "Warlock"
         self.char1.db.level = 3
+        initialize_spell_access_resources(self.char1, "warlock.spell_access")
         self.char1.db.hp_max_override = 10
         self.char1.db.hp_current = 10
         self.char1.db.position = "resting"
@@ -66,6 +62,7 @@ class TestMagicRest(EvenniaTest):
         """Long-rest recovery is gated by total and sleeping pulse counts."""
         self.char1.db.char_class = "Wizard"
         self.char1.db.level = 3
+        initialize_spell_access_resources(self.char1, "wizard.spell_access")
         self.char1.db.position = "sleeping"
         spend_resource(self.char1, "wizard.spell_slot.1", 3)
         self.char1.attributes.add(

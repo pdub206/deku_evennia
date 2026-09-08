@@ -20,6 +20,8 @@ from evennia.server.models import ServerConfig
 from evennia.utils import logger
 from evennia.utils.utils import inherits_from
 from systems.areas import area_of, room_key_of
+from systems.magic_release_manifest import is_level_published
+from systems.progression import CLASS_PROGRESSION, RegistryValidationError
 
 MOBILE_SPAWN_IDENTITY_ATTRIBUTE = "mobile_spawn_identity"
 MOBILE_SPAWN_IDENTITY_VERSION = 1
@@ -164,6 +166,10 @@ def spawn_mobile(
     if identity.prototype_key != prototype_key:
         raise MobileSpawnError("Mobile identity and prototype key disagree.")
     materialized = _flatten_prototype(prototype)
+    try:
+        _validate_classed_npc(materialized)
+    except MobileSpawnError:
+        return MobileSpawnResult("failed", "unavailable_class")
     materialized[MOBILE_SPAWN_IDENTITY_ATTRIBUTE] = _identity_payload(identity)
     npc = None
     try:
@@ -396,6 +402,33 @@ def _is_room(room: Any) -> bool:
 
 def _is_npc(obj: Any) -> bool:
     return obj is not None and inherits_from(obj, NPC_TYPECLASS)
+
+
+def _validate_classed_npc(prototype: Mapping[str, Any]) -> None:
+    """Reject an explicit NPC class unless its whole kit is P-05-published.
+
+    NPCs with no ``char_class`` are intentionally classless templates.  That
+    keeps ordinary world mobiles authorable while the release manifest is
+    empty, and prevents an authored source-table name from becoming a hidden
+    class implementation at spawn time.
+    """
+    class_key = prototype.get("char_class")
+    if class_key in (None, ""):
+        return
+    level = prototype.get("level", 1)
+    if (
+        not isinstance(class_key, str)
+        or isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= 20
+    ):
+        raise MobileSpawnError("NPC class data is invalid.")
+    try:
+        CLASS_PROGRESSION.class_for(class_key)
+    except RegistryValidationError as err:
+        raise MobileSpawnError("NPC class data is invalid.") from err
+    if not is_level_published(class_key, level):
+        raise MobileSpawnError("NPC class is not published for that level.")
 
 
 def _stable_key(value: Any, label: str) -> None:

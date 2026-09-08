@@ -1,5 +1,7 @@
 """ADV-03 command integration coverage."""
 
+from unittest.mock import patch
+
 from commands.training import CmdPractice, CmdTrain, _parse_training
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
@@ -12,6 +14,11 @@ class TestTrainingCommands(EvenniaCommandTest):
 
     def setUp(self):
         super().setUp()
+        self._release_gate = patch(
+            "systems.training.is_level_published", return_value=True
+        )
+        self._release_gate.start()
+        self.addCleanup(self._release_gate.stop)
         self.char1.db.is_player_character = True
         self.char1.db.char_class = "Fighter"
         self.char1.db.constitution = 10

@@ -4,15 +4,11 @@ from dataclasses import replace
 from unittest.mock import patch
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic_resources import (
-    MagicResourceError,
-    recover_profile,
-    resource_current,
-    resource_maximum,
-    resource_view,
-    spell_slot_options,
-    spend_resource,
-)
+from systems.magic_resources import (MagicResourceError, initialize_resource,
+                                     initialize_spell_access_resources,
+                                     recover_profile, resource_current,
+                                     resource_maximum, resource_view,
+                                     spell_slot_options, spend_resource)
 from systems.progression import CLASS_PROGRESSION, build_registry
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
 
@@ -39,6 +35,13 @@ class TestMagicResources(EvenniaTest):
         super().setUp()
         self.char1.db.char_class = "Wizard"
         self.char1.db.level = 3
+        self._initialize_slots()
+
+    def _initialize_slots(self):
+        """Model the explicit slot grant that direct fixture edits bypass."""
+        key = f"{self.char1.db.char_class.casefold()}.spell_access"
+        if key in CLASS_PROGRESSION.spell_access:
+            initialize_spell_access_resources(self.char1, key)
 
     def test_ordinary_spell_slots_follow_the_srd_class_table(self):
         """A full caster has only the slot levels granted by its current level."""
@@ -72,8 +75,12 @@ class TestMagicResources(EvenniaTest):
             self.char1.db.level = 20
             self.char1.attributes.remove("magic_resources")
             with patch("systems.magic_resources.CLASS_PROGRESSION", registry):
+                spell_key = f"{self.char1.db.char_class.casefold()}.spell_access"
+                if spell_key in registry.spell_access:
+                    initialize_spell_access_resources(self.char1, spell_key)
                 maximum = resource_maximum(self.char1, key)
                 self.assertGreater(maximum, 0)
+                initialize_resource(self.char1, key)
                 self.assertEqual(spend_resource(self.char1, key, 1), maximum - 1)
                 self.assertIn((key, maximum), recover_profile(self.char1, "long_rest"))
                 self.assertEqual(resource_current(self.char1, key), maximum)
@@ -86,6 +93,7 @@ class TestMagicResources(EvenniaTest):
             "systems.magic_resources.CLASS_PROGRESSION",
             _registry_with_released_resource("barbarian.rage"),
         ):
+            initialize_resource(self.char1, "barbarian.rage")
             spend_resource(self.char1, "barbarian.rage", 2)
             self.assertEqual(
                 recover_profile(self.char1, "short_rest"), (("barbarian.rage", 1),)
@@ -100,7 +108,9 @@ class TestMagicResources(EvenniaTest):
             _registry_with_released_resource("bard.bardic_inspiration"),
         ):
             self.char1.db.level = 4
+            self._initialize_slots()
             maximum = resource_maximum(self.char1, "bard.bardic_inspiration")
+            initialize_resource(self.char1, "bard.bardic_inspiration")
             spend_resource(self.char1, "bard.bardic_inspiration", 1)
             self.assertEqual(recover_profile(self.char1, "short_rest"), ())
             self.char1.db.level = 5
@@ -122,6 +132,7 @@ class TestMagicResources(EvenniaTest):
         """Warlock Pact Magic never borrows an ordinary spell-slot resource."""
         self.char1.db.char_class = "Warlock"
         self.char1.db.level = 11
+        self._initialize_slots()
         self.assertEqual(resource_maximum(self.char1, "warlock.pact_slot"), 3)
         with self.assertRaises(MagicResourceError):
             resource_maximum(self.char1, "warlock.spell_slot.1")
@@ -134,6 +145,7 @@ class TestMagicResources(EvenniaTest):
         """Future casts receive legal slot choices without class-specific checks."""
         self.char1.db.char_class = "Wizard"
         self.char1.db.level = 3
+        self._initialize_slots()
         self.assertEqual(spell_slot_options(self.char1, 0), ())
         self.assertEqual(
             [
@@ -146,6 +158,7 @@ class TestMagicResources(EvenniaTest):
 
         self.char1.db.char_class = "Warlock"
         self.char1.db.level = 5
+        self._initialize_slots()
         options = spell_slot_options(self.char1, 1)
         self.assertEqual(
             [(option.resource_key, option.slot_level) for option in options],

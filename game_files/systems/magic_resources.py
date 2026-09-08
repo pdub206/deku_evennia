@@ -69,12 +69,25 @@ def resource_maximum(actor: Any, resource_key: str) -> int:
 
 
 def resource_current(actor: Any, resource_key: str) -> int:
-    """Return the current value, initializing a newly unlocked resource full."""
+    """Return one explicitly initialized resource's current value.
+
+    ADV-01 owns first initialization at the exact grant occurrence.  A missing
+    key in an existing state is therefore malformed, not permission to create
+    a full resource during an unrelated read or registry replay.  An entirely
+    absent state remains a narrow pre-provenance compatibility read; ADV-06's
+    explicit migration materializes it before a modern level grant can rely on
+    it.
+    """
     maximum = resource_maximum(actor, resource_key)
     if resource_key == "hp":
         return actor.stats.hp_current
+    raw_state = actor.attributes.get(MAGIC_RESOURCE_ATTRIBUTE)
     state = _state(actor)
-    current = state.get(resource_key, maximum)
+    if raw_state is None:
+        return maximum
+    if resource_key not in state:
+        raise MagicResourceError("Magic resource state needs staff repair.")
+    current = state[resource_key]
     if current > maximum:
         current = maximum
         state[resource_key] = current
@@ -100,6 +113,23 @@ def initialize_resource(actor: Any, resource_key: str) -> int:
         state[resource_key] = maximum
         _write_state(actor, state)
     return state[resource_key]
+
+
+def initialize_spell_access_resources(actor: Any, spell_access_key: str) -> None:
+    """Materialize an earned spell-access row's usable slots exactly once.
+
+    Spell access is a progression entitlement, while slot current values belong
+    to this module.  ADV-01 calls this while applying the same level's durable
+    grant record.  Existing slot keys intentionally retain their current value
+    when a later level raises their maximum; a newly introduced slot key starts
+    at its newly earned capacity.
+    """
+    class_key, level = _class_and_level(actor)
+    expected_key = f"{class_key.casefold()}.spell_access"
+    if spell_access_key != expected_key or _spell_access(class_key) is None:
+        raise MagicResourceError("Magic spell access is unavailable.")
+    for resource_key in _slot_resource_keys(class_key, level):
+        initialize_resource(actor, resource_key)
 
 
 def spend_resource(actor: Any, resource_key: str, amount: int) -> int:

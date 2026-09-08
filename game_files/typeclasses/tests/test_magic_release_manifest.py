@@ -1,14 +1,18 @@
 """P-05 fail-closed class-kit release-manifest coverage."""
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic_release_manifest import (MAGIC_03_RELEASE_MANIFEST,
-                                            MAGIC_RELEASE_MANIFEST_VERSION,
-                                            NORMAL_LEVEL_CAP,
-                                            ReleaseManifestError,
-                                            build_release_manifest,
-                                            class_level_coverage,
-                                            is_level_published,
-                                            published_classes)
+from systems.magic_release_manifest import (
+    MAGIC_03_RELEASE_MANIFEST,
+    MAGIC_RELEASE_MANIFEST_VERSION,
+    NORMAL_LEVEL_CAP,
+    ReleaseManifestError,
+    build_release_manifest,
+    class_availability,
+    class_level_coverage,
+    is_level_published,
+    published_chargen_summaries,
+    published_classes,
+)
 from systems.progression import SELECTABLE_CLASS_NAMES
 
 
@@ -28,6 +32,23 @@ class TestMagicReleaseManifest(EvenniaTest):
             MAGIC_03_RELEASE_MANIFEST.published_class_levels["Fighter"] = ()
         self.assertEqual(published_classes(), ())
         self.assertFalse(is_level_published("Fighter", 1))
+        self.assertEqual(dict(published_chargen_summaries()), {})
+
+    def test_availability_distinguishes_catalogue_adapter_and_publication(self):
+        """A cited class name alone cannot become a player-facing selection."""
+        fighter = class_availability("Fighter", 1)
+        unknown = class_availability("Not a class", 1)
+
+        self.assertTrue(fighter.catalogued)
+        self.assertFalse(fighter.implemented)
+        self.assertFalse(fighter.published)
+        self.assertIn("catalogued_feature:fighter.fighting_style", fighter.blockers)
+        self.assertIn("unpublished", fighter.blockers)
+        self.assertEqual(
+            (unknown.catalogued, unknown.implemented, unknown.published),
+            (False, False, False),
+        )
+        self.assertEqual(unknown.blockers, ("unknown_class",))
 
     def test_matrix_covers_every_source_class_and_level(self):
         matrix = tuple(

@@ -5,9 +5,10 @@ Run from the game/ directory:
     evennia test --settings settings.py typeclasses.tests.test_chargen
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from evennia.utils.test_resources import EvenniaTest
+from systems.progression import CLASSES as PROGRESSION_CLASSES
 from world.chargen_data import (
     ABILITY_NAMES,
     ALIGNMENTS,
@@ -193,6 +194,21 @@ class TestChargenEnd(EvenniaTest):
     real chargen session would have produced, then calling menunode_end and
     verifying the canonical attributes are set correctly.
     """
+
+    def setUp(self):
+        """Exercise finalization after its separate release gate accepts a kit."""
+        super().setUp()
+        self._published_classes = patch(
+            "world.chargen_menu._published_classes",
+            return_value=dict(PROGRESSION_CLASSES),
+        )
+        self._published_level = patch(
+            "world.chargen_menu.is_level_published", return_value=True
+        )
+        self._published_classes.start()
+        self._published_level.start()
+        self.addCleanup(self._published_classes.stop)
+        self.addCleanup(self._published_level.stop)
 
     def _make_session(self, char):
         """Return a minimal mock session with a new_char attribute."""

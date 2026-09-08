@@ -25,6 +25,7 @@ from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
                                DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
                                PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
                                WEAR_LOCATIONS)
+from systems.magic_release_manifest import is_level_published
 from systems.progression import CLASSES
 from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
                                 MAX_AGE, MIN_AGE, SKILLS, SPECIES,
@@ -163,6 +164,14 @@ def as_named_choice(*options: str) -> Callable[[str], str]:
         return allowed[value]
 
     return validate
+
+
+def as_published_class(raw: str) -> str:
+    """Accept only a source class that P-05 has actually published."""
+    class_key = as_named_choice(*CLASSES)(raw)
+    if not is_level_published(class_key, 1):
+        raise ValueError("class is not published for NPCs.")
+    return class_key
 
 
 def as_choice_list(*options: str) -> Callable[[str], list[str]]:
@@ -398,9 +407,7 @@ NPC_FIELDS: dict[str, Field] = {
     "species": Field(
         "attr", as_named_choice(*SPECIES), f"species ({', '.join(SPECIES)})"
     ),
-    "class": Field(
-        "attr", as_named_choice(*CLASSES), f"class ({', '.join(CLASSES)})", "char_class"
-    ),
+    "class": Field("attr", as_published_class, "published class", "char_class"),
     "age": Field(
         "attr",
         as_int_range(MIN_AGE, MAX_AGE),

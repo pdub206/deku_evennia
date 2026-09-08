@@ -1,5 +1,7 @@
 """MOB-05 identity, population, and reset-placement regression coverage."""
 
+from unittest.mock import patch
+
 from evennia import create_object
 from evennia.prototypes.prototypes import save_prototype
 from evennia.prototypes.spawner import spawn
@@ -62,6 +64,29 @@ class TestMobileSpawning(EvenniaTest):
                 "placement_key",
                 "reset_room_key",
             },
+        )
+
+    def test_explicit_unpublished_npc_class_fails_before_object_creation(self):
+        """An NPC source class cannot bypass the release manifest at spawn."""
+        save_prototype(
+            {
+                "prototype_key": "mob05_unpublished_class",
+                "key": "unreleased guard",
+                "typeclass": "typeclasses.characters.Character",
+                "is_player_character": False,
+                "char_class": "Fighter",
+                "level": 1,
+                "mobile_behavior_profile": "idle",
+            }
+        )
+        with patch("systems.mob_spawning.is_level_published", return_value=False):
+            result = spawn_mobile("mob05_unpublished_class", self.room1)
+
+        self.assertEqual(
+            (result.status, result.reason), ("failed", "unavailable_class")
+        )
+        self.assertFalse(
+            any(obj.key == "unreleased guard" for obj in self.room1.contents)
         )
 
     def test_legacy_npc_is_not_guessed_from_its_display_name(self):

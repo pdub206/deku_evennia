@@ -8,30 +8,16 @@ from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
 from systems.dice import RollResult
 from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
-from systems.magic import (
-    AccessMode,
-    ClassAccess,
-    Damage,
-    DiceExpression,
-    MagicDefinition,
-    MagicKind,
-    PlayerHelp,
-    RangeCategory,
-    ResourceCost,
-    Save,
-    Scaling,
-    Targeting,
-    TargetingMode,
-    build_magic_registry,
-)
+from systems.magic import (AccessMode, ClassAccess, Damage, DiceExpression,
+                           MagicDefinition, MagicKind, PlayerHelp,
+                           RangeCategory, ResourceCost, Save, Scaling,
+                           Targeting, TargetingMode, build_magic_registry)
 from systems.magic_actions import cast_action, grant_action
-from systems.magic_resources import recover_profile, resource_current, restore_resource
-from systems.magic_rest import (
-    MAGIC_REST_ATTRIBUTE,
-    SAFE_REST_TAG,
-    SAFE_REST_TAG_CATEGORY,
-    advance_magic_rest,
-)
+from systems.magic_resources import (initialize_spell_access_resources,
+                                     recover_profile, resource_current,
+                                     restore_resource)
+from systems.magic_rest import (MAGIC_REST_ATTRIBUTE, SAFE_REST_TAG,
+                                SAFE_REST_TAG_CATEGORY, advance_magic_rest)
 from systems.pulses import PulseEvent, PulseLane
 
 _WARD_EFFECT = EffectDefinition(
@@ -341,6 +327,7 @@ class TestMagicCommands(EvenniaCommandTest):
         """Pact Magic casts cannot spend an ordinary slot or choose its level."""
         self.char1.db.char_class = "Warlock"
         self.char1.db.level = 5
+        initialize_spell_access_resources(self.char1, "warlock.spell_access")
         with patch("systems.magic.MAGIC_REGISTRY", _slot_registry("Warlock")):
             grant_action(self.char1, "warlock.test_slot_spell", AccessMode.INNATE)
             result = cast_action(self.char1, "slot spell", slot_level=3)
@@ -353,6 +340,7 @@ class TestMagicCommands(EvenniaCommandTest):
     def test_slot_level_applies_only_its_declared_healing_thresholds(self):
         """An upcast uses its snapshot level, never an undeclared bonus formula."""
         self.char1.db.level = 5
+        initialize_spell_access_resources(self.char1, "wizard.spell_access")
         self.char1.db.hp_current = 1
         with patch("systems.magic.MAGIC_REGISTRY", _scaled_slot_healing_registry()):
             grant_action(self.char1, "wizard.test_scaled_healing", AccessMode.INNATE)

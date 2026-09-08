@@ -16,7 +16,8 @@ from typing import Any
 
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
-from systems.progression import CLASSES
+from systems.magic_release_manifest import (is_level_published,
+                                            published_chargen_summaries)
 from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
                                 BACKGROUNDS, MAX_AGE, MIN_AGE, POINT_BUY_COSTS,
                                 POINT_BUY_MAX, POINT_BUY_MIN, POINT_BUY_TOTAL,
@@ -61,6 +62,11 @@ def _primary_ability_str(cls_data: dict) -> str:
     return pa if isinstance(pa, str) else " / ".join(pa)
 
 
+def _published_classes() -> dict[str, dict]:
+    """Return the only classes that character creation may offer to players."""
+    return dict(published_chargen_summaries())
+
+
 # ---------------------------------------------------------------------------
 # Step 0: Welcome
 # ---------------------------------------------------------------------------
@@ -102,15 +108,23 @@ def menunode_choose_class(caller: Any, **kwargs):
     char = _char(caller)
     char.db.chargen_step = "menunode_choose_class"
 
+    classes = _published_classes()
     header = "|wStep 3 — Choose a Class|n\n\n"
+    if not classes:
+        return (
+            header
+            + "No complete class kits are currently available for new characters. "
+            "Please try again after a published release.\n",
+            {"key": ("Back", "back", "b"), "goto": "menunode_welcome"},
+        )
     header += f"{'Class':<12} {'Likes':<16} {'Primary Ability'}\n" + "-" * 50 + "\n"
-    for name, data in CLASSES.items():
+    for name, data in classes.items():
         pa = _primary_ability_str(data)
         header += f"{name:<12} {data['likes']:<16} {pa}\n"
     header += "\nSelect a class to read more about it before choosing."
 
     options = []
-    for name in CLASSES:
+    for name in classes:
         options.append(
             {
                 "desc": name,
@@ -126,7 +140,9 @@ def menunode_class_detail(
     if not selected_class:
         return "menunode_choose_class"
 
-    data = CLASSES[selected_class]
+    data = _published_classes().get(selected_class)
+    if data is None:
+        return "menunode_choose_class"
     pa = _primary_ability_str(data)
     suggestion = STANDARD_ARRAY_BY_CLASS.get(selected_class, {})
     sug_line = "  " + ", ".join(
@@ -165,7 +181,7 @@ def menunode_class_detail(
 
 
 def _set_class(caller: Any, raw_string: str = "", selected_class: str = "", **kwargs):
-    if not selected_class:
+    if not selected_class or not is_level_published(selected_class, 1):
         return "menunode_choose_class"
     char = _char(caller)
     char.db.chargen_class = selected_class
@@ -408,7 +424,7 @@ def menunode_choose_skills(caller: Any, raw_string: str = "", **kwargs):
 
     cls_name = char.db.chargen_class or ""
     bg_name = char.db.chargen_background or ""
-    cls_data = CLASSES.get(cls_name, {})
+    cls_data = _published_classes().get(cls_name, {})
     num_picks: int = cls_data.get("skill_choices", 2)
     available: list[str] = cls_data.get("skills_available", [])
     bg_skills: list[str] = BACKGROUNDS.get(bg_name, {}).get("skill_proficiencies", [])
@@ -1421,7 +1437,7 @@ def menunode_review(caller: Any, **kwargs):
         bonus = bg_bonus.get(ab, 0)
         final_scores[ab] = base + bonus
 
-    cls_data = CLASSES.get(cls_name, {})
+    cls_data = _published_classes().get(cls_name, {})
     con_mod = ability_modifier(final_scores.get("Constitution", 8))
     hp_max = calculate_max_hp(
         cls_data.get("hp_base", 8), 1, final_scores.get("Constitution", 8)
@@ -1591,7 +1607,9 @@ def menunode_end(caller: Any, **kwargs):
 
     # Persistent rules inputs. Derived values come from ``char.stats`` so they
     # respond immediately when these inputs or modifier sources change.
-    cls_data = CLASSES.get(cls_name, CLASSES["Fighter"])
+    cls_data = _published_classes().get(cls_name)
+    if cls_data is None or not is_level_published(cls_name, 1):
+        return "menunode_choose_class"
     char.db.char_class = cls_name
     char.db.species = species
     char.db.size = size

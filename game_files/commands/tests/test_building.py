@@ -7,7 +7,7 @@ Run from the game/ directory:
 
 import importlib.util
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
                                CmdBuildDel, CmdBuildDig, CmdBuildDone,
@@ -635,6 +635,11 @@ class TestEditNewNpc(EvenniaCommandTest):
 
     def setUp(self):
         super().setUp()
+        self._class_release = patch(
+            "world.build_schema.is_level_published", return_value=True
+        )
+        self._class_release.start()
+        self.addCleanup(self._class_release.stop)
         self.char1.permissions.add("Builder")
 
     def test_create_npc_template_and_spawn_copy_here(self):
@@ -663,14 +668,13 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(len(spawned), 2)
         self.assertEqual(mobile_spawn_identity(spawned[-1]).prototype_key, "city_guard")
 
-    def test_npc_defaults_match_finished_character_attributes(self):
+    def test_npc_defaults_are_classless_until_a_kit_is_published(self):
         self.call(CmdBuild(), "new npc City Guard")
         proto = self.char1.ndb._build_target
 
         expected = {
             "gender": "unspecified",
             "age": 18,
-            "char_class": "Fighter",
             "background": "",
             "species": "Human",
             "size": "Medium",
@@ -827,7 +831,7 @@ class TestEditNewNpc(EvenniaCommandTest):
             "combat_profile not-json",
             "Invalid value for 'combat_profile'",
         )
-        self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
+        self.assertNotIn("char_class", self.char1.ndb._build_target)
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
 
     def test_derived_stat_fields_store_explicit_overrides(self):

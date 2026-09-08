@@ -9,6 +9,7 @@ from systems.progression import (CLASS_PROGRESSION, MAX_CLASS_LEVEL,
 from systems.srd_class_features import (SRD_CLASS_FEATURES,
                                         SRD_SUBCLASS_FEATURES)
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
+from world.help_entries import HELP_ENTRY_DICTS
 
 
 class TestClassProgressionRegistry(EvenniaTest):
@@ -138,6 +139,17 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
         )
         self.assertEqual(CLASS_PROGRESSION.version, 10)
+
+    def test_feature_help_keys_resolve_to_loaded_player_help(self):
+        """Progression does not accept an invented help-key registry."""
+        loaded = {entry["key"] for entry in HELP_ENTRY_DICTS}
+
+        self.assertTrue(
+            all(
+                feature.help_key in loaded
+                for feature in CLASS_PROGRESSION.features.values()
+            )
+        )
 
     def test_presence_and_implementation_are_distinct(self):
         """Catalogue data never masquerades as an implemented class kit."""

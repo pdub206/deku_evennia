@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
+from systems.magic_release_manifest import is_level_published
 from systems.progression import (CLASS_PROGRESSION, ChoiceSet,
                                  RegistryValidationError)
 
@@ -160,10 +161,26 @@ def validate_trainer_profile(profile: Any) -> dict[str, Any]:
     if profile["version"] != TRAINER_PROFILE_VERSION:
         raise TrainingError("Trainer profile has an unsupported version.")
     classes, choices = profile["classes"], profile["choices"]
+    low, high = profile["minimum_level"], profile["maximum_level"]
+    if (
+        isinstance(low, bool)
+        or isinstance(high, bool)
+        or not isinstance(low, int)
+        or not isinstance(high, int)
+        or not 1 <= low <= high <= 20
+        or not isinstance(profile["service_lock"], str)
+        or not profile["service_lock"].strip()
+    ):
+        raise TrainingError("Trainer profile has invalid service access.")
     if (
         isinstance(classes, (str, bytes))
         or not isinstance(classes, Sequence)
         or any(not CLASS_PROGRESSION.is_available(key) for key in classes)
+        or any(
+            not is_level_published(class_key, level)
+            for class_key in classes
+            for level in range(low, high + 1)
+        )
         or len(set(classes)) != len(classes)
     ):
         raise TrainingError("Trainer profile has invalid classes.")
@@ -177,17 +194,6 @@ def validate_trainer_profile(profile: Any) -> dict[str, Any]:
         or len(set(choices)) != len(choices)
     ):
         raise TrainingError("Trainer profile has invalid choices.")
-    low, high = profile["minimum_level"], profile["maximum_level"]
-    if (
-        isinstance(low, bool)
-        or isinstance(high, bool)
-        or not isinstance(low, int)
-        or not isinstance(high, int)
-        or not 1 <= low <= high <= 20
-        or not isinstance(profile["service_lock"], str)
-        or not profile["service_lock"].strip()
-    ):
-        raise TrainingError("Trainer profile has invalid service access.")
     return {
         "version": TRAINER_PROFILE_VERSION,
         "classes": list(classes),

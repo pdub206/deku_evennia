@@ -1,5 +1,7 @@
 """COMBAT-07 attribution and NPC experience regression coverage."""
 
+from unittest.mock import patch
+
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import initialize_level_one
@@ -35,6 +37,23 @@ class TestCombatRewards(EvenniaTest):
         # Replaying the same death is served from its durable audit result.
         self.assertEqual(reward_result(injury.death_id).final_xp, 11)
         self.assertEqual(self.char1.stats.xp, 6511)
+
+    def test_death_reward_crosses_a_level_through_progression_transaction(self):
+        """COMBAT-07 rewards use ADV-01's provenance and replay boundary."""
+        initialize_level_one(self.char1, class_key="Fighter", hp_base=10)
+        self.char1.db.xp = 0
+        self.char1.db.level = 1
+        self.char2.db.xp_reward = 300
+        with patch("systems.advancement.is_level_published", return_value=True):
+            injury = apply_damage(
+                self.char2, 10, source=self.char1, emit_messages=False
+            )
+
+        result = reward_result(injury.death_id)
+        provenance = self.char1.db.class_progression
+        self.assertEqual((result.final_xp, self.char1.db.level), (420, 2))
+        self.assertEqual([entry["level"] for entry in provenance["levels"]], [1, 2])
+        self.assertEqual(reward_result(injury.death_id).resulting_xp, 420)
 
     def test_level_adjustment_clamps_floors_and_keeps_minimum_one(self):
         """The authored base is adjusted only after a recipient is selected."""

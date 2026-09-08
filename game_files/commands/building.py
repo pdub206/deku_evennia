@@ -574,7 +574,6 @@ class CmdBuild(Command):
             "is_player_character": False,
             "gender": "unspecified",
             "age": 18,
-            "char_class": "Fighter",
             "background": "",
             "species": "Human",
             "size": "Medium",

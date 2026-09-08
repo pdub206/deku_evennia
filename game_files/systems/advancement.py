@@ -8,11 +8,13 @@ stable source identity; a duplicate identity is a durable no-op.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
 from django.db import transaction
+from systems.magic_release_manifest import is_level_published
 from systems.progression import CLASS_PROGRESSION, RegistryValidationError
 
 MAX_LEVEL = 20
@@ -22,6 +24,20 @@ ADVANCEMENT_ATTRIBUTE = "advancement_ledger"
 ADVANCEMENT_VERSION = 1
 PROGRESSION_ATTRIBUTE = "class_progression"
 PROGRESSION_VERSION = 2
+_LEVEL_APPLICATION_ATTRIBUTES = (
+    "hp_base",
+    "level",
+    PROGRESSION_ATTRIBUTE,
+    "progression_choices",
+    "magic_action_state",
+    "magic_resources",
+)
+_LEVEL_ONE_INITIALIZATION_ATTRIBUTES = (
+    "char_class",
+    "xp",
+    "level",
+    *_LEVEL_APPLICATION_ATTRIBUTES,
+)
 
 # SRD 5.2.1, cumulative experience points for character levels 1--20.
 XP_THRESHOLDS = (
@@ -121,13 +137,22 @@ def award_xp(
 
         new_xp = old_xp + amount
         new_level = earned_level(new_xp)
+        if new_level > old_level and not is_level_published(
+            character.attributes.get("char_class"), new_level
+        ):
+            raise AdvancementError("Class progression is not released for that level.")
         missing_hp = character.stats.hp_max - character.stats.hp_current
         crossed = tuple(
             threshold
             for threshold in XP_THRESHOLDS[old_level:new_level]
             if threshold <= new_xp
         )
-        grants, pending_choices = _apply_levels(character, old_level, new_level)
+        level_snapshot = _level_application_snapshot(character)
+        try:
+            grants, pending_choices = _apply_levels(character, old_level, new_level)
+        except Exception:
+            _restore_level_application_snapshot(character, level_snapshot)
+            raise
         character.db.xp = new_xp
         character.db.level = new_level
         _preserve_missing_hp(character, missing_hp)
@@ -169,16 +194,23 @@ def initialize_level_one(character: Any, *, class_key: str, hp_base: int) -> Non
         raise AdvancementError("Level-one HP must match the class progression.")
     with transaction.atomic():
         _lock_character(character)
-        character.db.char_class = class_key
-        character.db.xp = 0
-        character.db.level = 1
-        character.db.hp_base = max(1, hp_base)
-        _write_progression_state(
-            character,
-            _new_progression_state(definition.key, through_level=1),
-        )
-        _apply_level_grants(character, definition, 1)
-        _write_ledger(character, _new_ledger())
+        snapshot = _attribute_snapshot(character, _LEVEL_ONE_INITIALIZATION_ATTRIBUTES)
+        try:
+            character.db.char_class = class_key
+            character.db.xp = 0
+            character.db.level = 1
+            character.db.hp_base = max(1, hp_base)
+            _write_progression_state(
+                character,
+                _new_progression_state(definition.key, through_level=1),
+            )
+            _apply_level_grants(character, definition, 1)
+            _write_ledger(character, _new_ledger())
+        except Exception:
+            _restore_attribute_snapshot(
+                character, snapshot, _LEVEL_ONE_INITIALIZATION_ATTRIBUTES
+            )
+            raise
 
 
 def _apply_levels(
@@ -193,7 +225,7 @@ def _apply_levels(
         raise AdvancementError("Character advancement requires staff repair.") from err
     constitution = character.stats.ability_modifier("Constitution")
     gain = max(1, definition.fixed_hp_gain + constitution)
-    character.db.hp_base = character.stats.hp_base + gain * (new_level - old_level)
+    hp_base = character.stats.hp_base + gain * (new_level - old_level)
     pending: list[str] = []
     grants: list[str] = []
     progression = _progression_state(character)
@@ -204,9 +236,16 @@ def _apply_levels(
         level_grants = definition.grants_at(level)
         choices = level_grants.choice_keys
         _append_level_provenance(progression, definition.key, level)
+        # Resource and action adapters must see the coordinate being earned,
+        # not the old persisted level, so a newly introduced slot receives its
+        # explicit initial capacity.  The caller's rollback snapshot restores
+        # this temporary write if any adapter rejects the grant.
+        character.db.level = level
         _apply_level_grants(character, definition, level)
         grants.extend(level_grants.automatic_feature_keys)
         pending.extend(choices)
+    # Write HP only after every adapter for every crossed level has succeeded.
+    character.db.hp_base = hp_base
     _write_progression_state(character, progression)
     return (
         [
@@ -230,6 +269,7 @@ def _apply_level_grants(character: Any, definition: Any, level: int) -> None:
     initialize_choice_entitlements(character, definition.key, level)
     _grant_automatic_actions(character, grants)
     _initialize_granted_resources(character, grants)
+    _initialize_spell_access(character, grants)
 
 
 def _grant_automatic_actions(character: Any, grants: Any) -> None:
@@ -265,11 +305,68 @@ def _initialize_granted_resources(character: Any, grants: Any) -> None:
         raise AdvancementError("Character advancement requires staff repair.") from err
 
 
+def _initialize_spell_access(character: Any, grants: Any) -> None:
+    """Create the current-value records for spell slots earned at this level.
+
+    This is deliberately separate from non-spell resources: a spell-access
+    table is present at every class level, so the owning resource service can
+    distinguish a capacity increase from a newly introduced slot key.
+    """
+    if not grants.spell_access_keys:
+        return
+    try:
+        from systems.magic_resources import (MagicResourceError,
+                                             initialize_spell_access_resources)
+
+        for spell_access_key in grants.spell_access_keys:
+            initialize_spell_access_resources(character, spell_access_key)
+    except MagicResourceError as err:
+        raise AdvancementError("Character advancement requires staff repair.") from err
+
+
 def _preserve_missing_hp(character: Any, missing_hp: int) -> None:
     """Keep damage taken constant when a level increases maximum HP."""
     # hp_base and level have already changed.  Deliberately write the resource
     # directly: leveling must not emit combat-policy effects before commit.
     character.db.hp_current = max(0, character.stats.hp_max - missing_hp)
+
+
+def _level_application_snapshot(character: Any) -> dict[str, Any]:
+    """Capture only state the level-grant adapters are allowed to mutate.
+
+    Evennia Attributes use their own handler layer.  The surrounding database
+    transaction is still authoritative, but retaining this narrow primitive
+    snapshot makes adapter failure atomic even when an Attribute backend flushes
+    before Django sees the raised exception.
+    """
+    return _attribute_snapshot(character, _LEVEL_APPLICATION_ATTRIBUTES)
+
+
+def _restore_level_application_snapshot(
+    character: Any, snapshot: Mapping[str, Any]
+) -> None:
+    """Restore a failed level application's owned state without touching XP."""
+    _restore_attribute_snapshot(character, snapshot, _LEVEL_APPLICATION_ATTRIBUTES)
+
+
+def _attribute_snapshot(character: Any, keys: Sequence[str]) -> dict[str, Any]:
+    """Copy a bounded set of potentially mutable Evennia Attributes."""
+    return {
+        key: deepcopy(character.attributes.get(key))
+        for key in keys
+        if character.attributes.get(key) is not None
+    }
+
+
+def _restore_attribute_snapshot(
+    character: Any, snapshot: Mapping[str, Any], keys: Sequence[str]
+) -> None:
+    """Restore or remove a bounded Attribute set from its primitive snapshot."""
+    for key in keys:
+        if key in snapshot:
+            character.attributes.add(key, deepcopy(snapshot[key]))
+        else:
+            character.attributes.remove(key)
 
 
 def _validate_character(character: Any) -> None:
@@ -539,6 +636,7 @@ def migrate_progression_baseline(character: Any) -> Mapping[str, Any]:
             grants = definition.grants_at(earned)
             _grant_automatic_actions(character, grants)
             _initialize_granted_resources(character, grants)
+            _initialize_spell_access(character, grants)
         character.attributes.remove("advancement_repair_required")
         return _progression_state(character)
 

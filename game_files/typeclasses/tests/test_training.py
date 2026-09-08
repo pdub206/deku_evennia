@@ -168,6 +168,11 @@ class TestTrainingService(EvenniaTest):
 
     def setUp(self):
         super().setUp()
+        self._release_gate = patch(
+            "systems.training.is_level_published", return_value=True
+        )
+        self._release_gate.start()
+        self.addCleanup(self._release_gate.stop)
         self.char1.db.is_player_character = True
         self.char1.db.char_class = "Fighter"
         self.char1.db.constitution = 10
@@ -191,6 +196,15 @@ class TestTrainingService(EvenniaTest):
         self.assertEqual(len(view.pending_choices), 1)
         self.assertEqual(view.pending_choices[0]["choice_key"], "fighter.skills")
         self.assertEqual(before, self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
+
+    def test_unpublished_class_band_is_rejected_when_configuring_trainer(self):
+        """Trainer source data cannot advertise a class awaiting publication."""
+        profile = default_trainer_profile()
+        profile["classes"] = ["Fighter"]
+        profile["choices"] = ["fighter.skills"]
+        with patch("systems.training.is_level_published", return_value=False):
+            with self.assertRaisesRegex(TrainingError, "invalid classes"):
+                set_trainer_profile(self.trainer, profile)
 
     def test_trainer_resolves_multi_selection_without_duplicate_proficiency(self):
         """Each selection consumes capacity; completion writes one provenance record."""

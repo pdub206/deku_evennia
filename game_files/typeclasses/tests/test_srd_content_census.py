@@ -30,7 +30,7 @@ class TestSRDContentCensus(EvenniaTest):
         report = census_report()
 
         self.assertEqual(SRD_CONTENT_CENSUS.version, 1)
-        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 1824)
+        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 1936)
         self.assertEqual(len(report["released"]), 3)
         self.assertIn("feature:fighter.second_wind:level:1", report["released"])
         self.assertIn("feature:barbarian.rage:level:1", report["catalogued"])
@@ -54,6 +54,10 @@ class TestSRDContentCensus(EvenniaTest):
         self.assertIn("spell:wizard:wish:level:9", report["catalogued"])
         self.assertIn(
             "origin_grant:background:acolyte:ability_adjustments",
+            report["catalogued"],
+        )
+        self.assertIn(
+            "origin_grant:species:dragonborn:draconic_flight:level:5",
             report["catalogued"],
         )
 
@@ -148,6 +152,39 @@ class TestSRDContentCensus(EvenniaTest):
         self.assertEqual(
             {record.key.split(":")[2] for record in grant_records},
             {"acolyte", "criminal", "sage", "soldier"},
+        )
+
+    def test_species_grant_inventory_covers_all_pinned_srd_occurrences(self):
+        """P04-A01 inventories each species trait, choice, and level gate."""
+        species_records = [
+            record
+            for record in SRD_CONTENT_CENSUS.records
+            if record.key.startswith("origin_grant:species:")
+        ]
+
+        self.assertEqual(len(species_records), 112)
+        self.assertEqual({record.owner_task for record in species_records}, {"P04-O01"})
+        self.assertEqual(
+            {record.key.split(":")[2] for record in species_records},
+            {
+                "dragonborn",
+                "dwarf",
+                "elf",
+                "gnome",
+                "goliath",
+                "halfling",
+                "human",
+                "orc",
+                "tiefling",
+            },
+        )
+        self.assertIn(
+            "origin_grant:species:dwarf:dwarven_toughness:level:20",
+            {record.key for record in species_records},
+        )
+        self.assertIn(
+            "origin_grant:species:tiefling:infernal_darkness:level:5",
+            {record.key for record in species_records},
         )
 
     def test_tool_inventory_covers_all_named_srd_tool_rows_and_variants(self):

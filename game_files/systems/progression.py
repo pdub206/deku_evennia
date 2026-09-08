@@ -280,7 +280,7 @@ def build_registry(
         "magic",
         "resources",
     ),
-    required_help_keys: Iterable[str] = ("class progression",),
+    required_help_keys: Iterable[str] | None = None,
 ) -> ProgressionRegistry:
     """Validate and freeze a complete class-progression graph.
 
@@ -293,7 +293,11 @@ def build_registry(
     spells_by_key = _indexed(spell_access, "spell access")
     choices_by_key = _indexed(choices, "choice")
     owners = frozenset(available_owners)
-    help_keys = frozenset(required_help_keys)
+    help_keys = (
+        _loaded_help_keys()
+        if required_help_keys is None
+        else frozenset(required_help_keys)
+    )
 
     if tuple(definitions_by_key) != SELECTABLE_CLASS_NAMES:
         raise RegistryValidationError(
@@ -534,6 +538,17 @@ def _indexed(values: Iterable[Any], label: str) -> dict[str, Any]:
             )
         indexed[value.key] = value
     return indexed
+
+
+def _loaded_help_keys() -> frozenset[str]:
+    """Read real file-help identities instead of trusting a placeholder list."""
+    from world.help_entries import HELP_ENTRY_DICTS
+
+    return frozenset(
+        entry["key"]
+        for entry in HELP_ENTRY_DICTS
+        if isinstance(entry, Mapping) and isinstance(entry.get("key"), str)
+    )
 
 
 def _validate_class(
