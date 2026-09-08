@@ -226,6 +226,15 @@ class EquipmentHandler:
         return None
 
     @property
+    def wearing_armor(self) -> bool:
+        """Return whether any equipped non-shield armor prevents unarmored AC."""
+        return any(
+            self._item_type(item) == "armor"
+            and self._armor_category(item) in ARMOR_CATEGORIES[:-1]
+            for item in self.equipped_items
+        )
+
+    @property
     def shield(self) -> Any | None:
         """Return a shield-category armor item equipped in the shield slot."""
         item = self.item_at("shield")

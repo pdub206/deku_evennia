@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
 MAX_CLASS_LEVEL = 20
-# Version 7 adds cited catalogue-only non-spell resource records.
-CLASS_REGISTRY_VERSION = 7
+# Version 9 releases Fighter Second Wind and the Barbarian/Monk AC adapters.
+CLASS_REGISTRY_VERSION = 9
 MAX_SRD_REFERENCE_LENGTH = 160
 SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
 SELECTABLE_CLASS_NAMES = (
@@ -61,6 +61,7 @@ class FeatureDefinition:
     release_state: str = "catalogued"
     feature_shape: str = "unclassified"
     release_adapter: str = ""
+    action_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,7 @@ def build_registry(
     version: int = CLASS_REGISTRY_VERSION,
     available_owners: Iterable[str] = (
         "advancement",
+        "character_stats",
         "catalogue",
         "magic",
         "resources",
@@ -280,6 +282,16 @@ def build_registry(
             raise RegistryValidationError(
                 f"Released feature '{feature.key}' needs an owning adapter."
             )
+        if not isinstance(feature.action_key, str) or (
+            feature.action_key and not _valid_stable_key(feature.action_key)
+        ):
+            raise RegistryValidationError(
+                f"Feature '{feature.key}' has an invalid action key."
+            )
+        if feature.release_state == "catalogued" and feature.action_key:
+            raise RegistryValidationError(
+                f"Catalogued feature '{feature.key}' cannot expose an action."
+            )
         if feature.feature_shape not in {
             "unclassified",
             "passive",
@@ -293,6 +305,7 @@ def build_registry(
         if feature.release_adapter not in {
             "advancement.choice",
             "advancement.passive",
+            "character_stats.unarmored_defense",
             "combat.class_feature",
             "magic.class_feature",
             "resources.class_feature",
@@ -586,6 +599,11 @@ def _validate_srd_reference(value: object, label: str) -> None:
         raise RegistryValidationError(
             f"{label} needs an SRD 5.2.1 section or table reference."
         )
+
+
+def _valid_stable_key(value: str) -> bool:
+    """Accept a compact, non-executable key shared with the action registry."""
+    return bool(re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", value))
 
 
 def _validate_spell_access(access: SpellAccess) -> None:
@@ -1043,16 +1061,47 @@ def _default_registry() -> ProgressionRegistry:
     features, catalogued_feature_keys = _catalogued_srd_features()
     subclass_features, catalogued_subclasses = _catalogued_srd_subclasses()
     features.extend(subclass_features)
+    released_feature_adapters = {
+        "barbarian.unarmored_defense": (
+            "character_stats",
+            "character_stats.unarmored_defense",
+            "",
+        ),
+        "fighter.second_wind": (
+            "resources",
+            "resources.class_feature",
+            "fighter.second_wind",
+        ),
+        "monk.unarmored_defense": (
+            "character_stats",
+            "character_stats.unarmored_defense",
+            "",
+        ),
+    }
+    features = [
+        replace(
+            feature,
+            owner=released_feature_adapters[feature.key][0],
+            release_state="released",
+            release_adapter=released_feature_adapters[feature.key][1],
+            action_key=released_feature_adapters[feature.key][2],
+        )
+        if feature.key in released_feature_adapters
+        else feature
+        for feature in features
+    ]
+    features_by_key = {feature.key: feature for feature in features}
     resources = [
         ResourceProgression(
             resource.key,
-            "catalogue",
+            "resources" if resource.key == "fighter.second_wind" else "catalogue",
             resource.maxima,
             resource.recovery_profile,
             resource.display_name,
             resource.srd_reference,
             resource.spend_profile,
             resource.capacity_expression,
+            "released" if resource.key == "fighter.second_wind" else "catalogued",
         )
         for resource in SRD_CLASS_RESOURCES.values()
     ]
@@ -1104,11 +1153,19 @@ def _default_registry() -> ProgressionRegistry:
         levels = tuple(
             LevelGrants(
                 level,
-                (),
+                tuple(
+                    feature_key
+                    for feature_key in catalogued_feature_keys[name][level - 1]
+                    if features_by_key[feature_key].release_state == "released"
+                ),
                 (),
                 spell_keys,
                 (skill_choice_key,) if level == 1 else (),
-                catalogued_feature_keys[name][level - 1],
+                tuple(
+                    feature_key
+                    for feature_key in catalogued_feature_keys[name][level - 1]
+                    if features_by_key[feature_key].release_state == "catalogued"
+                ),
                 (catalogued_subclasses[name][0],) if level == 3 else (),
                 catalogued_subclasses[name][1][level - 1],
             )

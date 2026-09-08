@@ -108,6 +108,12 @@ class TestMagicRegistry(EvenniaTest):
         with self.assertRaises(MagicRegistryError):
             build(arcane_bolt(scaling=Scaling(levels=(2,), healing_per_step=1)))
         with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(handler_key="removal"))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(removal_categories=("condition.poisoned",)))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(removal_reason="admin"))
+        with self.assertRaises(MagicRegistryError):
             build(
                 arcane_bolt(
                     concentration=True,
@@ -205,6 +211,7 @@ class TestMagicRegistry(EvenniaTest):
             "wizard.arcane_bolt",
             1,
             11,
+            1,
             (12,),
             1,
             13,
@@ -212,6 +219,7 @@ class TestMagicRegistry(EvenniaTest):
             MappingProxyType({"arcane_energy": 1}),
         )
         restored = deserialize_cast_snapshot(snapshot.serialize())
+        self.assertEqual(restored.character_level, 1)
         self.assertEqual(restored.target_ids, (12,))
         validate_persistent_magic_state({"known": ["wizard.arcane_bolt"], "choice": 1})
         with self.assertRaises(MagicRegistryError):

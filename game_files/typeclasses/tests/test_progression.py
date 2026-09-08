@@ -38,7 +38,12 @@ class TestClassProgressionRegistry(EvenniaTest):
         for definition in CLASS_PROGRESSION.definitions.values():
             first = definition.grants_at(1)
             self.assertIn(definition.skill_choice_key, first.choice_keys)
-            self.assertEqual(first.automatic_feature_keys, ())
+            expected_automatic = {
+                "Barbarian": ("barbarian.unarmored_defense",),
+                "Fighter": ("fighter.second_wind",),
+                "Monk": ("monk.unarmored_defense",),
+            }.get(definition.key, ())
+            self.assertEqual(first.automatic_feature_keys, expected_automatic)
             table = SRD_CLASS_FEATURES[definition.key]
             for level in range(1, MAX_CLASS_LEVEL + 1):
                 grants = definition.grants_at(level)
@@ -46,9 +51,18 @@ class TestClassProgressionRegistry(EvenniaTest):
                     CLASS_PROGRESSION.features[key]
                     for key in grants.catalogued_feature_keys
                 )
+                released = tuple(
+                    CLASS_PROGRESSION.features[key]
+                    for key in grants.automatic_feature_keys
+                )
+                released_names = tuple(entry.display_name for entry in released)
                 self.assertEqual(
                     tuple(entry.display_name for entry in entries),
-                    table.features_at(level),
+                    tuple(
+                        name
+                        for name in table.features_at(level)
+                        if name not in released_names
+                    ),
                 )
                 self.assertTrue(
                     all(entry.release_state == "catalogued" for entry in entries)
@@ -60,6 +74,9 @@ class TestClassProgressionRegistry(EvenniaTest):
                     all(entry.feature_shape != "unclassified" for entry in entries)
                 )
                 self.assertTrue(all(entry.release_adapter for entry in entries))
+                self.assertTrue(
+                    all(entry.release_state == "released" for entry in released)
+                )
 
     def test_catalogued_subclasses_require_selection_without_granting_mechanics(self):
         """Subclass source data records its dependency but is not selectable yet."""
@@ -123,7 +140,7 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
-        self.assertEqual(CLASS_PROGRESSION.version, 7)
+        self.assertEqual(CLASS_PROGRESSION.version, 9)
 
     def test_cited_non_spell_resources_are_catalogued_without_a_generic_curve(self):
         """Each resource preserves its own source capacity and cadence."""
@@ -136,8 +153,12 @@ class TestClassProgressionRegistry(EvenniaTest):
             self.assertEqual(resource.spend_profile, source.spend_profile)
             self.assertEqual(resource.recovery_profile, source.recovery_profile)
             self.assertEqual(resource.srd_reference, source.srd_reference)
-            self.assertEqual(resource.release_state, "catalogued")
-            self.assertEqual(resource.owner, "catalogue")
+            if key == "fighter.second_wind":
+                self.assertEqual(resource.release_state, "released")
+                self.assertEqual(resource.owner, "resources")
+            else:
+                self.assertEqual(resource.release_state, "catalogued")
+                self.assertEqual(resource.owner, "catalogue")
         self.assertEqual(
             CLASS_PROGRESSION.resources["barbarian.rage"].maxima,
             (2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6),

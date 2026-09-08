@@ -239,6 +239,11 @@ STANDARD_HANDLERS: Mapping[str, HandlerContract] = MappingProxyType(
             ),
         ),
         "effect": HandlerContract("effect", frozenset({"effects"}), _TARGETING_MODES),
+        "removal": HandlerContract(
+            "removal",
+            frozenset({"removals"}),
+            frozenset({TargetingMode.SELF, TargetingMode.CREATURE, TargetingMode.ALLY}),
+        ),
         "movement": HandlerContract(
             "movement",
             frozenset(),
@@ -281,10 +286,13 @@ class MagicDefinition:
     maintenance: str = "none"
     damage: Damage | None = None
     healing: DiceExpression | None = None
+    healing_class_level_bonus: int = 0
     save: Save | None = None
     duration: int | None = None
     interruption: str = "standard"
     effect_keys: tuple[str, ...] = ()
+    removal_categories: tuple[str, ...] = ()
+    removal_reason: str = "cured"
     scaling: Scaling = field(default_factory=Scaling)
     stacking: str = StackingPolicy.REJECT
     messages: Mapping[str, str] = field(default_factory=dict)
@@ -366,6 +374,7 @@ class CastSnapshot:
     source_key: str
     registry_version: int
     caster_id: int
+    character_level: int
     target_ids: tuple[int, ...]
     cast_level: int
     save_dc: int | None
@@ -378,6 +387,7 @@ class CastSnapshot:
             "source_key": self.source_key,
             "registry_version": self.registry_version,
             "caster_id": self.caster_id,
+            "character_level": self.character_level,
             "target_ids": list(self.target_ids),
             "cast_level": self.cast_level,
             "save_dc": self.save_dc,
@@ -466,6 +476,7 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
         "source_key",
         "registry_version",
         "caster_id",
+        "character_level",
         "target_ids",
         "cast_level",
         "save_dc",
@@ -478,6 +489,7 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
     for name, maximum in (
         ("registry_version", 1000000),
         ("caster_id", 2**63 - 1),
+        ("character_level", 20),
         ("cast_level", 9),
     ):
         _validate_positive_int(value[name], name.replace("_", " "), maximum=maximum)
@@ -511,6 +523,7 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
         source_key,
         value["registry_version"],
         value["caster_id"],
+        value["character_level"],
         tuple(targets),
         value["cast_level"],
         value["save_dc"],
@@ -644,6 +657,13 @@ def _validate_definition(
     _validate_damage(definition.damage, damages)
     if definition.healing is not None:
         _validate_dice(definition.healing)
+    _validate_nonnegative_int(
+        definition.healing_class_level_bonus,
+        "class-level healing bonus",
+        maximum=20,
+    )
+    if definition.healing_class_level_bonus and definition.healing is None:
+        raise MagicRegistryError("A class-level healing bonus needs healing dice.")
     _validate_save(definition.save)
     _validate_scaling(definition.scaling)
     if definition.scaling.dice_per_step and definition.damage is None:
@@ -666,6 +686,22 @@ def _validate_definition(
     ):
         raise MagicRegistryError(
             "A magic action references an unknown or duplicate effect."
+        )
+    if (
+        not isinstance(definition.removal_categories, tuple)
+        or len(definition.removal_categories) > 12
+        or len(set(definition.removal_categories)) != len(definition.removal_categories)
+    ):
+        raise MagicRegistryError("A magic action has invalid removal categories.")
+    for category in definition.removal_categories:
+        _validate_key(category, "removal category")
+    if definition.removal_reason not in {"cured", "dispelled"}:
+        raise MagicRegistryError("A magic action has an invalid removal reason.")
+    if definition.handler_key == "removal" and not definition.removal_categories:
+        raise MagicRegistryError("An effect-removal action needs a removal category.")
+    if definition.handler_key != "removal" and definition.removal_categories:
+        raise MagicRegistryError(
+            "Only an effect-removal action may declare removal categories."
         )
     if definition.concentration and (
         definition.duration is None or not definition.effect_keys
@@ -711,6 +747,7 @@ def _validate_definition(
         "healing" if definition.healing else "",
         "save" if definition.save else "",
         "effects" if definition.effect_keys else "",
+        "removals" if definition.removal_categories else "",
     }
     required = handlers[definition.handler_key].required_fields
     if not required <= supplied:
@@ -744,7 +781,8 @@ def _validated_handlers(
         if (
             not isinstance(contract.required_fields, frozenset)
             or not isinstance(contract.permitted_targets, frozenset)
-            or not contract.required_fields <= {"damage", "healing", "save", "effects"}
+            or not contract.required_fields
+            <= {"damage", "healing", "save", "effects", "removals"}
             or not contract.permitted_targets <= _TARGETING_MODES
         ):
             raise MagicRegistryError("A handler contract has an unsafe schema.")
@@ -1034,7 +1072,17 @@ def _render_player_help(definition: MagicDefinition) -> str:
     return "\n\n".join(parts)
 
 
-# SRD content is registered only after its class feature, resource, effect, and
-# casting adapters exist.  An empty registry fails closed rather than exposing
-# invented or mechanically incomplete actions.
-MAGIC_REGISTRY = build_magic_registry((), require_srd_references=True)
+def _default_magic_registry() -> MagicRegistry:
+    """Build only the SRD entries whose P-04 release checklists are complete."""
+    # The late import keeps declarative content separate while avoiding an
+    # import cycle: content definitions depend on the types declared above.
+    from systems.srd_magic_content import SRD_MAGIC_DEFINITIONS, SRD_MAGIC_HELP_KEYS
+
+    return build_magic_registry(
+        SRD_MAGIC_DEFINITIONS,
+        help_keys=SRD_MAGIC_HELP_KEYS,
+        require_srd_references=True,
+    )
+
+
+MAGIC_REGISTRY = _default_magic_registry()

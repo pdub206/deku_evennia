@@ -874,6 +874,7 @@ def _snapshot(
         definition.key,
         registry.version,
         caster.id,
+        caster.stats.level,
         (target.id,),
         cast_level,
         8 + proficiency + modifier if definition.save is not None else None,
@@ -927,7 +928,9 @@ def _execute(
     if definition.handler_key == "utility":
         return MagicActionResult(True, "cast", definition, target, snapshot)
     if definition.handler_key == "healing":
-        amount = _roll_dice(_scaled_healing(definition, snapshot))
+        amount = _roll_dice(_scaled_healing(definition, snapshot)) + (
+            snapshot.character_level * definition.healing_class_level_bonus
+        )
         result = apply_healing(target, amount, emit_messages=False)
         if not result.accepted:
             raise MagicActionError("That target cannot be healed.")
@@ -946,10 +949,52 @@ def _execute(
         return _apply_effects(caster, definition, target, snapshot)
     if definition.handler_key == "effect":
         return _apply_effects(caster, definition, target, snapshot)
+    if definition.handler_key == "removal":
+        return _remove_effects(caster, definition, target, snapshot)
     # Movement and area consequences require their owning MAGIC-04/INTERACT
     # adapters. Rejecting them is safer than a partial cast that spends a
     # resource without a declared consequence.
     raise MagicActionError("That action's effect is not available yet.")
+
+
+def _remove_effects(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Remove only declared, category-authorized effects from one target.
+
+    The action definition never names active effect instances or bypasses their
+    removal policy. RULES-03 decides whether each matching effect is curable or
+    dispellable and runs its normal cleanup listeners exactly once.
+    """
+    from systems.effects import EffectError, RemovalOutcome, RemovalReason
+
+    handler = getattr(target, "effects", None)
+    if handler is None:
+        raise MagicActionError("That target cannot carry magical effects.")
+    reason = (
+        RemovalReason.CURED
+        if definition.removal_reason == "cured"
+        else RemovalReason.DISPELLED
+    )
+    removed = 0
+    try:
+        for category in definition.removal_categories:
+            results = handler.remove_matching(category, reason=reason)
+            removed += sum(
+                result.outcome is RemovalOutcome.REMOVED for result in results
+            )
+    except EffectError as err:
+        raise MagicActionError("That action's effect is not available yet.") from err
+    if removed:
+        _message(caster, target, definition, "You cleanse")
+    return MagicActionResult(
+        True,
+        "effects_removed" if removed else "no_matching_effect",
+        definition,
+        target,
+        snapshot,
+        removed,
+    )
 
 
 def _apply_effects(

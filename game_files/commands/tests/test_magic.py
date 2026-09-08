@@ -25,7 +25,7 @@ from systems.magic import (
     build_magic_registry,
 )
 from systems.magic_actions import cast_action, grant_action
-from systems.magic_resources import resource_current, restore_resource
+from systems.magic_resources import recover_profile, resource_current, restore_resource
 from systems.magic_rest import (
     MAGIC_REST_ATTRIBUTE,
     SAFE_REST_TAG,
@@ -53,6 +53,22 @@ _SAVE_EFFECT = EffectDefinition(
 )
 if EFFECT_REGISTRY.get(_SAVE_EFFECT.key) is None:
     EFFECT_REGISTRY.register(_SAVE_EFFECT)
+
+_CURABLE_EFFECT = EffectDefinition(
+    key="test.magic.curable",
+    name="Test Curable Effect",
+    duration=9,
+    removal_categories=frozenset({"condition.poisoned"}),
+)
+_UNCURABLE_EFFECT = EffectDefinition(
+    key="test.magic.uncurable",
+    name="Test Uncurable Effect",
+    duration=9,
+    removal_categories=frozenset({"condition.frightened"}),
+)
+for _effect in (_CURABLE_EFFECT, _UNCURABLE_EFFECT):
+    if EFFECT_REGISTRY.get(_effect.key) is None:
+        EFFECT_REGISTRY.register(_effect)
 
 
 def _registry():
@@ -166,6 +182,34 @@ def _damage_save_registry():
         resource_keys=("wizard.spell_slot.1",),
         damage_types=("force",),
         help_keys=("test burst",),
+    )
+
+
+def _removal_registry():
+    """Build one targeted cure bridge without registering SRD content yet."""
+    action = MagicDefinition(
+        key="wizard.test_cleanse",
+        display_name="Test Cleanse",
+        aliases=("cleanse",),
+        kind=MagicKind.SPELL,
+        school="abjuration",
+        tags=("test",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="manipulate",
+        handler_key="removal",
+        targeting=Targeting(TargetingMode.CREATURE),
+        range=RangeCategory.ROOM,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        removal_categories=("condition.poisoned",),
+        removal_reason="cured",
+        player_help=PlayerHelp("test cleanse", "A targeted effect-removal test."),
+    )
+    return build_magic_registry(
+        (action,),
+        class_keys=("Wizard",),
+        resource_keys=("wizard.spell_slot.1",),
+        help_keys=("test cleanse",),
     )
 
 
@@ -338,6 +382,24 @@ class TestMagicCommands(EvenniaCommandTest):
             self.assertIn("already active", self.call(CmdCast(), "ward"))
             self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 2)
 
+    def test_removal_actions_use_effect_categories_without_touching_other_effects(self):
+        """The P-03 cure bridge delegates authorization and cleanup to RULES-03."""
+        self.char2.effects.add(_CURABLE_EFFECT.key, source=self.char1, quiet=True)
+        self.char2.effects.add(_UNCURABLE_EFFECT.key, source=self.char1, quiet=True)
+        with patch("systems.magic.MAGIC_REGISTRY", _removal_registry()):
+            grant_action(self.char1, "wizard.test_cleanse", AccessMode.LEARNED)
+            result = cast_action(self.char1, "cleanse", target_name=self.char2.key)
+            self.assertTrue(result.accepted)
+            self.assertEqual((result.reason, result.amount), ("effects_removed", 1))
+            self.assertFalse(self.char2.effects.has(_CURABLE_EFFECT.key))
+            self.assertTrue(self.char2.effects.has(_UNCURABLE_EFFECT.key))
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+
+            result = cast_action(self.char1, "cleanse", target_name=self.char2.key)
+            self.assertTrue(result.accepted)
+            self.assertEqual((result.reason, result.amount), ("no_matching_effect", 0))
+            self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 0)
+
     def test_saving_throw_effects_snapshot_the_dc_and_apply_only_on_failure(self):
         """A saving-throw action delegates its save and storage to RULES-03."""
         with patch("systems.magic.MAGIC_REGISTRY", _saving_throw_registry()):
@@ -388,3 +450,37 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(result.reason, "saved")
         self.assertEqual(result.amount, 3)
         self.assertEqual(self.char2.stats.hp_current, 17)
+
+
+class TestSecondWindRelease(EvenniaCommandTest):
+    """The first P-04 release follows progression through execution and recovery."""
+
+    def setUp(self):
+        super().setUp()
+        self.char1.db.is_player_character = True
+        self.char1.db.constitution = 10
+        initialize_level_one(self.char1, class_key="Fighter", hp_base=10)
+        self.char1.db.hp_current = 1
+
+    def test_automatic_fighter_feature_heals_and_uses_its_own_resource(self):
+        """Second Wind is granted at level one, not selected or manually injected."""
+        self.assertIn("Second Wind", self.call(CmdAbilities(), ""))
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 2)
+        with patch("systems.magic_actions._roll_dice", return_value=7):
+            result = cast_action(self.char1, "second wind")
+        self.assertTrue(result.accepted)
+        self.assertEqual((result.reason, result.amount), ("healed", 8))
+        self.assertEqual(self.char1.stats.hp_current, 9)
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 1)
+
+        with patch("systems.magic_actions._roll_dice", return_value=7):
+            self.assertTrue(cast_action(self.char1, "second wind").accepted)
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 0)
+        self.assertEqual(
+            recover_profile(self.char1, "short_rest"),
+            (("fighter.second_wind", 1),),
+        )
+        self.assertEqual(
+            recover_profile(self.char1, "long_rest"),
+            (("fighter.second_wind", 2),),
+        )

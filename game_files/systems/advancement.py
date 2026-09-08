@@ -182,6 +182,7 @@ def initialize_level_one(character: Any, *, class_key: str, hp_base: int) -> Non
         from systems.training import initialize_choice_entitlements
 
         initialize_choice_entitlements(character, definition.key, 1)
+        _grant_automatic_actions(character, definition.grants_at(1))
         _write_ledger(character, _new_ledger())
 
 
@@ -201,14 +202,35 @@ def _apply_levels(
     from systems.training import initialize_choice_entitlements
 
     pending: list[str] = []
+    grants: list[str] = []
     for level in range(old_level + 1, new_level + 1):
-        choices = definition.grants_at(level).choice_keys
+        level_grants = definition.grants_at(level)
+        choices = level_grants.choice_keys
         initialize_choice_entitlements(character, definition.key, level)
+        _grant_automatic_actions(character, level_grants)
+        grants.extend(level_grants.automatic_feature_keys)
         pending.extend(choices)
     return (
-        [f"hp_level_{level}" for level in range(old_level + 1, new_level + 1)],
+        [
+            *(f"hp_level_{level}" for level in range(old_level + 1, new_level + 1)),
+            *grants,
+        ],
         tuple(pending),
     )
+
+
+def _grant_automatic_actions(character: Any, grants: Any) -> None:
+    """Grant released feature actions through MAGIC-02's ownership boundary."""
+    try:
+        from systems.magic import AccessMode
+        from systems.magic_actions import MagicActionError, grant_action
+
+        for feature_key in grants.automatic_feature_keys:
+            feature = CLASS_PROGRESSION.features[feature_key]
+            if feature.action_key:
+                grant_action(character, feature.action_key, AccessMode.INNATE)
+    except (KeyError, MagicActionError) as err:
+        raise AdvancementError("Character advancement requires staff repair.") from err
 
 
 def _preserve_missing_hp(character: Any, missing_hp: int) -> None:

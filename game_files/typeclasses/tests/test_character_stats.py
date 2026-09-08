@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
+from systems.advancement import initialize_level_one
 from systems.equipment import HIT_LOCATIONS
 
 
@@ -155,6 +156,77 @@ class TestCharacterStats(EvenniaTest):
 
         shield.db.worn_location = None
         self.assertEqual(stats.armor_class, 16)
+
+    def test_barbarian_unarmored_defense_allows_a_shield_but_no_armor(self):
+        """The released Barbarian feature uses Constitution and permits a Shield."""
+        initialize_level_one(self.char1, class_key="Barbarian", hp_base=12)
+        self.char1.stats.set_ability_score("Dexterity", 14)
+        self.char1.stats.set_ability_score("Constitution", 16)
+        self.assertEqual(self.char1.stats.armor_class, 15)
+        shield = create_object(
+            "typeclasses.objects.Item",
+            key="a shield",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "shield"),
+                ("base_ac", 2),
+                ("wear_locations", ["shield"]),
+                ("worn_location", "shield"),
+            ),
+        )
+        self.assertEqual(self.char1.stats.armor_class, 17)
+        armor = create_object(
+            "typeclasses.objects.Item",
+            key="a leather cap",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "light"),
+                ("base_ac", 11),
+                ("wear_locations", ["head"]),
+                ("worn_location", "head"),
+            ),
+        )
+        self.assertTrue(self.char1.equipment.wearing_armor)
+        self.assertEqual(self.char1.stats.armor_class, 14)
+        self.assertIsNotNone(shield)
+        self.assertIsNotNone(armor)
+
+    def test_monk_unarmored_defense_excludes_armor_and_shields(self):
+        """The released Monk feature uses Wisdom only while wholly unarmored."""
+        initialize_level_one(self.char1, class_key="Monk", hp_base=8)
+        self.char1.stats.set_ability_score("Dexterity", 14)
+        self.char1.stats.set_ability_score("Wisdom", 16)
+        self.assertEqual(self.char1.stats.armor_class, 15)
+        shield = create_object(
+            "typeclasses.objects.Item",
+            key="a shield",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "shield"),
+                ("base_ac", 2),
+                ("wear_locations", ["shield"]),
+                ("worn_location", "shield"),
+            ),
+        )
+        self.assertEqual(self.char1.stats.armor_class, 14)
+        shield.db.worn_location = None
+        create_object(
+            "typeclasses.objects.Item",
+            key="a leather cap",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "light"),
+                ("base_ac", 11),
+                ("wear_locations", ["head"]),
+                ("worn_location", "head"),
+            ),
+        )
+        self.assertEqual(self.char1.stats.armor_class, 12)
+        self.assertIsNotNone(shield)
 
     def test_locational_armor_does_not_change_ac(self):
         self.char1.stats.set_ability_score("Dexterity", 14)

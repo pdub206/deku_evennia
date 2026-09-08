@@ -256,7 +256,11 @@ class CharacterStats:
         dexterity = self.ability_modifier("Dexterity")
         if armor is None or armor.attributes.get("base_ac") is None:
             override = self._attribute("armor_class_override")
-            base = int(override) if override is not None else 10 + dexterity
+            base = (
+                int(override)
+                if override is not None
+                else self._unarmored_armor_class(dexterity)
+            )
         else:
             base = int(armor.db.base_ac)
             category = str(armor.db.subtype).lower()
@@ -269,6 +273,37 @@ class CharacterStats:
         if shield is not None and shield.attributes.get("base_ac") is not None:
             base += int(shield.db.base_ac)
         return max(0, base + self._modifier_total("armor_class"))
+
+    def _unarmored_armor_class(self, dexterity: int) -> int:
+        """Return the released class-specific unarmored base Armor Class.
+
+        SRD 5.2.1 gives Barbarian and Monk alternate base-AC calculations. A
+        worn helmet or other non-shield armor still counts as wearing armor;
+        the Barbarian exception permits a Shield while the Monk rule does not.
+        The registry gate keeps this calculation unavailable until the cited
+        automatic feature has been released for the character's class level.
+        """
+        equipment = self.owner.equipment
+        if equipment.wearing_armor:
+            return 10 + dexterity
+        if self._has_released_feature("barbarian.unarmored_defense"):
+            return 10 + dexterity + self.ability_modifier("Constitution")
+        if equipment.shield is None and self._has_released_feature(
+            "monk.unarmored_defense"
+        ):
+            return 10 + dexterity + self.ability_modifier("Wisdom")
+        return 10 + dexterity
+
+    def _has_released_feature(self, feature_key: str) -> bool:
+        """Return whether current class progression grants one released feature."""
+        class_key = self._attribute("char_class")
+        try:
+            from systems.progression import CLASS_PROGRESSION
+
+            grants = CLASS_PROGRESSION.class_for(class_key).levels[: self.level]
+        except (KeyError, ValueError):
+            return False
+        return any(feature_key in grant.automatic_feature_keys for grant in grants)
 
     @property
     def reaction_modifier(self) -> int:

@@ -89,6 +89,38 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "second wind",
+        "aliases": ["fighter second wind", "fighter healing"],
+        "category": "Character",
+        "text": """
+            Second Wind is a Fighter feature. Use |wcast 'second wind'|n to
+            regain 1d10 + your Fighter level Hit Points. You start with two
+            uses at level 1; later Fighter levels increase that maximum.
+
+            Finishing a Short Rest restores one expended use. Finishing a Long
+            Rest restores all expended uses. In DEKU, bonus actions are not
+            separately scheduled, so Second Wind uses the normal immediate
+            ability-casting flow. It targets only you and cannot restore Hit
+            Points above your maximum.
+        """,
+    },
+    {
+        "key": "unarmored defense",
+        "aliases": ["barbarian unarmored defense", "monk unarmored defense"],
+        "category": "Character",
+        "text": """
+            Unarmored Defense is a level 1 feature for Barbarians and Monks.
+            While you are not wearing armor, a Barbarian's base Armor Class is
+            10 + your Dexterity modifier + your Constitution modifier. A
+            Barbarian can still use a Shield with this feature.
+
+            While you are not wearing armor or wielding a Shield, a Monk's
+            base Armor Class is 10 + your Dexterity modifier + your Wisdom
+            modifier. Wearing any non-Shield armor, including armor in a
+            locational equipment slot, prevents either benefit.
+        """,
+    },
+    {
         "key": "check diagnostics",
         "aliases": ["@check", "builder checks", "adv-04"],
         "category": "Building",
