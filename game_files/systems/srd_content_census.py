@@ -17,17 +17,19 @@ from typing import Iterable, Mapping
 
 from systems.progression import CLASS_PROGRESSION, MAX_CLASS_LEVEL
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
-from systems.srd_spell_lists import (SRD_CANTRIP_LISTS,
-                                     SRD_LEVEL_EIGHT_SPELL_LISTS,
-                                     SRD_LEVEL_FIVE_SPELL_LISTS,
-                                     SRD_LEVEL_FOUR_SPELL_LISTS,
-                                     SRD_LEVEL_NINE_SPELL_LISTS,
-                                     SRD_LEVEL_ONE_SPELL_LISTS,
-                                     SRD_LEVEL_SEVEN_SPELL_LISTS,
-                                     SRD_LEVEL_SIX_SPELL_LISTS,
-                                     SRD_LEVEL_THREE_SPELL_LISTS,
-                                     SRD_LEVEL_TWO_SPELL_LISTS,
-                                     SRDSpellListEntry)
+from systems.srd_spell_lists import (
+    SRD_CANTRIP_LISTS,
+    SRD_LEVEL_EIGHT_SPELL_LISTS,
+    SRD_LEVEL_FIVE_SPELL_LISTS,
+    SRD_LEVEL_FOUR_SPELL_LISTS,
+    SRD_LEVEL_NINE_SPELL_LISTS,
+    SRD_LEVEL_ONE_SPELL_LISTS,
+    SRD_LEVEL_SEVEN_SPELL_LISTS,
+    SRD_LEVEL_SIX_SPELL_LISTS,
+    SRD_LEVEL_THREE_SPELL_LISTS,
+    SRD_LEVEL_TWO_SPELL_LISTS,
+    SRDSpellListEntry,
+)
 from world.chargen_data import BACKGROUNDS, SPECIES
 
 CONTENT_CENSUS_VERSION = 1
@@ -37,6 +39,7 @@ _P04_TASKS = frozenset(
         "P04-A05",
         "P04-A06",
         "P04-A07",
+        "P04-A08",
         "P04-A09",
         "P04-A10",
         "P04-O01",
@@ -141,6 +144,7 @@ def _validate_record(record: CensusRecord) -> None:
             "spell_access",
             "spell",
             "feat",
+            "origin_grant",
             "creature_reference",
             "equipment_reference",
             "background",
@@ -343,8 +347,14 @@ def _default_records() -> tuple[CensusRecord, ...]:
                 "catalogued",
             )
         )
-    records.extend(_initial_feat_records())
+    records.extend(_srd_feat_records())
+    records.extend(_background_grant_records())
     records.extend(_initial_equipment_records())
+    records.extend(_srd_tool_records())
+    records.extend(_srd_adventuring_gear_records())
+    records.extend(_srd_equipment_variant_records())
+    records.extend(_mount_creature_records())
+    records.extend(_srd_creature_stat_block_records())
     records.extend(_cantrip_records())
     records.extend(_level_one_spell_records())
     records.extend(_level_two_spell_records())
@@ -358,31 +368,79 @@ def _default_records() -> tuple[CensusRecord, ...]:
     return tuple(records)
 
 
-def _initial_feat_records() -> tuple[CensusRecord, ...]:
-    """Seed cited feat rows already required by current class/origin tables.
+_SRD_FEAT_ENTRIES = (
+    ("origin", "alert", "Alert", "SRD 5.2.1 p.87: Alert"),
+    ("origin", "magic_initiate", "Magic Initiate", "SRD 5.2.1 p.87: Magic Initiate"),
+    ("origin", "savage_attacker", "Savage Attacker", "SRD 5.2.1 p.87: Savage Attacker"),
+    ("origin", "skilled", "Skilled", "SRD 5.2.1 p.87: Skilled"),
+    (
+        "general",
+        "ability_score_improvement",
+        "Ability Score Improvement",
+        "SRD 5.2.1 p.87: Ability Score Improvement",
+    ),
+    ("general", "grappler", "Grappler", "SRD 5.2.1 p.87: Grappler"),
+    ("fighting_style", "archery", "Archery", "SRD 5.2.1 p.87: Archery"),
+    ("fighting_style", "defense", "Defense", "SRD 5.2.1 p.88: Defense"),
+    (
+        "fighting_style",
+        "great_weapon_fighting",
+        "Great Weapon Fighting",
+        "SRD 5.2.1 p.88: Great Weapon Fighting",
+    ),
+    (
+        "fighting_style",
+        "two_weapon_fighting",
+        "Two-Weapon Fighting",
+        "SRD 5.2.1 p.88: Two-Weapon Fighting",
+    ),
+    (
+        "epic_boon",
+        "boon_of_combat_prowess",
+        "Boon of Combat Prowess",
+        "SRD 5.2.1 p.88: Boon of Combat Prowess",
+    ),
+    (
+        "epic_boon",
+        "boon_of_dimensional_travel",
+        "Boon of Dimensional Travel",
+        "SRD 5.2.1 p.88: Boon of Dimensional Travel",
+    ),
+    ("epic_boon", "boon_of_fate", "Boon of Fate", "SRD 5.2.1 p.88: Boon of Fate"),
+    (
+        "epic_boon",
+        "boon_of_irresistible_offense",
+        "Boon of Irresistible Offense",
+        "SRD 5.2.1 p.88: Boon of Irresistible Offense",
+    ),
+    (
+        "epic_boon",
+        "boon_of_spell_recall",
+        "Boon of Spell Recall",
+        "SRD 5.2.1 p.88: Boon of Spell Recall",
+    ),
+    (
+        "epic_boon",
+        "boon_of_the_night_spirit",
+        "Boon of the Night Spirit",
+        "SRD 5.2.1 p.88: Boon of the Night Spirit",
+    ),
+    (
+        "epic_boon",
+        "boon_of_truesight",
+        "Boon of Truesight",
+        "SRD 5.2.1 p.88: Boon of Truesight",
+    ),
+)
 
-    The list is deliberately additive. P04-A01 remains open until every SRD
-    feat and boon has a corresponding occurrence record.
+
+def _srd_feat_records() -> tuple[CensusRecord, ...]:
+    """Return the complete, reviewed SRD feat and Epic Boon inventory.
+
+    The pinned SRD's Feats section has four Origin feats, two General feats,
+    four Fighting Style feats, and seven Epic Boon feats.  Category metadata
+    remains an adaptation note until P04-A04 supplies the choice adapters.
     """
-    entries = (
-        ("alert", "Alert", "SRD 5.2.1 p.87: Alert"),
-        ("magic_initiate", "Magic Initiate", "SRD 5.2.1 p.87: Magic Initiate"),
-        ("savage_attacker", "Savage Attacker", "SRD 5.2.1 p.87: Savage Attacker"),
-        ("skilled", "Skilled", "SRD 5.2.1 p.87: Skilled"),
-        ("ability_score_improvement", "Ability Score Improvement", "SRD 5.2.1 p.87: Ability Score Improvement"),
-        ("grappler", "Grappler", "SRD 5.2.1 p.87: Grappler"),
-        ("archery", "Archery", "SRD 5.2.1 p.87: Archery"),
-        ("defense", "Defense", "SRD 5.2.1 p.88: Defense"),
-        ("great_weapon_fighting", "Great Weapon Fighting", "SRD 5.2.1 p.88: Great Weapon Fighting"),
-        ("two_weapon_fighting", "Two-Weapon Fighting", "SRD 5.2.1 p.88: Two-Weapon Fighting"),
-        ("boon_of_combat_prowess", "Boon of Combat Prowess", "SRD 5.2.1 p.88: Boon of Combat Prowess"),
-        ("boon_of_dimensional_travel", "Boon of Dimensional Travel", "SRD 5.2.1 p.88: Boon of Dimensional Travel"),
-        ("boon_of_fate", "Boon of Fate", "SRD 5.2.1 p.88: Boon of Fate"),
-        ("boon_of_irresistible_offense", "Boon of Irresistible Offense", "SRD 5.2.1 p.88: Boon of Irresistible Offense"),
-        ("boon_of_spell_recall", "Boon of Spell Recall", "SRD 5.2.1 p.88: Boon of Spell Recall"),
-        ("boon_of_the_night_spirit", "Boon of the Night Spirit", "SRD 5.2.1 p.88: Boon of the Night Spirit"),
-        ("boon_of_truesight", "Boon of Truesight", "SRD 5.2.1 p.88: Boon of Truesight"),
-    )
     return tuple(
         CensusRecord(
             f"feat:{key}",
@@ -394,9 +452,95 @@ def _initial_feat_records() -> tuple[CensusRecord, ...]:
             "P04-A04",
             "advancement.choice",
             "catalogued",
+            f"{category.replace('_', ' ')} feat",
         )
-        for key, name, reference in entries
+        for category, key, name, reference in _SRD_FEAT_ENTRIES
     )
+
+
+def _background_grant_records() -> tuple[CensusRecord, ...]:
+    """Project every pinned-SRD background's five concrete grant occurrences.
+
+    The pinned SRD describes Acolyte, Criminal, Sage, and Soldier only. The
+    twelve additional local chargen backgrounds need an approved source/scope
+    decision before they can receive a precise SRD census citation.
+    """
+    records: list[CensusRecord] = []
+    for background_name, background in _PINNED_SRD_BACKGROUNDS.items():
+        background_key = _slug(background_name)
+        reference = f"SRD 5.2.1 p.83: {background_name} background"
+        entries = (
+            (
+                "ability_adjustments",
+                "Ability adjustments: " + ", ".join(background["ability_options"]),
+                "origin.ability_adjustment",
+            ),
+            (
+                "skill_proficiencies",
+                "Skill proficiencies: " + ", ".join(background["skill_proficiencies"]),
+                "origin.skill_proficiencies",
+            ),
+            (
+                "tool_proficiency",
+                f"Tool proficiency: {background['tool_proficiency']}",
+                "origin.tool_proficiency",
+            ),
+            ("feat", f"Origin feat: {background['feat']}", "origin.feat_grant"),
+            (
+                "equipment",
+                f"Starting equipment: {background['equipment']}",
+                "origin.starting_equipment",
+            ),
+        )
+        records.extend(
+            CensusRecord(
+                f"origin_grant:background:{background_key}:{grant_key}",
+                "origin_grant",
+                f"{background_name} — {display_name}",
+                None,
+                None,
+                reference,
+                "P04-O01",
+                adapter,
+                "catalogued",
+            )
+            for grant_key, display_name, adapter in entries
+        )
+    return tuple(records)
+
+
+_PINNED_SRD_BACKGROUNDS = MappingProxyType(
+    {
+        "Acolyte": {
+            "ability_options": ("Intelligence", "Wisdom", "Charisma"),
+            "skill_proficiencies": ("Insight", "Religion"),
+            "tool_proficiency": "Calligrapher’s Supplies",
+            "feat": "Magic Initiate (Cleric)",
+            "equipment": "Choose A or B: (A) Calligrapher’s Supplies, Book (prayers), Holy Symbol, Parchment (10 sheets), Robe, 8 GP; or (B) 50 GP",
+        },
+        "Criminal": {
+            "ability_options": ("Dexterity", "Constitution", "Intelligence"),
+            "skill_proficiencies": ("Sleight of Hand", "Stealth"),
+            "tool_proficiency": "Thieves’ Tools",
+            "feat": "Alert",
+            "equipment": "Choose A or B: (A) 2 Daggers, Thieves’ Tools, Crowbar, 2 Pouches, Traveler’s Clothes, 16 GP; or (B) 50 GP",
+        },
+        "Sage": {
+            "ability_options": ("Constitution", "Intelligence", "Wisdom"),
+            "skill_proficiencies": ("Arcana", "History"),
+            "tool_proficiency": "Calligrapher’s Supplies",
+            "feat": "Magic Initiate (Wizard)",
+            "equipment": "Choose A or B: (A) Quarterstaff, Calligrapher’s Supplies, Book (history), Parchment (8 sheets), Robe, 8 GP; or (B) 50 GP",
+        },
+        "Soldier": {
+            "ability_options": ("Strength", "Dexterity", "Constitution"),
+            "skill_proficiencies": ("Athletics", "Intimidation"),
+            "tool_proficiency": "Choose one kind of Gaming Set",
+            "feat": "Savage Attacker",
+            "equipment": "Choose A or B: (A) Spear, Shortbow, 20 Arrows, Gaming Set (same as above), Healer’s Kit, Quiver, Traveler’s Clothes, 14 GP; or (B) 50 GP",
+        },
+    }
+)
 
 
 def _initial_equipment_records() -> tuple[CensusRecord, ...]:
@@ -407,18 +551,59 @@ def _initial_equipment_records() -> tuple[CensusRecord, ...]:
     P04-A05 owns their mechanics and promotion.
     """
     weapons = (
-        "Club", "Dagger", "Greatclub", "Handaxe", "Javelin", "Light Hammer",
-        "Mace", "Quarterstaff", "Sickle", "Spear", "Dart", "Light Crossbow",
-        "Shortbow", "Sling", "Battleaxe", "Flail", "Glaive", "Greataxe",
-        "Greatsword", "Halberd", "Lance", "Longsword", "Maul", "Morningstar",
-        "Pike", "Rapier", "Scimitar", "Shortsword", "Trident", "Warhammer",
-        "War Pick", "Whip", "Blowgun", "Hand Crossbow", "Heavy Crossbow",
-        "Longbow", "Musket", "Pistol",
+        "Club",
+        "Dagger",
+        "Greatclub",
+        "Handaxe",
+        "Javelin",
+        "Light Hammer",
+        "Mace",
+        "Quarterstaff",
+        "Sickle",
+        "Spear",
+        "Dart",
+        "Light Crossbow",
+        "Shortbow",
+        "Sling",
+        "Battleaxe",
+        "Flail",
+        "Glaive",
+        "Greataxe",
+        "Greatsword",
+        "Halberd",
+        "Lance",
+        "Longsword",
+        "Maul",
+        "Morningstar",
+        "Pike",
+        "Rapier",
+        "Scimitar",
+        "Shortsword",
+        "Trident",
+        "Warhammer",
+        "War Pick",
+        "Whip",
+        "Blowgun",
+        "Hand Crossbow",
+        "Heavy Crossbow",
+        "Longbow",
+        "Musket",
+        "Pistol",
     )
     armor = (
-        "Padded Armor", "Leather Armor", "Studded Leather Armor", "Hide Armor",
-        "Chain Shirt", "Scale Mail", "Breastplate", "Half Plate Armor",
-        "Ring Mail", "Chain Mail", "Splint Armor", "Plate Armor", "Shield",
+        "Padded Armor",
+        "Leather Armor",
+        "Studded Leather Armor",
+        "Hide Armor",
+        "Chain Shirt",
+        "Scale Mail",
+        "Breastplate",
+        "Half Plate Armor",
+        "Ring Mail",
+        "Chain Mail",
+        "Splint Armor",
+        "Plate Armor",
+        "Shield",
     )
     return tuple(
         CensusRecord(
@@ -446,6 +631,816 @@ def _initial_equipment_records() -> tuple[CensusRecord, ...]:
             "catalogued",
         )
         for name in armor
+    )
+
+
+def _srd_tool_records() -> tuple[CensusRecord, ...]:
+    """Catalogue every named tool and separately proficient variant in the SRD.
+
+    This source slice deliberately inventories tools and variants only; their
+    checks, crafting, and utilization adapters remain P04-A05 work.
+    """
+    artisan_tools = (
+        "Alchemist’s Supplies",
+        "Brewer’s Supplies",
+        "Calligrapher’s Supplies",
+        "Carpenter’s Tools",
+        "Cartographer’s Tools",
+        "Cobbler’s Tools",
+        "Cook’s Utensils",
+        "Glassblower’s Tools",
+        "Jeweler’s Tools",
+        "Leatherworker’s Tools",
+        "Mason’s Tools",
+        "Painter’s Supplies",
+        "Potter’s Tools",
+        "Smith’s Tools",
+        "Tinker’s Tools",
+        "Weaver’s Tools",
+        "Woodcarver’s Tools",
+    )
+    other_tools = (
+        "Disguise Kit",
+        "Forgery Kit",
+        "Gaming Set",
+        "Herbalism Kit",
+        "Musical Instrument",
+        "Navigator’s Tools",
+        "Poisoner’s Kit",
+        "Thieves’ Tools",
+    )
+    variants = (
+        "Dice",
+        "Dragonchess",
+        "Playing Cards",
+        "Three-Dragon Ante",
+        "Bagpipes",
+        "Drum",
+        "Dulcimer",
+        "Flute",
+        "Horn",
+        "Lute",
+        "Lyre",
+        "Pan Flute",
+        "Shawm",
+        "Viol",
+    )
+    return tuple(
+        CensusRecord(
+            f"equipment:tool:{_slug(name)}",
+            "equipment_reference",
+            name,
+            None,
+            None,
+            "SRD 5.2.1 pp.92-93: Tools",
+            "P04-A05",
+            "equipment.tool",
+            "catalogued",
+            adaptation,
+        )
+        for name, adaptation in (
+            *((name, "artisan tool") for name in artisan_tools),
+            *((name, "other tool") for name in other_tools),
+            *((name, "tool variant") for name in variants),
+        )
+    )
+
+
+def _srd_adventuring_gear_records() -> tuple[CensusRecord, ...]:
+    """Catalogue every named row in the pinned SRD Adventuring Gear table."""
+    entries = (
+        "Acid",
+        "Alchemist’s Fire",
+        "Ammunition",
+        "Antitoxin",
+        "Arcane Focus",
+        "Backpack",
+        "Ball Bearings",
+        "Barrel",
+        "Basket",
+        "Bedroll",
+        "Bell",
+        "Blanket",
+        "Block and Tackle",
+        "Book",
+        "Bottle, Glass",
+        "Bucket",
+        "Burglar’s Pack",
+        "Caltrops",
+        "Candle",
+        "Case, Crossbow Bolt",
+        "Case, Map or Scroll",
+        "Chain",
+        "Chest",
+        "Climber’s Kit",
+        "Clothes, Fine",
+        "Clothes, Traveler’s",
+        "Component Pouch",
+        "Costume",
+        "Crowbar",
+        "Diplomat’s Pack",
+        "Druidic Focus",
+        "Dungeoneer’s Pack",
+        "Entertainer’s Pack",
+        "Explorer’s Pack",
+        "Flask",
+        "Grappling Hook",
+        "Healer’s Kit",
+        "Holy Symbol",
+        "Holy Water",
+        "Hunting Trap",
+        "Ink",
+        "Ink Pen",
+        "Jug",
+        "Ladder",
+        "Lamp",
+        "Lantern, Bullseye",
+        "Lantern, Hooded",
+        "Lock",
+        "Magnifying Glass",
+        "Manacles",
+        "Map",
+        "Mirror",
+        "Net",
+        "Oil",
+        "Paper",
+        "Parchment",
+        "Perfume",
+        "Poison, Basic",
+        "Pole",
+        "Pot, Iron",
+        "Potion of Healing",
+        "Pouch",
+        "Priest’s Pack",
+        "Quiver",
+        "Ram, Portable",
+        "Rations",
+        "Robe",
+        "Rope",
+        "Sack",
+        "Scholar’s Pack",
+        "Shovel",
+        "Signal Whistle",
+        "Spell Scroll (Cantrip)",
+        "Spell Scroll (Level 1)",
+        "Spikes, Iron",
+        "Spyglass",
+        "String",
+        "Tent",
+        "Tinderbox",
+        "Torch",
+        "Vial",
+        "Waterskin",
+    )
+    return tuple(
+        CensusRecord(
+            f"equipment:adventuring_gear:{_slug(name)}",
+            "equipment_reference",
+            name,
+            None,
+            None,
+            "SRD 5.2.1 p.94: Adventuring Gear table",
+            "P04-A05",
+            "equipment.adventuring_gear",
+            "catalogued",
+        )
+        for name in entries
+    )
+
+
+def _srd_equipment_variant_records() -> tuple[CensusRecord, ...]:
+    """Catalogue the remaining named mundane equipment table rows."""
+    entries = (
+        (
+            "ammunition",
+            "SRD 5.2.1 p.95: Ammunition table",
+            "equipment.ammunition",
+            "Arrows",
+            "Arrows",
+        ),
+        (
+            "ammunition",
+            "SRD 5.2.1 p.95: Ammunition table",
+            "equipment.ammunition",
+            "Bolts",
+            "Bolts",
+        ),
+        (
+            "ammunition",
+            "SRD 5.2.1 p.95: Ammunition table",
+            "equipment.ammunition",
+            "Bullets, Firearm",
+            "Bullets, Firearm",
+        ),
+        (
+            "ammunition",
+            "SRD 5.2.1 p.95: Ammunition table",
+            "equipment.ammunition",
+            "Bullets, Sling",
+            "Bullets, Sling",
+        ),
+        (
+            "ammunition",
+            "SRD 5.2.1 p.95: Ammunition table",
+            "equipment.ammunition",
+            "Needles",
+            "Needles",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.95: Arcane Focuses table",
+            "equipment.spellcasting_focus",
+            "Crystal",
+            "Arcane Focus: Crystal",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.95: Arcane Focuses table",
+            "equipment.spellcasting_focus",
+            "Orb",
+            "Arcane Focus: Orb",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.95: Arcane Focuses table",
+            "equipment.spellcasting_focus",
+            "Rod",
+            "Arcane Focus: Rod",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.95: Arcane Focuses table",
+            "equipment.spellcasting_focus",
+            "Staff",
+            "Arcane Focus: Staff",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.95: Arcane Focuses table",
+            "equipment.spellcasting_focus",
+            "Wand",
+            "Arcane Focus: Wand",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Druidic Focuses table",
+            "equipment.spellcasting_focus",
+            "Sprig of Mistletoe",
+            "Druidic Focus: Sprig of Mistletoe",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Druidic Focuses table",
+            "equipment.spellcasting_focus",
+            "Wooden Staff",
+            "Druidic Focus: Wooden Staff",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Druidic Focuses table",
+            "equipment.spellcasting_focus",
+            "Yew Wand",
+            "Druidic Focus: Yew Wand",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Holy Symbols table",
+            "equipment.spellcasting_focus",
+            "Amulet",
+            "Holy Symbol: Amulet",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Holy Symbols table",
+            "equipment.spellcasting_focus",
+            "Emblem",
+            "Holy Symbol: Emblem",
+        ),
+        (
+            "focus",
+            "SRD 5.2.1 p.96: Holy Symbols table",
+            "equipment.spellcasting_focus",
+            "Reliquary",
+            "Holy Symbol: Reliquary",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.vehicle",
+            "Carriage",
+            "Carriage",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.vehicle",
+            "Cart",
+            "Cart",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.vehicle",
+            "Chariot",
+            "Chariot",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.mount_care",
+            "Feed per Day",
+            "Feed per Day",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.saddle",
+            "Saddle, Exotic",
+            "Saddle, Exotic",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.saddle",
+            "Saddle, Military",
+            "Saddle, Military",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.saddle",
+            "Saddle, Riding",
+            "Saddle, Riding",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.vehicle",
+            "Sled",
+            "Sled",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.mount_care",
+            "Stabling per Day",
+            "Stabling per Day",
+        ),
+        (
+            "tack",
+            "SRD 5.2.1 p.99: Tack, Harness, and Drawn Vehicles table",
+            "equipment.vehicle",
+            "Wagon",
+            "Wagon",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Airship",
+            "Airship",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Galley",
+            "Galley",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Keelboat",
+            "Keelboat",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Longship",
+            "Longship",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Rowboat",
+            "Rowboat",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Sailing Ship",
+            "Sailing Ship",
+        ),
+        (
+            "vehicle",
+            "SRD 5.2.1 p.100: Airborne and Waterborne Vehicles table",
+            "equipment.vehicle",
+            "Warship",
+            "Warship",
+        ),
+    )
+    return tuple(
+        CensusRecord(
+            f"equipment:{category}:{_slug(key)}",
+            "equipment_reference",
+            display_name,
+            None,
+            None,
+            reference,
+            "P04-A05",
+            adapter,
+            "catalogued",
+        )
+        for category, reference, adapter, key, display_name in entries
+    )
+
+
+def _mount_creature_records() -> tuple[CensusRecord, ...]:
+    """Catalogue creatures referenced by the SRD mounts-and-animals table."""
+    mounts = (
+        "Camel",
+        "Elephant",
+        "Horse, Draft",
+        "Horse, Riding",
+        "Mastiff",
+        "Mule",
+        "Pony",
+        "Warhorse",
+    )
+    return tuple(
+        CensusRecord(
+            f"creature:mount:{_slug(name)}",
+            "creature_reference",
+            name,
+            None,
+            None,
+            "SRD 5.2.1 p.99: Mounts and Other Animals table",
+            "P04-A08",
+            "world.creature_reference",
+            "catalogued",
+        )
+        for name in mounts
+    )
+
+
+_SRD_CREATURE_STAT_BLOCKS = """\
+Aboleth|258
+Adult Black Dragon|264
+Adult Blue Dragon|266
+Adult Brass Dragon|268
+Adult Bronze Dragon|270
+Adult Copper Dragon|276
+Adult Gold Dragon|291
+Adult Green Dragon|294
+Adult Red Dragon|318
+Adult Silver Dragon|324
+Adult White Dragon|340
+Air Elemental|258
+Allosaurus|344
+Ancient Black Dragon|265
+Ancient Blue Dragon|267
+Ancient Brass Dragon|269
+Ancient Bronze Dragon|271
+Ancient Copper Dragon|277
+Ancient Gold Dragon|292
+Ancient Green Dragon|294
+Ancient Red Dragon|319
+Ancient Silver Dragon|325
+Ancient White Dragon|341
+Animated Armor|259
+Animated Flying Sword|259
+Animated Rug of Smothering|259
+Ankheg|259
+Dryad|282
+Guard|296
+Ankylosaurus|344
+Dust Mephit|307
+Guard Captain|296
+Ape|344
+Eagle|348
+Guardian Naga|296
+Archelon|344
+Earth Elemental|282
+Half-Dragon|297
+Archmage|305
+Efreeti|283
+Harpy|297
+Assassin|260
+Elephant|348
+Hawk|355
+Awakened Shrub|260
+Elk|348
+Hell Hound|297
+Awakened Tree|260
+Erinyes|283
+Hezrou|298
+Axe Beak|260
+Ettercap|284
+Hill Giant|298
+Azer Sentinel|261
+Ettin|284
+Hippogriff|298
+Baboon|345
+Fire Elemental|284
+Hippopotamus|355
+Badger|345
+Fire Giant|285
+Hobgoblin Captain|299
+Balor|261
+Flesh Golem|285
+Hobgoblin Warrior|298
+Bandit|261
+Flying Snake|348
+Homunculus|299
+Bandit Captain|261
+Frog|348
+Horned Devil|299
+Barbed Devil|262
+Frost Giant|285
+Hunter Shark|356
+Basilisk|262
+Gargoyle|286
+Hydra|300
+Bat|345
+Gelatinous Cube|286
+Hyena|356
+Bearded Devil|262
+Ghast|287
+Ice Devil|300
+Behir|263
+Ghost|287
+Ice Mephit|307
+Berserker|263
+Ghoul|288
+Imp|300
+Black Bear|345
+Giant Ape|349
+Incubus|301
+Black Dragon Wyrmling|263
+Giant Badger|349
+Invisible Stalker|301
+Black Pudding|265
+Giant Bat|349
+Iron Golem|302
+Blink Dog|266
+Giant Boar|349
+Jackal|356
+Blood Hawk|345
+Giant Centipede|349
+Killer Whale|356
+Blue Dragon Wyrmling|266
+Giant Constrictor Snake|350
+Knight|302
+Boar|346
+Giant Crab|350
+Kobold Warrior|302
+Bone Devil|267
+Giant Crocodile|350
+Kraken|303
+Brass Dragon Wyrmling|268
+Giant Eagle|350
+Lamia|303
+Bronze Dragon Wyrmling|269
+Giant Elk|351
+Lemure|304
+Brown Bear|346
+Giant Fire Beetle|351
+Lich|304
+Bugbear Stalker|271
+Giant Frog|351
+Lion|356
+Bugbear Warrior|272
+Giant Goat|351
+Lizard|357
+Bulette|272
+Giant Hyena|352
+Mage|305
+Camel|346
+Giant Lizard|352
+Magma Mephit|307
+Cat|346
+Giant Octopus|352
+Magmin|305
+Centaur Trooper|272
+Giant Owl|352
+Mammoth|357
+Chain Devil|272
+Giant Rat|353
+Manticore|306
+Chimera|273
+Giant Scorpion|353
+Marilith|306
+Chuul|273
+Giant Seahorse|353
+Mastiff|357
+Clay Golem|274
+Giant Shark|353
+Medusa|306
+Cloaker|274
+Giant Spider|353
+Merfolk Skirmisher|308
+Cloud Giant|275
+Giant Toad|354
+Merrow|308
+Cockatrice|275
+Giant Venomous Snake|354
+Mimic|308
+Commoner|275
+Giant Vulture|354
+Minotaur of Baphomet|309
+Constrictor Snake|346
+Giant Wasp|354
+Minotaur Skeleton|326
+Copper Dragon Wyrmling|275
+Giant Weasel|355
+Mule|357
+Couatl|277
+Giant Wolf Spider|355
+Mummy|309
+Crab|347
+Gibbering Mouther|288
+Mummy Lord|309
+Crocodile|347
+Glabrezu|289
+Nalfeshnee|310
+Cultist|278
+Gladiator|289
+Night Hag|311
+Cultist Fanatic|278
+Gnoll Warrior|289
+Nightmare|311
+Darkmantle|278
+Goat|355
+Noble|312
+Death Dog|279
+Goblin Boss|290
+Ochre Jelly|312
+Deer|347
+Goblin Minion|290
+Octopus|357
+Deva|279
+Goblin Warrior|290
+Ogre|312
+Dire Wolf|347
+Gold Dragon Wyrmling|290
+Ogre Zombie|344
+Djinni|280
+Gorgon|292
+Oni|312
+Doppelganger|280
+Gray Ooze|293
+Otyugh|313
+Draft Horse|347
+Green Dragon Wyrmling|293
+Owl|358
+Dragon Turtle|281
+Green Hag|295
+Owlbear|313
+Dretch|281
+Grick|295
+Panther|358
+Drider|281
+Griffon|295
+Pegasus|313
+Druid|282
+Grimlock|296
+Phase Spider|313
+Piranha|358
+Treant|333
+Pirate|314
+Triceratops|363
+Pirate Captain|314
+Troll|333
+Pit Fiend|314
+Troll Limb|333
+Planetar|315
+Tyrannosaurus Rex|363
+Plesiosaurus|358
+Unicorn|334
+Polar Bear|359
+Vampire|335
+Pony|359
+Vampire Familiar|334
+Priest|316
+Vampire Spawn|334
+Priest Acolyte|316
+Venomous Snake|363
+Pseudodragon|316
+Violet Fungus|286
+Pteranodon|359
+Vrock|336
+Purple Worm|316
+Vulture|363
+Quasit|317
+Warhorse|364
+Rakshasa|317
+Warhorse Skeleton|326
+Rat|359
+Warrior Infantry|336
+Raven|359
+Warrior Veteran|337
+Red Dragon Wyrmling|318
+Water Elemental|337
+Reef Shark|360
+Weasel|364
+Remorhaz|319
+Werebear|337
+Rhinoceros|360
+Wereboar|338
+Riding Horse|360
+Wererat|338
+Roc|320
+Weretiger|339
+Roper|320
+Werewolf|339
+Rust Monster|320
+White Dragon Wyrmling|339
+Saber-Toothed Tiger|360
+Wight|341
+Sahuagin Warrior|321
+Will-o’-Wisp|341
+Salamander|321
+Winter Wolf|342
+Satyr|321
+Wolf|364
+Scorpion|360
+Worg|342
+Scout|322
+Wraith|342
+Sea Hag|322
+Wyvern|343
+Seahorse|361
+Xorn|343
+Shadow|322
+Young Black Dragon|264
+Shambling Mound|323
+Young Blue Dragon|266
+Shield Guardian|323
+Young Brass Dragon|268
+Shrieker Fungus|286
+Young Bronze Dragon|270
+Silver Dragon Wyrmling|324
+Young Copper Dragon|276
+Skeleton|325
+Young Gold Dragon|291
+Solar|326
+Young Green Dragon|293
+Specter|327
+Young Red Dragon|318
+Sphinx of Lore|327
+Young Silver Dragon|324
+Sphinx of Valor|328
+Young White Dragon|340
+Sphinx of Wonder|327
+Zombie|343
+Spider|361
+Spirit Naga|329
+Sprite|329
+Spy|329
+Steam Mephit|308
+Stirge|329
+Stone Giant|330
+Stone Golem|330
+Storm Giant|330
+Succubus|331
+Swarm of Bats|361
+Swarm of Crawling Claws|278
+Swarm of Insects|361
+Swarm of Piranhas|362
+Swarm of Rats|362
+Swarm of Ravens|362
+Swarm of Venomous Snakes|362
+Tarrasque|331
+Tiger|363
+Tough|332
+Tough Boss|332
+"""
+
+
+def _srd_creature_stat_block_records() -> tuple[CensusRecord, ...]:
+    """Catalogue every monster and animal listed in the pinned SRD index."""
+    entries = tuple(
+        row.rsplit("|", maxsplit=1)
+        for row in _SRD_CREATURE_STAT_BLOCKS.rstrip().splitlines()
+    )
+    return tuple(
+        CensusRecord(
+            f"creature:stat_block:{_slug(name)}",
+            "creature_reference",
+            name,
+            None,
+            None,
+            f"SRD 5.2.1 p.{page}: {name} stat block",
+            "P04-A08",
+            "world.creature_reference",
+            "catalogued",
+            "stat-block reference only; mechanics remain unavailable",
+        )
+        for name, page in entries
     )
 
 
