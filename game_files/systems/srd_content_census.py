@@ -17,22 +17,24 @@ from typing import Iterable, Mapping
 
 from systems.progression import CLASS_PROGRESSION, MAX_CLASS_LEVEL
 from systems.srd_class_resources import SRD_CLASS_RESOURCES
-from systems.srd_spell_lists import (
-    SRD_CANTRIP_LISTS,
-    SRD_LEVEL_EIGHT_SPELL_LISTS,
-    SRD_LEVEL_FIVE_SPELL_LISTS,
-    SRD_LEVEL_FOUR_SPELL_LISTS,
-    SRD_LEVEL_NINE_SPELL_LISTS,
-    SRD_LEVEL_ONE_SPELL_LISTS,
-    SRD_LEVEL_SEVEN_SPELL_LISTS,
-    SRD_LEVEL_SIX_SPELL_LISTS,
-    SRD_LEVEL_THREE_SPELL_LISTS,
-    SRD_LEVEL_TWO_SPELL_LISTS,
-    SRDSpellListEntry,
-)
-from world.chargen_data import BACKGROUNDS, SPECIES
+from systems.srd_spell_lists import (SRD_CANTRIP_LISTS,
+                                     SRD_LEVEL_EIGHT_SPELL_LISTS,
+                                     SRD_LEVEL_FIVE_SPELL_LISTS,
+                                     SRD_LEVEL_FOUR_SPELL_LISTS,
+                                     SRD_LEVEL_NINE_SPELL_LISTS,
+                                     SRD_LEVEL_ONE_SPELL_LISTS,
+                                     SRD_LEVEL_SEVEN_SPELL_LISTS,
+                                     SRD_LEVEL_SIX_SPELL_LISTS,
+                                     SRD_LEVEL_THREE_SPELL_LISTS,
+                                     SRD_LEVEL_TWO_SPELL_LISTS,
+                                     SRDSpellListEntry)
+from world.chargen_data import SPECIES
 
-CONTENT_CENSUS_VERSION = 1
+# Version 2 corrects the source boundary: the pinned SRD describes four
+# backgrounds, not all sixteen compatibility backgrounds still present in the
+# chargen menu. It also records Barding, which is a separate equipment rule in
+# the Mounts and Vehicles section rather than an armor-table row.
+CONTENT_CENSUS_VERSION = 2
 _P04_TASKS = frozenset(
     {
         "P04-A04",
@@ -319,15 +321,15 @@ def _default_records() -> tuple[CensusRecord, ...]:
                     "catalogued",
                 )
             )
-    for name in BACKGROUNDS:
+    for name in _PINNED_SRD_BACKGROUNDS:
         records.append(
             CensusRecord(
-                f"background:{name.casefold().replace(' ', '_')}",
+                f"background:{_slug(name)}",
                 "background",
                 name,
                 None,
                 None,
-                "SRD 5.2.1 p.177: Backgrounds",
+                f"SRD 5.2.1 p.83: {name} background",
                 "P04-O01",
                 "origin.background",
                 "catalogued",
@@ -463,8 +465,9 @@ def _background_grant_records() -> tuple[CensusRecord, ...]:
     """Project every pinned-SRD background's five concrete grant occurrences.
 
     The pinned SRD describes Acolyte, Criminal, Sage, and Soldier only. The
-    twelve additional local chargen backgrounds need an approved source/scope
-    decision before they can receive a precise SRD census citation.
+    twelve extra chargen backgrounds are local compatibility data, not SRD
+    entries, and deliberately have no P04-A01 census record or fabricated
+    source citation. Adding one requires an explicit source/scope revision.
     """
     records: list[CensusRecord] = []
     for background_name, background in _PINNED_SRD_BACKGROUNDS.items():
@@ -1254,7 +1257,7 @@ def _srd_adventuring_gear_records() -> tuple[CensusRecord, ...]:
 
 
 def _srd_equipment_variant_records() -> tuple[CensusRecord, ...]:
-    """Catalogue the remaining named mundane equipment table rows."""
+    """Catalogue remaining named equipment rows and the Barding rule."""
     entries = (
         (
             "ammunition",
@@ -1486,6 +1489,13 @@ def _srd_equipment_variant_records() -> tuple[CensusRecord, ...]:
             "equipment.vehicle",
             "Warship",
             "Warship",
+        ),
+        (
+            "mount_equipment",
+            "SRD 5.2.1 p.100: Mounts and Vehicles — Barding",
+            "equipment.barding",
+            "Barding",
+            "Barding",
         ),
     )
     return tuple(

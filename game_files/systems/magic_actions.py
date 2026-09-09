@@ -15,31 +15,15 @@ from typing import Any
 
 from django.db import transaction
 from systems.action_policy import ActionCategory
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    apply_damage,
-    apply_healing,
-    injury_record,
-)
-from systems.magic import (
-    AccessMode,
-    CastSnapshot,
-    DiceExpression,
-    MagicDefinition,
-    MagicKind,
-    MagicRegistry,
-    MagicRegistryError,
-    RangeCategory,
-    TargetingMode,
-)
-from systems.magic_resources import (
-    MagicResourceError,
-    SpellSlotOption,
-    resource_current,
-    spell_slot_options,
-    spend_resource,
-)
+from systems.injury import (InjuryError, InjuryState, apply_damage,
+                            apply_healing, injury_record)
+from systems.magic import (AccessMode, CastSnapshot, DiceExpression,
+                           MagicDefinition, MagicKind, MagicRegistry,
+                           MagicRegistryError, RangeCategory, TargetingMode)
+from systems.magic_resources import (MagicResourceError, SpellSlotOption,
+                                     resource_current, spell_slot_options,
+                                     spend_resource)
+from systems.progression import CLASS_PROGRESSION, RegistryValidationError
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
 MAGIC_ACTION_STATE_VERSION = 2
@@ -229,6 +213,76 @@ def inspect_magic_ownership(actor: Any) -> MagicOwnershipDiagnostic:
             ):
                 issues.append(f"spellbook:{action_key}")
     return MagicOwnershipDiagnostic(not issues, tuple(sorted(set(issues))))
+
+
+def missing_automatic_action_grants(actor: Any) -> tuple[str, ...]:
+    """Return released automatic action keys absent from durable ownership.
+
+    This is a read-only ADV-06 seam. Only feature actions supplied by the
+    character's current released class progression are considered, so callers
+    cannot infer that a chosen spell or unrelated item action should be added.
+    """
+    state = _action_state(actor)
+    class_key = actor.attributes.get("char_class")
+    level = actor.attributes.get("level", 1)
+    if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 20:
+        raise MagicActionError("Your class progression needs staff repair.")
+    try:
+        definition = CLASS_PROGRESSION.class_for(class_key)
+    except RegistryValidationError as err:
+        raise MagicActionError("Your class progression needs staff repair.") from err
+    expected = {
+        feature.action_key
+        for earned_level in range(1, level + 1)
+        for feature_key in definition.grants_at(earned_level).automatic_feature_keys
+        if (feature := CLASS_PROGRESSION.features[feature_key]).action_key
+    }
+    return tuple(sorted(expected.difference(state[AccessMode.INNATE])))
+
+
+def inspect_magic_dependencies(actor: Any) -> MagicOwnershipDiagnostic:
+    """Validate concentration links without ending effects or changing ownership.
+
+    ADV-06 uses this to quarantine an orphaned concentration relationship for
+    staff review. It intentionally reports malformed or missing links instead
+    of invoking the cleanup path, because a repair plan must make that choice
+    explicit and preserve unrelated effects.
+    """
+    try:
+        state = _action_state(actor)
+        concentration = _concentration_state(actor)
+    except MagicActionError:
+        return MagicOwnershipDiagnostic(False, ("magic_dependency_state_invalid",))
+    if concentration is None:
+        return MagicOwnershipDiagnostic(True, ())
+    issues: list[str] = []
+    source_key = concentration["source_key"]
+    if not any(source_key in state[mode] for mode in _ENTITLEMENT_MODES):
+        issues.append("concentration_source_not_owned")
+    actor_dbref = getattr(actor, "dbref", None)
+    from evennia.objects.models import ObjectDB
+    from systems.effects import EffectStorageError
+
+    for link in concentration["effects"]:
+        owner = ObjectDB.objects.filter(id=link["owner_id"]).first()
+        if owner is None or not hasattr(owner, "effects"):
+            issues.append("concentration_effect_missing")
+            continue
+        try:
+            effect = owner.effects.get(link["instance_id"])
+        except EffectStorageError:
+            issues.append("concentration_effect_unreadable")
+            continue
+        if effect is None:
+            issues.append("concentration_effect_missing")
+        elif effect.source_dbref != actor_dbref or effect.source_key != source_key:
+            issues.append("concentration_effect_mismatch")
+    return MagicOwnershipDiagnostic(not issues, tuple(sorted(set(issues))))
+
+
+def has_active_concentration(actor: Any) -> bool:
+    """Return whether a valid durable concentration relationship is active."""
+    return _concentration_state(actor) is not None
 
 
 def mark_preparation_window(actor: Any, recovery_sequence: int) -> None:
@@ -716,7 +770,8 @@ def _on_concentration_effect_removed(effect: Any, _reason: Any) -> None:
 
 def _register_concentration_removal_listener() -> None:
     """Register this reload-safe effect adapter exactly once per process."""
-    from systems.effects import register_removal_listener, removal_listener_registered
+    from systems.effects import (register_removal_listener,
+                                 removal_listener_registered)
 
     listener_key = "magic.concentration"
     if not removal_listener_registered(listener_key):

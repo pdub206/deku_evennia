@@ -1210,6 +1210,36 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "@advancement",
+        "aliases": ["@advance", "@progression", "advancement repair"],
+        "category": "Staff",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Inspect and safely apply the supported ADV-06 progression repairs.
+
+            Usage:
+              @advancement [<character or #dbref>]
+              @advancement/plan <character or #dbref>
+              @advancement/apply <character or #dbref>=<plan id>;<reason>[;<ticket>]
+
+            The default view reports a bounded diagnosis. ``/plan`` makes no
+            changes; it shows a versioned plan ID, risk level, exact operation,
+            and any bounded before/after values. Generate a fresh plan directly
+            before applying it. Any state or registry change makes the prior
+            plan stale.
+
+            ``/apply`` is available only to |wAdmin|n staff. It requires the
+            full plan ID and a reason, may include a ticket/reference, and
+            rechecks the target before its atomic apply. Every attempt is
+            retained in the bounded audit trail. Repairs are rejected during
+            combat or active concentration.
+
+            This command accepts no raw Attribute names, command text, Python
+            expressions, class respec, or arbitrary numeric edits. Unsupported
+            findings require the documented higher-risk repair workflow.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

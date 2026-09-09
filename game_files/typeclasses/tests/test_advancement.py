@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import (ADVANCEMENT_ATTRIBUTE, MAX_LEVEL,
                                  XP_THRESHOLDS, AdvancementError, award_xp,
@@ -10,6 +11,9 @@ from systems.advancement import (ADVANCEMENT_ATTRIBUTE, MAX_LEVEL,
 from systems.advancement_repair import (apply_progression_repair,
                                         diagnose_progression,
                                         plan_progression_repair, repair_audit)
+from systems.combat import COMBAT_CONFIG_KEY, start_fight
+from systems.magic import AccessMode
+from systems.magic_actions import has_action_entitlement
 from systems.magic_resources import (MagicResourceError, resource_current,
                                      spend_resource)
 from systems.progression import CLASS_PROGRESSION
@@ -222,13 +226,286 @@ class TestAdvancement(EvenniaTest):
         diagnosis = diagnose_progression(self.char1)
         self.assertEqual(diagnosis.issues, ("missing_progression_provenance",))
         plan = plan_progression_repair(self.char1)
-        self.assertEqual(plan.operations, ("migrate_progression_baseline",))
+        self.assertEqual(plan.version, 7)
+        self.assertEqual(
+            tuple(operation.key for operation in plan.operations),
+            ("migrate_progression_baseline",),
+        )
+        self.assertEqual(plan.operations[0].before_issues, diagnosis.issues)
+        self.assertEqual(plan.operations[0].after_issues, ())
 
-        repaired = apply_progression_repair(self.char1, plan, reason="legacy import")
+        repaired = apply_progression_repair(
+            self.char1,
+            plan,
+            reason="legacy import",
+            source_ticket="DEKU-101",
+        )
 
         self.assertEqual(repaired.issues, ())
         self.assertEqual(progression_state(self.char1)["class_key"], "Fighter")
-        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "applied")
+        audit = repair_audit(self.char1)[-1]
+        self.assertEqual(audit["outcome"], "applied")
+        self.assertEqual(audit["operations"], ("migrate_progression_baseline",))
+        self.assertEqual(audit["source_ticket"], "DEKU-101")
+        self.assertEqual(audit["after_issues"], ())
+
+    def test_diagnosis_is_read_only_and_covers_durable_state_boundaries(self):
+        """ADV06-01 does not normalize HP, ledger, or choice-state corruption."""
+        self.char1.db.hp_base = 999
+        self.char1.db.advancement_ledger = {"version": 0, "entries": []}
+        self.char1.db.progression_choices = {"version": 99, "pending": []}
+        before = {
+            key: self.char1.attributes.get(key)
+            for key in ("hp_base", "advancement_ledger", "progression_choices")
+        }
+
+        diagnosis = diagnose_progression(self.char1)
+
+        self.assertEqual(
+            diagnosis.issues,
+            ("hp_basis_drift", "invalid_advancement_ledger", "invalid_choice_state"),
+        )
+        self.assertEqual(
+            before,
+            {
+                key: self.char1.attributes.get(key)
+                for key in ("hp_base", "advancement_ledger", "progression_choices")
+            },
+        )
+
+    def test_diagnosis_flags_choice_entitlement_metadata_drift_without_rewriting_it(
+        self,
+    ):
+        """ADV06-01 checks semantic entitlement records as well as their shape."""
+        choices = self.char1.db.progression_choices
+        choices["pending"][0]["count"] = 99
+        self.char1.db.progression_choices = choices
+
+        diagnosis = diagnose_progression(self.char1)
+
+        self.assertEqual(diagnosis.issues, ("choice_entitlement_metadata_drift",))
+        self.assertEqual(self.char1.db.progression_choices["pending"][0]["count"], 99)
+
+    def test_diagnosis_flags_orphaned_magic_effect_links_without_cleanup(self):
+        """ADV06-01 reports a broken concentration link without ending anything."""
+        self.char1.db.magic_concentration = {
+            "version": 1,
+            "source_key": "fighter.second_wind",
+            "effects": [{"owner_id": self.char2.id, "instance_id": "missing"}],
+        }
+
+        diagnosis = diagnose_progression(self.char1)
+
+        self.assertEqual(diagnosis.issues, ("orphaned_magic_dependencies",))
+        self.assertEqual(
+            self.char1.db.magic_concentration["effects"][0]["instance_id"],
+            "missing",
+        )
+
+    def test_hp_basis_repair_preserves_missing_hit_points(self):
+        """ADV06-03 changes the basis without granting an accidental heal."""
+        self.char1.db.hp_base = 9
+        self.char1.db.hp_current = 5
+        plan = plan_progression_repair(self.char1)
+
+        self.assertEqual(
+            tuple(operation.key for operation in plan.operations),
+            ("reconcile_hp_basis",),
+        )
+        self.assertEqual(
+            plan.operations[0].before_values,
+            (("hp_base", 9), ("hp_current", 5)),
+        )
+        self.assertEqual(
+            plan.operations[0].after_values,
+            (("hp_base", 10), ("hp_current", 6)),
+        )
+
+        repaired = apply_progression_repair(self.char1, plan, reason="HP baseline")
+
+        self.assertEqual(repaired.issues, ())
+        self.assertEqual((self.char1.db.hp_base, self.char1.db.hp_current), (10, 6))
+
+    def test_missing_automatic_action_is_replayed_through_its_owner(self):
+        """ADV06-03 restores only a mechanically provable feature action."""
+        actions = self.char1.db.magic_action_state
+        actions[AccessMode.INNATE].remove("fighter.second_wind")
+        self.char1.db.magic_action_state = actions
+
+        diagnosis = diagnose_progression(self.char1)
+        plan = plan_progression_repair(self.char1)
+
+        self.assertEqual(diagnosis.issues, ("missing_automatic_action_grants",))
+        self.assertEqual(
+            tuple(operation.key for operation in plan.operations),
+            ("replay_missing_automatic_actions",),
+        )
+        self.assertEqual(
+            plan.operations[0].before_values, (("fighter.second_wind", 0),)
+        )
+        self.assertEqual(plan.operations[0].after_values, (("fighter.second_wind", 1),))
+
+        repaired = apply_progression_repair(self.char1, plan, reason="grant repair")
+
+        self.assertEqual(repaired.issues, ())
+        self.assertTrue(
+            has_action_entitlement(self.char1, "fighter.second_wind", AccessMode.INNATE)
+        )
+
+    def test_exact_duplicate_provenance_record_is_removed_without_replay(self):
+        """ADV06-03 removes only an extra canonical occurrence record."""
+        provenance = self.char1.db.class_progression
+        expected_records = [
+            dict(record) for record in provenance["levels"][0]["records"]
+        ]
+        duplicate = dict(provenance["levels"][0]["records"][0])
+        provenance["levels"][0]["records"].append(duplicate)
+        self.char1.db.class_progression = provenance
+
+        diagnosis = diagnose_progression(self.char1)
+        plan = plan_progression_repair(self.char1)
+
+        self.assertEqual(diagnosis.issues, ("duplicate_progression_records",))
+        self.assertEqual(
+            tuple(operation.key for operation in plan.operations),
+            ("remove_duplicate_progression_records",),
+        )
+        self.assertEqual(plan.operations[0].before_values, ((duplicate["id"], 2),))
+        self.assertEqual(plan.operations[0].after_values, ((duplicate["id"], 1),))
+
+        repaired = apply_progression_repair(
+            self.char1, plan, reason="duplicate provenance"
+        )
+
+        self.assertEqual(repaired.issues, ())
+        self.assertEqual(
+            progression_state(self.char1)["levels"][0]["records"],
+            expected_records,
+        )
+
+    def test_low_risk_repair_is_blocked_during_combat_and_audited(self):
+        """ADV06-03 preserves combat state instead of mutating a live combatant."""
+        ServerConfig.objects.conf(COMBAT_CONFIG_KEY, delete=True)
+        self.addCleanup(ServerConfig.objects.conf, COMBAT_CONFIG_KEY, delete=True)
+        self.assertTrue(start_fight(self.char1, self.char2).accepted)
+        self.char1.db.hp_base = 9
+        plan = plan_progression_repair(self.char1)
+
+        with self.assertRaisesRegex(Exception, "during combat"):
+            apply_progression_repair(self.char1, plan, reason="combat safeguard")
+
+        self.assertEqual((self.char1.db.hp_base, self.char1.db.hp_current), (9, 5))
+        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "blocked")
+
+    def test_low_risk_repair_is_blocked_by_active_magic_dependency(self):
+        """ADV06-05 does not mutate a character during active concentration."""
+        self.char1.db.hp_base = 9
+        plan = plan_progression_repair(self.char1)
+
+        with patch(
+            "systems.advancement_repair.has_active_concentration", return_value=True
+        ):
+            with self.assertRaisesRegex(Exception, "active magic dependency"):
+                apply_progression_repair(self.char1, plan, reason="magic safeguard")
+
+        self.assertEqual((self.char1.db.hp_base, self.char1.db.hp_current), (9, 5))
+        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "blocked")
+
+    def test_active_effect_state_makes_a_low_risk_plan_stale(self):
+        """ADV06-02 fingerprints dependent effect state before the apply commit."""
+        self.char1.db.hp_base = 9
+        plan = plan_progression_repair(self.char1)
+        self.char1.db.active_effects = {"version": 1, "instances": {}}
+
+        with self.assertRaisesRegex(Exception, "stale"):
+            apply_progression_repair(self.char1, plan, reason="effect changed")
+
+        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "stale")
+
+    def test_diagnosis_flags_missing_or_overmaximum_slot_without_refilling_it(self):
+        """ADV06-01 makes resource corruption visible without recovery side effects."""
+        self.char2.db.constitution = 10
+        initialize_level_one(self.char2, class_key="Wizard", hp_base=6)
+        resources = self.char2.db.magic_resources
+        del resources["current"]["wizard.spell_slot.1"]
+        self.char2.db.magic_resources = resources
+
+        missing = diagnose_progression(self.char2)
+
+        self.assertIn("missing_magic_resource_state", missing.issues)
+        self.assertNotIn(
+            "wizard.spell_slot.1", self.char2.db.magic_resources["current"]
+        )
+        resources["current"]["wizard.spell_slot.1"] = 99
+        self.char2.db.magic_resources = resources
+        overmaximum = diagnose_progression(self.char2)
+        self.assertIn("resource_current_exceeds_maximum", overmaximum.issues)
+        self.assertEqual(
+            self.char2.db.magic_resources["current"]["wizard.spell_slot.1"], 99
+        )
+
+        plan = plan_progression_repair(self.char2)
+        self.assertEqual(
+            tuple(operation.key for operation in plan.operations),
+            ("clamp_magic_resource_currents",),
+        )
+        self.assertEqual(
+            plan.operations[0].before_values, (("wizard.spell_slot.1", 99),)
+        )
+        self.assertEqual(plan.operations[0].after_values, (("wizard.spell_slot.1", 2),))
+        self.char2.db.advancement_repair_audit = {
+            "version": 1,
+            "events": [
+                {
+                    "plan_id": "a" * 64,
+                    "actor_id": None,
+                    "operations": [],
+                    "reason": "previous repair",
+                    "outcome": "blocked",
+                }
+            ],
+        }
+
+        repaired = apply_progression_repair(self.char2, plan, reason="slot clamp")
+
+        self.assertEqual(repaired.issues, ())
+        self.assertEqual(
+            self.char2.db.magic_resources["current"]["wizard.spell_slot.1"], 2
+        )
+        audit = repair_audit(self.char2)
+        self.assertEqual(
+            (audit[0]["outcome"], audit[-1]["outcome"]), ("blocked", "applied")
+        )
+
+    def test_stale_and_failed_repairs_leave_a_durable_audit_event(self):
+        """ADV06-06 records attempts even though their public call raises."""
+        self.char1.attributes.remove("class_progression")
+        plan = plan_progression_repair(self.char1)
+        repeat = plan_progression_repair(self.char1)
+        self.assertEqual(
+            (plan.plan_id, plan.target_fingerprint),
+            (repeat.plan_id, repeat.target_fingerprint),
+        )
+        self.char1.db.hp_base = 11
+
+        with self.assertRaisesRegex(Exception, "stale"):
+            apply_progression_repair(self.char1, plan, reason="recheck")
+
+        stale = repair_audit(self.char1)[-1]
+        self.assertEqual(stale["outcome"], "stale")
+        self.assertEqual(stale["target_id"], self.char1.id)
+        self.assertIsInstance(stale["recorded_at"], str)
+
+        self.char1.db.hp_base = 10
+        plan = plan_progression_repair(self.char1)
+        with patch(
+            "systems.advancement_repair.migrate_progression_baseline",
+            side_effect=AdvancementError("adapter failed"),
+        ):
+            with self.assertRaisesRegex(Exception, "could not be applied"):
+                apply_progression_repair(self.char1, plan, reason="retry")
+
+        self.assertEqual(repair_audit(self.char1)[-1]["outcome"], "failed")
 
     def test_duplicate_source_is_a_durable_noop(self):
         """A retry cannot pay an event a second time after reload-safe storage."""

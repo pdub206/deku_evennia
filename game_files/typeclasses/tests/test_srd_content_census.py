@@ -3,24 +3,18 @@
 from dataclasses import replace
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.srd_content_census import (
-    SRD_CONTENT_CENSUS,
-    ContentCensusError,
-    build_content_census,
-    census_report,
-)
-from systems.srd_spell_lists import (
-    SRD_CANTRIP_LISTS,
-    SRD_LEVEL_EIGHT_SPELL_LISTS,
-    SRD_LEVEL_FIVE_SPELL_LISTS,
-    SRD_LEVEL_FOUR_SPELL_LISTS,
-    SRD_LEVEL_NINE_SPELL_LISTS,
-    SRD_LEVEL_ONE_SPELL_LISTS,
-    SRD_LEVEL_SEVEN_SPELL_LISTS,
-    SRD_LEVEL_SIX_SPELL_LISTS,
-    SRD_LEVEL_THREE_SPELL_LISTS,
-    SRD_LEVEL_TWO_SPELL_LISTS,
-)
+from systems.srd_content_census import (SRD_CONTENT_CENSUS, ContentCensusError,
+                                        build_content_census, census_report)
+from systems.srd_spell_lists import (SRD_CANTRIP_LISTS,
+                                     SRD_LEVEL_EIGHT_SPELL_LISTS,
+                                     SRD_LEVEL_FIVE_SPELL_LISTS,
+                                     SRD_LEVEL_FOUR_SPELL_LISTS,
+                                     SRD_LEVEL_NINE_SPELL_LISTS,
+                                     SRD_LEVEL_ONE_SPELL_LISTS,
+                                     SRD_LEVEL_SEVEN_SPELL_LISTS,
+                                     SRD_LEVEL_SIX_SPELL_LISTS,
+                                     SRD_LEVEL_THREE_SPELL_LISTS,
+                                     SRD_LEVEL_TWO_SPELL_LISTS)
 
 
 class TestSRDContentCensus(EvenniaTest):
@@ -29,8 +23,8 @@ class TestSRDContentCensus(EvenniaTest):
     def test_census_is_immutable_and_covers_current_source_projection(self):
         report = census_report()
 
-        self.assertEqual(SRD_CONTENT_CENSUS.version, 1)
-        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 1936)
+        self.assertEqual(SRD_CONTENT_CENSUS.version, 2)
+        self.assertEqual(len(SRD_CONTENT_CENSUS.records), 1925)
         self.assertEqual(len(report["released"]), 3)
         self.assertIn("feature:fighter.second_wind:level:1", report["released"])
         self.assertIn("feature:barbarian.rage:level:1", report["catalogued"])
@@ -154,6 +148,25 @@ class TestSRDContentCensus(EvenniaTest):
             {"acolyte", "criminal", "sage", "soldier"},
         )
 
+    def test_background_scope_excludes_local_menu_compatibility_data(self):
+        """Only descriptions present in the pinned SRD may carry SRD citations."""
+        background_records = {
+            record.key: record
+            for record in SRD_CONTENT_CENSUS.records
+            if record.kind == "background"
+        }
+
+        self.assertEqual(
+            set(background_records),
+            {
+                "background:acolyte",
+                "background:criminal",
+                "background:sage",
+                "background:soldier",
+            },
+        )
+        self.assertNotIn("background:artisan", background_records)
+
     def test_species_grant_inventory_covers_all_pinned_srd_occurrences(self):
         """P04-A01 inventories each species trait, choice, and level gate."""
         species_records = [
@@ -232,6 +245,7 @@ class TestSRDContentCensus(EvenniaTest):
                     "equipment:focus:",
                     "equipment:tack:",
                     "equipment:vehicle:",
+                    "equipment:mount_equipment:",
                 )
             )
         ]
@@ -241,12 +255,16 @@ class TestSRDContentCensus(EvenniaTest):
             if record.key.startswith("creature:mount:")
         ]
 
-        self.assertEqual(len(variant_records), 33)
+        self.assertEqual(len(variant_records), 34)
         self.assertEqual(len(mount_records), 8)
         self.assertEqual({record.owner_task for record in variant_records}, {"P04-A05"})
         self.assertEqual({record.owner_task for record in mount_records}, {"P04-A08"})
         self.assertIn(
             "equipment:focus:sprig_of_mistletoe",
+            {record.key for record in variant_records},
+        )
+        self.assertIn(
+            "equipment:mount_equipment:barding",
             {record.key for record in variant_records},
         )
 
