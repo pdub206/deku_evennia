@@ -4,8 +4,10 @@ from unittest.mock import patch
 
 from commands.default_cmdsets import CharacterCmdSet
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
+from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
+from systems.combat import is_fighting
 from systems.dice import RollResult
 from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.injury import InjuryState, apply_damage, injury_record
@@ -27,7 +29,9 @@ from systems.magic import (
 )
 from systems.magic_actions import (
     cast_action,
+    end_concentration,
     grant_action,
+    grant_spellbook_entry,
     mark_preparation_window,
     prepare_action,
 )
@@ -39,6 +43,7 @@ from systems.magic_rest import (
     advance_magic_rest,
 )
 from systems.pulses import PulseEvent, PulseLane
+from systems.tactical_combat import consume_prone_action
 
 _WARD_EFFECT = EffectDefinition(
     key="test.magic.ward",
@@ -343,3 +348,131 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(result.snapshot.spellcasting_modifier, 3)
         self.assertEqual(self.char1.stats.hp_current, 6)
         self.assertEqual(resource_current(self.char2, "cleric.spell_slot.1"), 1)
+
+    def test_released_magic_missile_hits_automatically_and_spends_one_slot(self):
+        """Magic Missile bypasses attack and save rolls but still starts combat."""
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.magic_missile")
+        prepare_action(self.char1, "wizard.magic_missile")
+        self.char2.db.hp_max_override = 20
+        self.char2.db.hp_current = 20
+
+        with patch("systems.magic_actions._roll_dice", return_value=9):
+            result = cast_action(
+                self.char1,
+                "magic missile",
+                target_name=self.char2.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.reason, "hit")
+        self.assertEqual(result.amount, 9)
+        self.assertEqual(self.char2.stats.hp_current, 11)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+
+    def test_released_shield_of_faith_applies_concentrated_armor_class(self):
+        """Shield of Faith is a linked RULES-03 effect with its declared bonus."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.wisdom = 16
+        initialize_level_one(self.char2, class_key="Cleric", hp_base=8)
+        mark_preparation_window(self.char2, 1)
+        prepare_action(self.char2, "cleric.shield_of_faith")
+        armor_class = self.char2.stats.armor_class
+
+        result = cast_action(
+            self.char2,
+            "shield of faith",
+            target_name=self.char2.key,
+            registry=MAGIC_REGISTRY,
+        )
+
+        self.assertEqual(result.reason, "effect_applied")
+        self.assertTrue(self.char2.effects.has("magic.shield_of_faith"))
+        self.assertEqual(self.char2.stats.armor_class, armor_class + 2)
+        self.assertEqual(resource_current(self.char2, "cleric.spell_slot.1"), 1)
+
+    def test_ritual_adept_detects_only_visible_magic_without_spending_a_slot(self):
+        """An unprepared spellbook ritual is useful, bounded, and slot-free."""
+        grant_spellbook_entry(self.char1, "wizard.detect_magic")
+        visible = create_object(
+            "typeclasses.objects.Object", key="glowing stone", location=self.room1
+        )
+        hidden = create_object(
+            "typeclasses.objects.Object", key="hidden sigil", location=self.room1
+        )
+        visible.tags.add("magic")
+        hidden.tags.add("magic")
+        slots = resource_current(self.char1, "wizard.spell_slot.1")
+
+        with patch.object(
+            self.room1, "filter_visible", return_value=(self.char1, visible)
+        ):
+            result = cast_action(
+                self.char1,
+                "detect magic",
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.reason, "detected")
+        self.assertEqual(result.amount, 1)
+        self.assertEqual(dict(result.snapshot.resource_reservation), {})
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), slots)
+        self.assertTrue(self.char1.effects.has("magic.detect_magic"))
+
+        end_concentration(self.char1)
+        mark_preparation_window(self.char1, 1)
+        prepare_action(self.char1, "wizard.detect_magic")
+        with patch.object(self.room1, "filter_visible", return_value=()):
+            prepared = cast_action(
+                self.char1,
+                "detect magic",
+                registry=MAGIC_REGISTRY,
+            )
+        self.assertEqual(
+            dict(prepared.snapshot.resource_reservation),
+            {"wizard.spell_slot.1": 1},
+        )
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), slots - 1)
+
+    def test_released_longstrider_applies_speed_without_concentration(self):
+        """Longstrider persists through RULES-03 and spends exactly one slot."""
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.longstrider")
+        prepare_action(self.char1, "wizard.longstrider")
+        speed = self.char1.stats.speed
+
+        result = cast_action(
+            self.char1,
+            "longstrider",
+            target_name=self.char1.key,
+            registry=MAGIC_REGISTRY,
+        )
+
+        self.assertEqual(result.reason, "effect_applied")
+        self.assertTrue(self.char1.effects.has("magic.longstrider"))
+        self.assertEqual(self.char1.stats.speed, speed + 10)
+        self.assertIsNone(self.char1.attributes.get("magic_concentration"))
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+
+    def test_released_grease_applies_and_consumes_prone_in_combat(self):
+        """Failed Grease saves enter combat and cost the target one ready action."""
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.grease")
+        prepare_action(self.char1, "wizard.grease")
+        failed = RollResult(1, 0, 1, 10, False)
+
+        with patch("systems.effects.roll_check", return_value=failed):
+            result = cast_action(
+                self.char1,
+                "grease",
+                target_name=self.char2.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.reason, "effect_applied")
+        self.assertTrue(self.char2.effects.has("combat.prone"))
+        self.assertTrue(is_fighting(self.char1))
+        self.assertTrue(consume_prone_action(self.char2))
+        self.assertFalse(self.char2.effects.has("combat.prone"))
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)

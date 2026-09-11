@@ -175,12 +175,20 @@ class TestMagicRegistry(EvenniaTest):
                 "cleric.thaumaturgy",
                 "cleric.cure_wounds",
                 "cleric.healing_word",
+                "cleric.shield_of_faith",
+                "wizard.magic_missile",
+                "wizard.thunderwave",
+                "wizard.detect_magic",
+                "wizard.burning_hands",
+                "wizard.longstrider",
+                "wizard.grease",
             ),
         )
         self.assertEqual(
             tuple(
                 definition.key
                 for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
+                if definition.spell_level == 0
             ),
             (
                 "wizard.acid_splash",
@@ -198,6 +206,13 @@ class TestMagicRegistry(EvenniaTest):
                 for definition in MAGIC_REGISTRY.available_for("Cleric", 1)
             ),
             3,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 1
+                for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
+            ),
+            6,
         )
         cantrips = tuple(
             definition

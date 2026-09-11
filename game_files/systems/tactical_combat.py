@@ -19,16 +19,10 @@ from systems.attacks import (
     resolve_basic_attack,
 )
 from systems.character_stats import AttackProfile
-from systems.combat import CombatActionResult, get_encounter_id, get_target
 from systems.checks import CheckRequest, CheckResult, resolve_opposed_check
+from systems.combat import CombatActionResult, get_encounter_id, get_target
 from systems.dice import RollResult
-from systems.effects import (
-    EFFECT_REGISTRY,
-    ApplyOutcome,
-    EffectDefinition,
-    RemovalReason,
-    StackingPolicy,
-)
+from systems.effects import ApplyOutcome, RemovalReason
 from systems.equipment import HIT_LOCATIONS
 from systems.pulses import PulseEvent
 
@@ -390,15 +384,6 @@ def _size_rank(character: Any) -> int:
 
 def _register_defaults() -> None:
     """Register reload-safe built-in tactical definitions once per process."""
-    if EFFECT_REGISTRY.get(PRONE_EFFECT_KEY) is None:
-        EFFECT_REGISTRY.register(
-            EffectDefinition(
-                key=PRONE_EFFECT_KEY,
-                name="Prone",
-                stacking=StackingPolicy.REJECT,
-                conditions=frozenset({"prone"}),
-            )
-        )
     for key, handler in {
         "aim": _aim,
         "backstab": _backstab,

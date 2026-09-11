@@ -377,12 +377,10 @@ def cast_action(
                 _lock(target)
             # State that can change between parsing and execution is checked a
             # second time while the relevant character rows are locked.
-            _revalidate(caster, definition, target)
+            _revalidate(caster, definition, target, snapshot)
             result = _execute(caster, definition, target, snapshot)
-            if definition.cost is not None:
-                spend_resource(
-                    caster, definition.cost.resource_key, definition.cost.amount
-                )
+            for resource_key, amount in snapshot.resource_reservation.items():
+                spend_resource(caster, resource_key, amount)
     except MagicResourceError as err:
         raise MagicActionError("You do not have enough magical resources.") from err
     except MagicActionError:
@@ -461,9 +459,22 @@ def _has_access(
         )
     ):
         return False
-    return any(
+    entitled = any(
         mode in definition.access_modes and definition.key in state[mode]
         for mode in _ENTITLEMENT_MODES
+    )
+    return entitled or _uses_ritual_access(actor, definition, state)
+
+
+def _uses_ritual_access(
+    actor: Any, definition: MagicDefinition, state: Mapping[str, list[str]]
+) -> bool:
+    """Apply Wizard Ritual Adept only to unprepared spellbook rituals."""
+    return (
+        actor.attributes.get("char_class") == "Wizard"
+        and "ritual" in definition.tags
+        and definition.key in state[_SPELLBOOK_KEY]
+        and definition.key not in state[AccessMode.PREPARED]
     )
 
 
@@ -796,17 +807,15 @@ def _snapshot(
         ability = definition_class.spellcasting_ability if definition_class else None
     modifier = caster.stats.ability_modifier(ability) if ability else 0
     proficiency = caster.stats.proficiency_bonus
+    ritual = _uses_ritual_access(caster, definition, _action_state(caster))
     reservation = (
         {definition.cost.resource_key: definition.cost.amount}
-        if definition.cost is not None
+        if definition.cost is not None and not ritual
         else {}
     )
-    if (
-        definition.cost is not None
-        and resource_current(caster, definition.cost.resource_key)
-        < definition.cost.amount
-    ):
-        raise MagicActionError("You do not have enough magical resources.")
+    for resource_key, amount in reservation.items():
+        if resource_current(caster, resource_key) < amount:
+            raise MagicActionError("You do not have enough magical resources.")
     return CastSnapshot(
         definition.key,
         registry.version,
@@ -820,20 +829,21 @@ def _snapshot(
     )
 
 
-def _revalidate(caster: Any, definition: MagicDefinition, target: Any) -> None:
+def _revalidate(
+    caster: Any,
+    definition: MagicDefinition,
+    target: Any,
+    snapshot: CastSnapshot,
+) -> None:
     """Repeat mutable actor, target, and resource checks just before commit."""
     decision = caster.actions.check(_action_category(definition))
     if not decision.allowed:
         raise MagicActionError(decision.message)
-    if target is caster:
-        return
-    _validate_target(caster, definition, target)
-    if (
-        definition.cost is not None
-        and resource_current(caster, definition.cost.resource_key)
-        < definition.cost.amount
-    ):
-        raise MagicActionError("You do not have enough magical resources.")
+    if target is not caster:
+        _validate_target(caster, definition, target)
+    for resource_key, amount in snapshot.resource_reservation.items():
+        if resource_current(caster, resource_key) < amount:
+            raise MagicActionError("You do not have enough magical resources.")
 
 
 def _execute(
@@ -859,12 +869,55 @@ def _execute(
         return MagicActionResult(True, "healed", definition, target, snapshot, amount)
     if definition.handler_key == "spell_attack":
         return _spell_attack(caster, definition, target, snapshot)
+    if definition.handler_key == "automatic_damage":
+        amount = _roll_dice(definition.damage.dice)
+        injury = apply_damage(
+            target, amount, emit_messages=False, source=caster, source_kind="magic"
+        )
+        if not injury.accepted:
+            raise MagicActionError("That target cannot be affected right now.")
+        from systems.combat import start_fight
+
+        start_fight(caster, target)
+        _message(caster, target, definition, "You strike")
+        return MagicActionResult(True, "hit", definition, target, snapshot, amount)
     if definition.handler_key == "saving_throw":
         if definition.damage is not None:
             return _saving_throw_damage(caster, definition, target, snapshot)
         return _apply_effects(caster, definition, target, snapshot)
     if definition.handler_key == "effect":
         return _apply_effects(caster, definition, target, snapshot)
+    if definition.handler_key == "detect_magic":
+        _apply_effects(caster, definition, target, snapshot)
+        location = caster.location
+        visible = (
+            ()
+            if location is None
+            else location.filter_visible(location.contents, caster)
+        )
+        auras = tuple(
+            obj
+            for obj in visible
+            if obj is not caster
+            and (
+                obj.tags.has("magic")
+                or (
+                    getattr(obj, "effects", None) is not None
+                    and any(
+                        "magic" in effect.removal_categories
+                        for effect in obj.effects.all()
+                    )
+                )
+            )
+        )
+        if auras:
+            names = ", ".join(obj.get_display_name(caster) for obj in auras)
+            caster.msg(f"You sense magical auras around: {names}.")
+        else:
+            caster.msg("You sense no visible magical auras nearby.")
+        return MagicActionResult(
+            True, "detected", definition, target, snapshot, len(auras)
+        )
     if definition.handler_key == "stabilize":
         result = apply_stabilization(target, emit_messages=False)
         if not result.accepted:
@@ -939,6 +992,10 @@ def _apply_effects(
 
     if concentration_links:
         _begin_concentration(caster, definition.key, concentration_links)
+    if applied and definition.targeting.mode == TargetingMode.HOSTILE:
+        from systems.combat import start_fight
+
+        start_fight(caster, target)
     if applied:
         _message(caster, target, definition, "You surround")
     return MagicActionResult(

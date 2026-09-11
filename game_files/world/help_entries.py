@@ -193,6 +193,112 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "shield of faith",
+        "aliases": ["faith shield"],
+        "category": "Magic",
+        "text": """
+            Shield of Faith is a level 1 Cleric abjuration spell. One living
+            creature in your room, including yourself, gains +2 Armor Class for
+            up to 100 six-second effect pulses while you concentrate. It expends
+            one level 1 Cleric spell slot.
+
+            Alpha adaptation: Bonus Actions use one ordinary combat action.
+            Only level 1 casting is currently available.
+        """,
+    },
+    {
+        "key": "magic missile",
+        "aliases": ["missile"],
+        "category": "Magic",
+        "text": """
+            Magic Missile is a level 1 Wizard evocation spell. Three darts
+            automatically strike one detected hostile creature in your room,
+            dealing 3d4+3 Force damage. It takes one combat action and expends
+            one level 1 Wizard spell slot.
+
+            Alpha adaptation: all three darts must strike the same creature.
+            Higher-slot casting is not yet available.
+        """,
+    },
+    {
+        "key": "thunderwave",
+        "aliases": ["thunder wave"],
+        "category": "Magic",
+        "text": """
+            Thunderwave is a level 1 Wizard evocation spell. One detected
+            hostile creature in your room makes a Constitution saving throw,
+            taking 2d8 Thunder damage on a failure or half as much on a success.
+            It takes one combat action and expends one level 1 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a cube,
+            and does not push creatures or objects. Higher-slot casting is not
+            yet available.
+        """,
+    },
+    {
+        "key": "detect magic",
+        "aliases": ["detect"],
+        "category": "Magic",
+        "text": """
+            Detect Magic is a level 1 Wizard divination spell and a ritual. It
+            reveals visible creatures and objects in your room that currently
+            bear a registered magical effect or the builder-controlled magic
+            tag. Hidden and otherwise invisible candidates are never revealed.
+            The sense remains active for up to 100 six-second effect pulses and
+            requires concentration.
+
+            A prepared casting expends one level 1 Wizard spell slot. Ritual
+            Adept also lets a Wizard cast an unprepared Detect Magic held in
+            their spellbook without spending a slot. Alpha adaptation: the
+            ritual uses one ordinary action, immediately scans current auras,
+            and does not automatically report auras that appear later.
+        """,
+    },
+    {
+        "key": "burning hands",
+        "aliases": ["burning"],
+        "category": "Magic",
+        "text": """
+            Burning Hands is a level 1 Wizard evocation spell. One detected
+            hostile creature in your room makes a Dexterity saving throw,
+            taking 3d6 Fire damage on a failure or half as much on a success.
+            It takes one combat action and expends one level 1 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a cone
+            and does not ignite objects. Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "longstrider",
+        "aliases": ["long stride"],
+        "category": "Magic",
+        "text": """
+            Longstrider is a level 1 Wizard transmutation spell. Touch a living
+            creature, including yourself, to increase its Speed by 10 for 600
+            six-second effect pulses. It takes one action and expends one level
+            1 Wizard spell slot. It does not require concentration.
+
+            The alpha casts this only with a level 1 slot; multi-target
+            higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "grease",
+        "aliases": ["slick"],
+        "category": "Magic",
+        "text": """
+            Grease is a level 1 Wizard conjuration spell. One detected hostile
+            creature in your room makes a Dexterity saving throw. On a failure,
+            it becomes Prone and must spend its next combat action regaining its
+            footing. A successful save negates the effect. Casting expends one
+            level 1 Wizard spell slot.
+
+            Alpha adaptation: Grease does not create persistent terrain and
+            therefore causes no later entry or end-of-turn saving throws.
+            Higher-slot casting is unavailable.
+        """,
+    },
+    {
         "key": "check diagnostics",
         "aliases": ["@check", "builder checks", "adv-04"],
         "category": "Building",

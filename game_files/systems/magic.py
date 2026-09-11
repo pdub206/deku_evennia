@@ -213,6 +213,14 @@ STANDARD_HANDLERS: Mapping[str, HandlerContract] = MappingProxyType(
         "spell_attack": HandlerContract(
             "spell_attack", frozenset({"damage"}), frozenset({TargetingMode.HOSTILE})
         ),
+        "automatic_damage": HandlerContract(
+            "automatic_damage",
+            frozenset({"damage"}),
+            frozenset({TargetingMode.HOSTILE}),
+        ),
+        "detect_magic": HandlerContract(
+            "detect_magic", frozenset({"effects"}), frozenset({TargetingMode.SELF})
+        ),
         "saving_throw": HandlerContract(
             "saving_throw",
             frozenset({"save"}),
@@ -402,7 +410,7 @@ def build_magic_registry(
     class_keys: Iterable[str] | None = None,
     resource_keys: Iterable[str] | None = None,
     damage_types: Iterable[str] = DAMAGE_TYPES,
-    effect_keys: Iterable[str] = (),
+    effect_keys: Iterable[str] | None = None,
     help_keys: Iterable[str] = (),
     require_srd_references: bool = False,
 ) -> MagicRegistry:
@@ -414,7 +422,9 @@ def build_magic_registry(
         resource_keys if resource_keys is not None else _default_resource_keys()
     )
     damages = frozenset(damage_types)
-    effects = frozenset(effect_keys)
+    effects = frozenset(
+        effect_keys if effect_keys is not None else _default_effect_keys()
+    )
     help_lookup = frozenset(normalize_help_key(value) for value in help_keys)
     indexed: dict[str, MagicDefinition] = {}
     aliases: dict[str, str] = {}
@@ -960,6 +970,12 @@ def _default_resource_keys() -> tuple[str, ...]:
     return tuple(keys)
 
 
+def _default_effect_keys() -> tuple[str, ...]:
+    from systems.effects import EFFECT_REGISTRY
+
+    return EFFECT_REGISTRY.keys()
+
+
 def _canonical_ability(value: Any) -> str:
     normalized = str(value).strip().casefold()
     for ability in ABILITY_NAMES:
@@ -1227,6 +1243,185 @@ _RELEASED_MAGIC = (
         ),
         srd_reference="SRD 5.2.1 Spell Descriptions: Healing Word",
     ),
+    MagicDefinition(
+        key="cleric.shield_of_faith",
+        display_name="Shield of Faith",
+        aliases=("faith shield",),
+        kind=MagicKind.SPELL,
+        school="abjuration",
+        tags=("level_1", "defense", "alpha_action_adaptation"),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="effect",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            include_caster=True,
+        ),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("cleric.spell_slot.1", 1),
+        concentration=True,
+        maintenance="concentration",
+        duration=100,
+        effect_keys=("magic.shield_of_faith",),
+        player_help=PlayerHelp(
+            "shield of faith",
+            "Grant one nearby creature a +2 Armor Class bonus while you concentrate.",
+            "Alpha adaptation: Bonus Actions use one ordinary combat action. Duration is 100 six-second effect pulses.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Shield of Faith",
+    ),
+    MagicDefinition(
+        key="wizard.magic_missile",
+        display_name="Magic Missile",
+        aliases=("missile",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("level_1", "alpha_single_target"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="automatic_damage",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        damage=Damage(DiceExpression(3, 4, 3), "force"),
+        player_help=PlayerHelp(
+            "magic missile",
+            "Strike one nearby foe automatically with three darts for 3d4+3 Force damage.",
+            "Alpha adaptation: all three darts must strike one target, and only level 1 casting is available.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Magic Missile",
+    ),
+    MagicDefinition(
+        key="wizard.thunderwave",
+        display_name="Thunderwave",
+        aliases=("thunder wave",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("level_1", "alpha_single_target"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="saving_throw",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        damage=Damage(DiceExpression(2, 8), "thunder"),
+        save=Save("Constitution", on_success="half"),
+        player_help=PlayerHelp(
+            "thunderwave",
+            "Blast one nearby foe for 2d8 Thunder damage, halved by a successful Constitution save.",
+            "Alpha adaptation: the cube and push are omitted; one target is affected, and only level 1 casting is available.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Thunderwave",
+    ),
+    MagicDefinition(
+        key="wizard.detect_magic",
+        display_name="Detect Magic",
+        aliases=("detect",),
+        kind=MagicKind.SPELL,
+        school="divination",
+        tags=("level_1", "ritual", "alpha_immediate_scan"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="manipulate",
+        handler_key="detect_magic",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        concentration=True,
+        maintenance="concentration",
+        duration=100,
+        effect_keys=("magic.detect_magic",),
+        player_help=PlayerHelp(
+            "detect magic",
+            "Sense visible magical creatures and objects in your room while you concentrate.",
+            "Ritual Adept permits an unprepared spellbook casting without a slot. Alpha adaptation: casting immediately reveals current auras; new auras require another scan.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Detect Magic",
+    ),
+    MagicDefinition(
+        key="wizard.burning_hands",
+        display_name="Burning Hands",
+        aliases=("burning",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("level_1", "alpha_single_target"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="saving_throw",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        damage=Damage(DiceExpression(3, 6), "fire"),
+        save=Save("Dexterity", on_success="half"),
+        player_help=PlayerHelp(
+            "burning hands",
+            "Scorch one nearby foe for 3d6 Fire damage, halved by a successful Dexterity save.",
+            "Alpha adaptation: the cone and object ignition are omitted; one target is affected, and only level 1 casting is available.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Burning Hands",
+    ),
+    MagicDefinition(
+        key="wizard.longstrider",
+        display_name="Longstrider",
+        aliases=("long stride",),
+        kind=MagicKind.SPELL,
+        school="transmutation",
+        tags=("level_1", "utility"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="manipulate",
+        handler_key="effect",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            include_caster=True,
+        ),
+        range=RangeCategory.TOUCH,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        duration=600,
+        effect_keys=("magic.longstrider",),
+        player_help=PlayerHelp(
+            "longstrider",
+            "Increase one touched creature's Speed by 10 for 600 six-second effect pulses.",
+            "The alpha casts this only with a level 1 slot; multi-target higher-slot casting is unavailable.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Longstrider",
+    ),
+    MagicDefinition(
+        key="wizard.grease",
+        display_name="Grease",
+        aliases=("slick",),
+        kind=MagicKind.SPELL,
+        school="conjuration",
+        tags=("level_1", "alpha_single_target"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="saving_throw",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("wizard.spell_slot.1", 1),
+        save=Save("Dexterity"),
+        effect_keys=("combat.prone",),
+        player_help=PlayerHelp(
+            "grease",
+            "Force one nearby foe to make a Dexterity save or fall Prone and spend its next combat action standing.",
+            "Alpha adaptation: no persistent terrain is created and no later entry or end-of-turn saves occur.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Grease",
+    ),
 )
 
 
@@ -1242,6 +1437,13 @@ MAGIC_REGISTRY = build_magic_registry(
         "thaumaturgy",
         "cure wounds",
         "healing word",
+        "shield of faith",
+        "magic missile",
+        "thunderwave",
+        "detect magic",
+        "burning hands",
+        "longstrider",
+        "grease",
     ),
     require_srd_references=True,
 )

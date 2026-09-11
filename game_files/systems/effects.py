@@ -250,6 +250,10 @@ class EffectRegistry:
             raise EffectError(f"Unknown effect definition: {key}")
         return definition
 
+    def keys(self) -> tuple[str, ...]:
+        """Return registered keys in deterministic registration order."""
+        return tuple(self._definitions)
+
 
 EFFECT_REGISTRY = EffectRegistry()
 EffectRemovalListener = Callable[["ActiveEffect", RemovalReason], None]
@@ -1052,3 +1056,58 @@ def _validate_messages(messages: Mapping[str, EffectMessage]) -> None:
             unknown = fields - _MESSAGE_FIELDS
             if unknown:
                 raise EffectError(f"Unknown effect message field: {sorted(unknown)[0]}")
+
+
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.shield_of_faith",
+        name="Shield of Faith",
+        duration=100,
+        clears_on_death=True,
+        modifiers={"armor_class": 2},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(
+                target="A shimmering field surrounds you.",
+                room="A shimmering field surrounds {target}.",
+            ),
+            "expire": EffectMessage(target="Your shimmering field fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.detect_magic",
+        name="Detect Magic",
+        duration=100,
+        clears_on_death=True,
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "expire": EffectMessage(target="Your sense of nearby magic fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.longstrider",
+        name="Longstrider",
+        duration=600,
+        clears_on_death=True,
+        modifiers={"speed": 10},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Your stride lengthens with magic."),
+            "expire": EffectMessage(target="Your magically lengthened stride fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.prone",
+        name="Prone",
+        clears_on_death=True,
+        stacking=StackingPolicy.REJECT,
+        conditions=frozenset({"prone"}),
+        removal_categories=frozenset({"magic", "physical"}),
+    )
+)
