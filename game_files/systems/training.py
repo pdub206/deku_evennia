@@ -14,10 +14,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from systems.progression import CLASS_PROGRESSION, ChoiceSet, RegistryValidationError
+from systems.progression import (
+    CLASS_PROGRESSION,
+    MAX_CLASS_LEVEL,
+    ChoiceSet,
+    RegistryValidationError,
+)
 
 CHOICE_STATE_ATTRIBUTE = "progression_choices"
-CHOICE_STATE_VERSION = 1
+CHOICE_STATE_VERSION = 2
 TRAINER_PROFILE_ATTRIBUTE = "trainer_profile"
 TRAINER_PROFILE_VERSION = 1
 _MAGIC_CHOICE_MODES = {
@@ -140,7 +145,7 @@ def default_trainer_profile() -> dict[str, Any]:
         "classes": [],
         "choices": [],
         "minimum_level": 1,
-        "maximum_level": 20,
+        "maximum_level": MAX_CLASS_LEVEL,
         "service_lock": "all()",
     }
 
@@ -169,6 +174,10 @@ def validate_trainer_profile(profile: Any) -> dict[str, Any]:
             for key in choices
         )
         or len(set(choices)) != len(choices)
+        or any(
+            not any(key.startswith(f"{class_key.casefold()}.") for class_key in classes)
+            for key in choices
+        )
     ):
         raise TrainingError("Trainer profile has invalid choices.")
     low, high = profile["minimum_level"], profile["maximum_level"]
@@ -177,7 +186,7 @@ def validate_trainer_profile(profile: Any) -> dict[str, Any]:
         or isinstance(high, bool)
         or not isinstance(low, int)
         or not isinstance(high, int)
-        or not 1 <= low <= high <= 20
+        or not 1 <= low <= high <= MAX_CLASS_LEVEL
         or not isinstance(profile["service_lock"], str)
         or not profile["service_lock"].strip()
     ):
@@ -208,60 +217,17 @@ def resolve_training(
     """Atomically resolve one pending entitlement through a qualified trainer."""
     if not isinstance(choice_key, str) or not isinstance(option, str):
         raise TrainingError("Training choice and option are required.")
-    with transaction.atomic():
-        _lock(character)
-        _lock(trainer)
-        _validate_trainer(character, trainer, choice_key)
-        return _resolve_without_trainer(
-            character, choice_key, (option,), origin="trainer"
-        )
-
-
-def replace_training_option(
-    character: Any,
-    choice_key: str,
-    old_option: str,
-    new_option: str,
-    trainer: Any,
-) -> TrainingResult:
-    """Atomically replace one resolved learned-spell choice through a trainer."""
-    if not all(
-        isinstance(value, str) for value in (choice_key, old_option, new_option)
-    ):
-        raise TrainingError("Training choice and options are required.")
-    with transaction.atomic():
-        _lock(character)
-        _lock(trainer)
-        _validate_trainer(character, trainer, choice_key)
-        state = _choice_state(character, create=False)
-        if state is None:
-            raise TrainingError("Your training record needs staff repair.")
-        resolved = next(
-            (item for item in state["resolved"] if item["choice_key"] == choice_key),
-            None,
-        )
-        choice = CLASS_PROGRESSION.choices.get(choice_key)
-        if (
-            resolved is None
-            or choice is None
-            or choice.replacement_policy != "replace_one"
-            or choice.option_adapter != "magic_learned"
-        ):
-            raise TrainingError("That choice cannot be replaced.")
-        selected = list(resolved["selected"])
-        if old_option not in selected or new_option == old_option:
-            raise TrainingError("That selected option cannot be replaced.")
-        replacement_selected = [option for option in selected if option != old_option]
-        _validate_option(character, choice, new_option, replacement_selected)
-        try:
-            from systems.magic_actions import MagicActionError, replace_learned_action
-
-            replace_learned_action(character, old_option, new_option)
-        except MagicActionError as err:
-            raise TrainingError(str(err)) from err
-        resolved["selected"] = sorted((*replacement_selected, new_option))
-        _write_choice_state(character, state)
-        return TrainingResult(True, "replaced", choice_key, new_option)
+    try:
+        with transaction.atomic():
+            _lock(character)
+            _lock(trainer)
+            _validate_trainer(character, trainer, choice_key)
+            return _resolve_without_trainer(
+                character, choice_key, (option,), origin="trainer"
+            )
+    except Exception:
+        _discard_attribute_cache(character)
+        raise
 
 
 def find_trainer(actor: Any, name: str | None = None) -> Any:
@@ -425,6 +391,7 @@ def _entitlement(class_key: str, level: int, choice_key: str) -> dict[str, Any]:
         "count": choice.count,
         "selected": [],
         "registry_version": CLASS_PROGRESSION.version,
+        "registry_fingerprint": CLASS_PROGRESSION.fingerprint,
     }
 
 
@@ -455,36 +422,71 @@ def _choice_state(character: Any, *, create: bool) -> dict[str, Any] | None:
         "pending": list(deepcopy(pending)),
         "resolved": list(deepcopy(resolved)),
     }
-    for item in state["pending"] + state["resolved"]:
-        if not _valid_entitlement(item):
+    class_key = character.attributes.get("char_class")
+    character_level = character.attributes.get("level", 1)
+    for item in state["pending"]:
+        if not _valid_entitlement(
+            item, class_key=class_key, character_level=character_level, resolved=False
+        ):
+            raise TrainingError("Your training record needs staff repair.")
+    for item in state["resolved"]:
+        if not _valid_entitlement(
+            item, class_key=class_key, character_level=character_level, resolved=True
+        ):
             raise TrainingError("Your training record needs staff repair.")
     return state
 
 
-def _valid_entitlement(item: Any) -> bool:
-    return (
+def _valid_entitlement(
+    item: Any, *, class_key: object, character_level: object, resolved: bool
+) -> bool:
+    """Validate provenance against the exact released choice grant."""
+    if not (
         isinstance(item, Mapping)
-        and set(item).issuperset(
-            {
-                "id",
-                "class_key",
-                "level",
-                "choice_key",
-                "count",
-                "selected",
-                "registry_version",
-            }
-        )
+        and set(item)
+        == {
+            "id",
+            "class_key",
+            "level",
+            "choice_key",
+            "count",
+            "selected",
+            "registry_version",
+            "registry_fingerprint",
+            *(("origin",) if resolved else ()),
+        }
         and isinstance(item["id"], str)
-        and CLASS_PROGRESSION.is_available(item["class_key"])
+        and item["class_key"] == class_key
+        and isinstance(character_level, int)
+        and not isinstance(character_level, bool)
         and isinstance(item["level"], int)
+        and not isinstance(item["level"], bool)
+        and 1 <= item["level"] <= character_level <= MAX_CLASS_LEVEL
         and item["choice_key"] in CLASS_PROGRESSION.choices
-        and isinstance(item["count"], int)
+        and item["id"] == f"{item['class_key']}:{item['level']}:{item['choice_key']}"
+        and item["choice_key"]
+        in CLASS_PROGRESSION.class_for(item["class_key"])
+        .grants_at(item["level"])
+        .choice_keys
+        and item["count"] == CLASS_PROGRESSION.choices[item["choice_key"]].count
         and not isinstance(item["selected"], (str, bytes))
         and isinstance(item["selected"], Sequence)
-        and all(isinstance(value, str) for value in item["selected"])
-        and isinstance(item["registry_version"], int)
-    )
+        and len(item["selected"]) == len(set(item["selected"]))
+        and all(
+            value in CLASS_PROGRESSION.choices[item["choice_key"]].legal_options
+            for value in item["selected"]
+        )
+        and len(item["selected"]) <= item["count"]
+        and item["registry_version"] == CLASS_PROGRESSION.version
+        and item["registry_fingerprint"] == CLASS_PROGRESSION.fingerprint
+    ):
+        return False
+    if resolved:
+        return len(item["selected"]) == item["count"] and item["origin"] in {
+            "chargen",
+            "trainer",
+        }
+    return len(item["selected"]) < item["count"]
 
 
 def _write_choice_state(character: Any, state: dict[str, Any]) -> None:
@@ -507,7 +509,11 @@ def _class_definition(class_key: str):
 
 def _character_level(character: Any) -> int:
     level = character.attributes.get("level", 1)
-    if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 20:
+    if (
+        isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= MAX_CLASS_LEVEL
+    ):
         raise TrainingError("Your class progression needs staff repair.")
     return level
 
@@ -517,3 +523,10 @@ def _lock(obj: Any) -> None:
     if not isinstance(object_id, int) or isinstance(object_id, bool) or object_id <= 0:
         raise TrainingError("Training requires saved characters.")
     obj.__class__.objects.select_for_update().get(pk=object_id)
+
+
+def _discard_attribute_cache(character: Any) -> None:
+    """Forget Attribute values written inside a rolled-back transaction."""
+    for attribute in character.attributes.all():
+        attribute.flush_from_cache(force=True)
+    character.attributes.reset_cache()

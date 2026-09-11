@@ -282,7 +282,7 @@ def build_registry(
                 f"Choice '{choice.key}' has invalid options or count."
             )
         if (
-            choice.replacement_policy not in {"none", "replace_one"}
+            choice.replacement_policy != "none"
             or choice.prerequisite_timing not in {"grant", "resolution"}
             or choice.option_adapter not in {"skill", "feature"}
         ):

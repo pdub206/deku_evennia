@@ -8,7 +8,6 @@ from systems.training import (
     TrainingError,
     find_trainer,
     practice_view,
-    replace_training_option,
     resolve_training,
 )
 
@@ -93,7 +92,6 @@ class CmdTrain(Command):
       train
       train <choice> <option>
       train <choice> <option> at <trainer>
-      train <choice> replace <old option> with <new option> [at <trainer>]
 
     With no arguments, this is a read-only shortcut for ``practice``. Training
     a choice requires one qualified nearby NPC; XP levels and automatic class
@@ -122,24 +120,18 @@ class CmdTrain(Command):
         if not decision.allowed:
             self.caller.msg(decision.message)
             return
-        choice, old_option, option, trainer_name = parsed
+        choice, option, trainer_name = parsed
         try:
             trainer = find_trainer(self.caller, trainer_name)
-            if old_option is None:
-                result = resolve_training(self.caller, choice, option, trainer)
-            else:
-                result = replace_training_option(
-                    self.caller, choice, old_option, option, trainer
-                )
+            result = resolve_training(self.caller, choice, option, trainer)
         except TrainingError as err:
             self.caller.msg(str(err))
             return
         if result.applied:
-            verb = "replace with" if result.reason == "replaced" else "train"
-            self.caller.msg(f"You {verb} |w{result.option}|n through {trainer.key}.")
+            self.caller.msg(f"You train |w{result.option}|n through {trainer.key}.")
 
 
-def _parse_training(raw: str) -> tuple[str, str | None, str, str | None] | None:
+def _parse_training(raw: str) -> tuple[str, str, str | None] | None:
     """Parse positional training without treating ``=`` as command syntax."""
     if "=" in raw:
         return None
@@ -149,25 +141,13 @@ def _parse_training(raw: str) -> tuple[str, str | None, str, str | None] | None:
     choice, separator, remainder = body.partition(" ")
     if not separator:
         return None
-    old_option = None
     if remainder.startswith("replace "):
-        old_option, replace_marker, option = remainder.removeprefix(
-            "replace "
-        ).partition(" with ")
-        if not replace_marker:
-            return None
-    else:
-        option = remainder
-    if (
-        not choice
-        or not option.strip()
-        or (old_option is not None and not old_option.strip())
-        or (marker and not trainer.strip())
-    ):
+        return None
+    option = remainder
+    if not choice or not option.strip() or (marker and not trainer.strip()):
         return None
     return (
         choice,
-        old_option.strip() if old_option else None,
         option.strip(),
         trainer.strip() if trainer else None,
     )

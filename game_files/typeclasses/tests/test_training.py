@@ -1,5 +1,6 @@
 """ADV-03 durable class-choice and trainer-service coverage."""
 
+from copy import deepcopy
 from dataclasses import replace
 from types import MappingProxyType
 from unittest.mock import patch
@@ -31,7 +32,6 @@ from systems.training import (
     default_trainer_profile,
     initialize_choice_entitlements,
     practice_view,
-    replace_training_option,
     resolve_training,
     set_trainer_profile,
 )
@@ -68,11 +68,6 @@ def _magic_registry():
             (AccessMode.LEARNED,),
         ),
         _magic_definition(
-            "wizard.training_replacement_cantrip",
-            "Replacement Cantrip",
-            (AccessMode.LEARNED,),
-        ),
-        _magic_definition(
             "wizard.training_innate",
             "Training Innate",
             (AccessMode.INNATE,),
@@ -103,8 +98,8 @@ def _registry_with_magic_choices():
         ChoiceSet(
             "wizard.test_learned",
             1,
-            ("wizard.training_cantrip", "wizard.training_replacement_cantrip"),
-            "replace_one",
+            ("wizard.training_cantrip",),
+            "none",
             (),
             "resolution",
             "magic_learned",
@@ -218,7 +213,7 @@ class TestTrainingService(EvenniaTest):
         """Class restrictions and known options leave the entitlement intact."""
         profile = default_trainer_profile()
         profile["classes"] = ["Wizard"]
-        profile["choices"] = ["fighter.skills"]
+        profile["choices"] = ["wizard.skills"]
         set_trainer_profile(self.trainer, profile)
 
         with self.assertRaises(TrainingError):
@@ -226,6 +221,7 @@ class TestTrainingService(EvenniaTest):
         self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
 
         profile["classes"] = ["Fighter"]
+        profile["choices"] = ["fighter.skills"]
         set_trainer_profile(self.trainer, profile)
         self.char1.db.skill_proficiencies = ["Athletics"]
         with self.assertRaises(TrainingError):
@@ -238,6 +234,64 @@ class TestTrainingService(EvenniaTest):
         initialize_choice_entitlements(self.char1, "Fighter", 1)
 
         self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
+
+    def test_malformed_or_stale_entitlement_fails_closed(self):
+        """Choice provenance cannot drift from its exact registry grant."""
+        original = self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE)
+        for field, value in (
+            ("registry_version", 999),
+            ("registry_fingerprint", "stale"),
+            ("class_key", "Wizard"),
+            ("level", 3),
+            ("count", 99),
+            ("choice_key", "wizard.skills"),
+        ):
+            malformed = deepcopy(original)
+            malformed["pending"][0][field] = value
+            self.char1.attributes.add(CHOICE_STATE_ATTRIBUTE, malformed)
+            with self.assertRaisesRegex(TrainingError, "needs staff repair"):
+                practice_view(self.char1)
+        self.char1.attributes.add(CHOICE_STATE_ATTRIBUTE, original)
+
+    def test_failed_commit_rolls_back_option_and_entitlement(self):
+        """An exception after the owning grant cannot leave half a choice."""
+        profile = default_trainer_profile()
+        profile["classes"] = ["Fighter"]
+        profile["choices"] = ["fighter.fighting_style"]
+        set_trainer_profile(self.trainer, profile)
+
+        with patch(
+            "systems.training._write_choice_state", side_effect=RuntimeError("write")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "write"):
+                resolve_training(
+                    self.char1,
+                    "fighter.fighting_style",
+                    "Defense",
+                    self.trainer,
+                )
+
+        self.assertIsNone(self.char1.db.class_feature_choices)
+        self.assertIn(
+            "fighter.fighting_style",
+            [item["choice_key"] for item in practice_view(self.char1).pending_choices],
+        )
+
+    def test_trainer_level_band_is_limited_to_alpha(self):
+        """Builder profiles cannot advertise unreleased character levels."""
+        profile = default_trainer_profile()
+        self.assertEqual(profile["maximum_level"], 3)
+        profile["maximum_level"] = 4
+        with self.assertRaisesRegex(TrainingError, "invalid service access"):
+            set_trainer_profile(self.trainer, profile)
+
+    def test_trainer_choices_must_belong_to_a_supported_profile_class(self):
+        """A profile cannot pair a Fighter service with a Wizard choice."""
+        profile = default_trainer_profile()
+        profile["classes"] = ["Fighter"]
+        profile["choices"] = ["wizard.skills"]
+        with self.assertRaisesRegex(TrainingError, "invalid choices"):
+            set_trainer_profile(self.trainer, profile)
 
     def test_magic_choice_adapters_use_magic_ownership_transactionally(self):
         """Magic choices grant only through their declared ownership adapters."""
@@ -332,24 +386,4 @@ class TestTrainingService(EvenniaTest):
                     "wizard.training_cantrip",
                     "wizard.training_innate",
                 },
-            )
-            replacement = replace_training_option(
-                self.char2,
-                "wizard.test_learned",
-                "wizard.training_cantrip",
-                "wizard.training_replacement_cantrip",
-                self.trainer,
-            )
-            self.assertEqual(replacement.reason, "replaced")
-            self.assertFalse(
-                has_action_entitlement(
-                    self.char2, "wizard.training_cantrip", AccessMode.LEARNED
-                )
-            )
-            self.assertTrue(
-                has_action_entitlement(
-                    self.char2,
-                    "wizard.training_replacement_cantrip",
-                    AccessMode.LEARNED,
-                )
             )

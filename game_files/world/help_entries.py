@@ -156,10 +156,8 @@ HELP_ENTRY_DICTS = [
             |wtrain <choice> <option>|n, or name an NPC explicitly with
             |wtrain <choice> <option> at <trainer>|n. The trainer must be
             nearby, offer your class and that choice, and be willing to train
-            you. A choice that explicitly allows replacement uses
-            |wtrain <choice> replace <old option> with <new option>|n through
-            the same trainer. There is currently no generic practice-point
-            pool or fee.
+            you. There is currently no option replacement, generic
+            practice-point pool, or training fee.
 
             A listed magic choice is resolved through its class's declared
             ownership rule: learning a cantrip or spell, gaining an innate

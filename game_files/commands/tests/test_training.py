@@ -37,18 +37,9 @@ class TestTrainingCommands(EvenniaCommandTest):
         self.assertIn("Athletics", output)
         self.assertFalse(self.char1.db.skill_proficiencies or [])
 
-    def test_replacement_grammar_keeps_both_stable_option_keys(self):
-        """Replacement parsing cannot mistake the old action for a trainer name."""
-        self.assertEqual(
-            _parse_training(
-                "wizard.test_learned replace wizard.old_cantrip with "
-                "wizard.new_cantrip at Arcanist"
-            ),
-            (
-                "wizard.test_learned",
-                "wizard.old_cantrip",
-                "wizard.new_cantrip",
-                "Arcanist",
-            ),
+    def test_post_alpha_replacement_grammar_is_unavailable(self):
+        """The alpha command cannot replace an already selected option."""
+        self.assertIsNone(
+            _parse_training("wizard.cantrip replace old with new at Arcanist")
         )
         self.assertIsNone(_parse_training("fighter.skills = Athletics"))
