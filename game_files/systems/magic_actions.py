@@ -825,7 +825,8 @@ def _snapshot(
         8 + proficiency + modifier if definition.save is not None else None,
         (
             proficiency + modifier
-            if definition.handler_key in {"spell_attack", "acid_arrow", "scorching_ray"}
+            if definition.handler_key
+            in {"spell_attack", "acid_arrow", "scorching_ray", "guiding_bolt"}
             else None
         ),
         modifier,
@@ -889,6 +890,16 @@ def _execute(
         return _acid_arrow(caster, definition, target, snapshot)
     if definition.handler_key == "scorching_ray":
         return _scorching_ray(caster, definition, target, snapshot)
+    if definition.handler_key == "guiding_bolt":
+        return _guiding_bolt(caster, definition, target, snapshot)
+    if definition.handler_key == "aid":
+        _apply_effects(caster, definition, target, snapshot)
+        healing = apply_healing(target, 5, emit_messages=False)
+        if not healing.accepted:
+            raise MagicActionError("That target cannot be aided.")
+        return MagicActionResult(
+            True, "effect_applied", definition, target, snapshot, 5
+        )
     if definition.handler_key == "saving_throw":
         if definition.damage is not None:
             return _saving_throw_damage(caster, definition, target, snapshot)
@@ -1063,6 +1074,16 @@ def _acid_arrow(
     )
 
 
+def _guiding_bolt(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Resolve Guiding Bolt damage and mark its next-attack advantage."""
+    result = _spell_attack(caster, definition, target, snapshot)
+    if result.reason == "hit":
+        _apply_effects(caster, definition, target, snapshot)
+    return result
+
+
 def _scorching_ray(
     caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
 ) -> MagicActionResult:
@@ -1088,15 +1109,31 @@ def _spell_attack_hits(target: Any, snapshot: CastSnapshot) -> bool:
     """Resolve one spell attack with natural rolls and magical concealment."""
     from systems.dice import roll
 
+    guiding_bolt = target.effects.has_condition("guiding_bolt_marked")
+    blurred = target.effects.has_condition("blurred")
     natural_roll = roll(20)
-    if target.effects.has_condition("blurred"):
+    if guiding_bolt and not blurred:
+        natural_roll = max(natural_roll, roll(20))
+    elif blurred and not guiding_bolt:
         natural_roll = min(natural_roll, roll(20))
+    if guiding_bolt:
+        _consume_effect_condition(target, "guiding_bolt_marked")
     if natural_roll == 1:
         return False
     return (
         natural_roll == 20
         or natural_roll + (snapshot.attack_bonus or 0) >= target.stats.armor_class
     )
+
+
+def _consume_effect_condition(target: Any, condition: str) -> None:
+    """Quietly consume the oldest active instance granting one condition."""
+    instance = next(
+        (effect for effect in target.effects.all() if condition in effect.conditions),
+        None,
+    )
+    if instance is not None:
+        target.effects.remove(instance.instance_id, quiet=True)
 
 
 def _saving_throw_damage(

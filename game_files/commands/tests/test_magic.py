@@ -349,6 +349,79 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(self.char1.stats.hp_current, 6)
         self.assertEqual(resource_current(self.char2, "cleric.spell_slot.1"), 1)
 
+    def test_released_guiding_bolt_marks_and_advances_the_next_spell_attack(self):
+        """Guiding Bolt grants one attack Advantage and then consumes its mark."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.wisdom = 16
+        initialize_level_one(self.char2, class_key="Cleric", hp_base=8)
+        mark_preparation_window(self.char2, 1)
+        prepare_action(self.char2, "cleric.guiding_bolt")
+        prepare_action(self.char2, "cleric.inflict_wounds")
+        target = create_object(
+            "typeclasses.characters.Character", key="Target", location=self.room1
+        )
+        target.db.is_player_character = False
+        target.db.hp_max_override = 40
+        target.db.hp_current = 40
+
+        with (
+            patch("systems.attacks.can_attack") as can_attack,
+            patch("systems.dice.roll", side_effect=(20, 2, 3, 4, 5)),
+        ):
+            can_attack.return_value.allowed = True
+            guiding = cast_action(
+                self.char2,
+                "guiding bolt",
+                target_name=target.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(guiding.amount, 14)
+        self.assertTrue(target.effects.has("magic.guiding_bolt"))
+
+        with (
+            patch("systems.attacks.can_attack") as can_attack,
+            patch("systems.dice.roll", side_effect=(2, 20, 1, 1, 1)),
+        ):
+            can_attack.return_value.allowed = True
+            inflict = cast_action(
+                self.char2,
+                "inflict wounds",
+                target_name=target.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(inflict.reason, "hit")
+        self.assertEqual(inflict.amount, 3)
+        self.assertFalse(target.effects.has("magic.guiding_bolt"))
+        self.assertEqual(resource_current(self.char2, "cleric.spell_slot.1"), 0)
+
+    def test_released_aid_raises_current_and_maximum_hit_points(self):
+        """Aid applies its bounded HP modifier and spends one level-two slot."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.wisdom = 16
+        initialize_level_one(self.char2, class_key="Cleric", hp_base=8)
+        self.char2.db.level = 3
+        self.char2.db.hp_max_override = 20
+        self.char2.db.hp_current = 10
+        mark_preparation_window(self.char2, 1)
+        prepare_action(self.char2, "cleric.aid")
+
+        result = cast_action(
+            self.char2,
+            "aid",
+            target_name=self.char2.key,
+            registry=MAGIC_REGISTRY,
+        )
+
+        self.assertEqual(result.reason, "effect_applied")
+        self.assertEqual(result.amount, 5)
+        self.assertEqual(self.char2.stats.hp_max, 25)
+        self.assertEqual(self.char2.stats.hp_current, 15)
+        self.assertEqual(resource_current(self.char2, "cleric.spell_slot.2"), 1)
+
     def test_released_magic_missile_hits_automatically_and_spends_one_slot(self):
         """Magic Missile bypasses attack and save rolls but still starts combat."""
         mark_preparation_window(self.char1, 1)

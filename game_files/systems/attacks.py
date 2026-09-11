@@ -150,6 +150,8 @@ def resolve_basic_attack(
         )
 
     profile = profile or attacker.stats.attack_profile()
+    guiding_bolt = target.effects.has_condition("guiding_bolt_marked")
+    has_advantage = has_advantage or guiding_bolt
     has_disadvantage = has_disadvantage or target.effects.has_condition("blurred")
     target_injury = injury_record(target)
     target_unconscious = target_injury.state in {
@@ -168,6 +170,17 @@ def resolve_basic_attack(
         select_location=lambda: location_selector(attacker, target),
         mitigate=target.stats.mitigate_damage,
     )
+    if guiding_bolt:
+        instance = next(
+            (
+                effect
+                for effect in target.effects.all()
+                if "guiding_bolt_marked" in effect.conditions
+            ),
+            None,
+        )
+        if instance is not None:
+            target.effects.remove(instance.instance_id, quiet=True)
     if (
         calculation.hit_location is not None
         and calculation.hit_location not in HIT_LOCATIONS

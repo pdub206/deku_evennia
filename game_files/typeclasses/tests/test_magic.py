@@ -176,6 +176,9 @@ class TestMagicRegistry(EvenniaTest):
                 "cleric.cure_wounds",
                 "cleric.healing_word",
                 "cleric.shield_of_faith",
+                "cleric.guiding_bolt",
+                "cleric.inflict_wounds",
+                "cleric.aid",
                 "wizard.magic_missile",
                 "wizard.thunderwave",
                 "wizard.detect_magic",
@@ -210,6 +213,20 @@ class TestMagicRegistry(EvenniaTest):
                 for definition in MAGIC_REGISTRY.available_for("Cleric", 1)
             ),
             3,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level > 0
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 3)
+            ),
+            6,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 2
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 3)
+            ),
+            1,
         )
         self.assertEqual(
             sum(

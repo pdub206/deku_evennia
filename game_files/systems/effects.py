@@ -1125,3 +1125,31 @@ EFFECT_REGISTRY.register(
         },
     )
 )
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.aid",
+        name="Aid",
+        duration=4800,
+        clears_on_death=True,
+        modifiers={"hp_max": 5},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Divine resolve strengthens you."),
+            "expire": EffectMessage(target="Your divinely granted resolve fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.guiding_bolt",
+        name="Guiding Bolt",
+        duration=2,
+        clears_on_death=True,
+        conditions=frozenset({"guiding_bolt_marked"}),
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Mystic light outlines you."),
+            "expire": EffectMessage(target="The mystic light outlining you fades."),
+        },
+    )
+)

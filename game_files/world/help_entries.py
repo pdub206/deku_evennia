@@ -207,6 +207,50 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "guiding bolt",
+        "aliases": ["guiding"],
+        "category": "Magic",
+        "text": """
+            Guiding Bolt is a level 1 Cleric evocation spell. Make a spell
+            attack against one detected hostile creature in your room. A hit
+            deals 4d6 Radiant damage and outlines the target, giving Advantage
+            to the next weapon or spell attack against it. The light is consumed
+            by that attack. Casting takes one combat action and expends one
+            level 1 Cleric spell slot.
+
+            Alpha adaptation: the light expires after at most two six-second
+            effect pulses. Higher-slot casting is not available.
+        """,
+    },
+    {
+        "key": "inflict wounds",
+        "aliases": ["inflict"],
+        "category": "Magic",
+        "text": """
+            Inflict Wounds is a level 1 Cleric necromancy spell. Make a melee
+            spell attack against one hostile creature you can touch. A hit
+            deals 3d10 Necrotic damage. Casting takes one combat action and
+            expends one level 1 Cleric spell slot.
+
+            Higher-slot casting is not available in the alpha.
+        """,
+    },
+    {
+        "key": "aid",
+        "aliases": ["divine aid"],
+        "category": "Magic",
+        "text": """
+            Aid is a level 2 Cleric abjuration spell. One living creature in
+            your room, including you, gains 5 maximum Hit Points and 5 current
+            Hit Points for up to 4,800 six-second effect pulses. It can aid a
+            dying or stable creature but cannot restore the dead. Casting takes
+            one combat action and expends one level 2 Cleric spell slot.
+
+            Alpha adaptation: Aid affects one creature instead of three and is
+            available only at level 2.
+        """,
+    },
+    {
         "key": "magic missile",
         "aliases": ["missile"],
         "category": "Magic",
