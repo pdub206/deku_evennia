@@ -169,6 +169,12 @@ HELP_ENTRY_DICTS = [
             Only released SRD content appears as an option. Pact-slot recovery
             and persistent effects follow the separate rules documented by
             their released actions.
+
+            In the alpha, the Cleric's Protector order grants Heavy armor and
+            Martial weapon training. The Fighter's Defense style grants +1
+            Armor Class while wearing Light, Medium, or Heavy armor.
+            Thaumaturge and other Fighting Styles remain unavailable until all
+            of their required spell or weapon-property mechanics are released.
         """,
     },
     {

@@ -107,6 +107,9 @@ class Character(ObjectParent, DefaultCharacter):
             yield intrinsic
 
         yield from self.equipment.stat_modifier_sources()
+        from systems.class_features import stat_modifier_sources
+
+        yield from stat_modifier_sources(self)
         yield from self.get_effect_stat_modifier_sources()
 
     def at_msg_receive(self, text=None, from_obj=None, **kwargs) -> bool:

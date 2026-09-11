@@ -47,6 +47,14 @@ class CmdPractice(Command):
             )
         )
         lines.append(
+            "Expertise: "
+            + (
+                ", ".join(view.expertise_proficiencies)
+                if view.expertise_proficiencies
+                else "None"
+            )
+        )
+        lines.append(
             "Automatic class features: "
             + (
                 ", ".join(view.automatic_features)

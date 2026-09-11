@@ -41,6 +41,7 @@ class PracticeView:
     """Safe, read-only presentation data for one character's training."""
 
     known_proficiencies: tuple[str, ...]
+    expertise_proficiencies: tuple[str, ...]
     automatic_features: tuple[str, ...]
     resources: tuple[tuple[str, int], ...]
     spell_access: tuple[tuple[str, int, int, int], ...]
@@ -130,6 +131,7 @@ def practice_view(character: Any) -> PracticeView:
     )
     return PracticeView(
         tuple(sorted(set(character.attributes.get("skill_proficiencies") or []))),
+        tuple(sorted(set(character.attributes.get("skill_expertise") or []))),
         tuple(dict.fromkeys(features)),
         resources,
         spells,
@@ -243,7 +245,10 @@ def find_trainer(actor: Any, name: str | None = None) -> Any:
     ]
     if name:
         needle = name.strip().casefold()
-        candidates = [obj for obj in candidates if needle in obj.key.casefold()]
+        exact = [obj for obj in candidates if obj.key.casefold() == needle]
+        candidates = exact or [
+            obj for obj in candidates if needle in obj.key.casefold()
+        ]
     if not candidates:
         raise TrainingError("There is no matching trainer here.")
     if len(candidates) != 1:
@@ -296,7 +301,19 @@ def _validate_option(
         character.attributes.get("class_feature_choices") or []
     ):
         raise TrainingError("You already know that option.")
-    if choice.option_adapter not in {"skill", "feature"}:
+    if choice.option_adapter == "feature":
+        from systems.class_features import validate_feature_option
+
+        try:
+            validate_feature_option(option)
+        except ValueError as err:
+            raise TrainingError(str(err)) from err
+    if choice.option_adapter == "expertise":
+        if option not in (character.attributes.get("skill_proficiencies") or []):
+            raise TrainingError("Expertise requires proficiency in that skill.")
+        if option in (character.attributes.get("skill_expertise") or []):
+            raise TrainingError("You already know that option.")
+    if choice.option_adapter not in {"skill", "expertise", "feature"}:
         _validate_unowned_magic_option(character, choice, option)
     if any(
         option in group and any(item in group for item in selected)
@@ -313,6 +330,10 @@ def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> Non
     if choice.option_adapter == "feature":
         known = list(character.attributes.get("class_feature_choices") or [])
         character.db.class_feature_choices = sorted(set(known + options))
+        return
+    if choice.option_adapter == "expertise":
+        known = list(character.attributes.get("skill_expertise") or [])
+        character.db.skill_expertise = sorted(set(known + options))
         return
     try:
         from systems.magic_actions import (

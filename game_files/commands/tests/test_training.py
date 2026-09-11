@@ -43,3 +43,13 @@ class TestTrainingCommands(EvenniaCommandTest):
             _parse_training("wizard.cantrip replace old with new at Arcanist")
         )
         self.assertIsNone(_parse_training("fighter.skills = Athletics"))
+
+    def test_training_mutation_obeys_action_policy(self):
+        """A sleeping character can inspect choices but cannot train one."""
+        self.char1.db.position = "sleeping"
+
+        self.assertIn("fighter.skills", self.call(CmdPractice(), ""))
+        output = self.call(CmdTrain(), "fighter.skills Athletics at Armsmaster")
+
+        self.assertNotIn("You train", output)
+        self.assertFalse(self.char1.db.skill_proficiencies or [])

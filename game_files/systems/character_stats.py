@@ -315,6 +315,8 @@ class CharacterStats:
         proficiencies = self._attribute("skill_proficiencies", [])
         if canonical in proficiencies:
             bonus += self.proficiency_bonus
+            if canonical in self._attribute("skill_expertise", []):
+                bonus += self.proficiency_bonus
         return bonus + self._modifier_total("skill_bonus", f"skill:{canonical.lower()}")
 
     def saving_throw_bonus(self, ability: str) -> int:

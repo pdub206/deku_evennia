@@ -215,8 +215,13 @@ def _check_parts(
         request.actor, "tool_proficiencies"
     )
     proficient = skill_proficient or tool_proficient
+    expertise_multiplier = request.expertise_multiplier
+    if skill is not None and skill.casefold() in _proficiency_names(
+        request.actor, "skill_expertise"
+    ):
+        expertise_multiplier = 2
     proficiency = (
-        request.actor.stats.proficiency_bonus * request.expertise_multiplier
+        request.actor.stats.proficiency_bonus * expertise_multiplier
         if proficient
         else 0
     )

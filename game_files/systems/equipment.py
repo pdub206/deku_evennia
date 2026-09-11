@@ -257,6 +257,10 @@ class EquipmentHandler:
         categories = {
             _identifier(value) for value in class_data.get("weapon_categories", [])
         }
+        from systems.class_features import equipment_training
+
+        _, extra_categories = equipment_training(self.owner)
+        categories.update(extra_categories)
         weapons = {
             _identifier(value) for value in class_data.get("weapon_proficiencies", [])
         }
@@ -278,6 +282,10 @@ class EquipmentHandler:
             str(value).strip().lower().removesuffix("s")
             for value in self._class_data().get("armor_training", [])
         }
+        from systems.class_features import equipment_training
+
+        extra_categories, _ = equipment_training(self.owner)
+        trained.update(extra_categories)
         return category in trained
 
     @property

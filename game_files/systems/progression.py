@@ -284,7 +284,7 @@ def build_registry(
         if (
             choice.replacement_policy != "none"
             or choice.prerequisite_timing not in {"grant", "resolution"}
-            or choice.option_adapter not in {"skill", "feature"}
+            or choice.option_adapter not in {"skill", "expertise", "feature"}
         ):
             raise RegistryValidationError(f"Choice '{choice.key}' has invalid policy.")
         _reference(choice.srd_reference, f"Choice '{choice.key}'")
@@ -454,7 +454,7 @@ def _default_registry() -> ProgressionRegistry:
         ChoiceSet(
             "cleric.divine_order",
             1,
-            ("Protector", "Thaumaturge"),
+            ("Protector",),
             "none",
             (),
             "resolution",
@@ -464,7 +464,7 @@ def _default_registry() -> ProgressionRegistry:
         ChoiceSet(
             "fighter.fighting_style",
             1,
-            ("Archery", "Defense", "Great Weapon Fighting", "Two-Weapon Fighting"),
+            ("Defense",),
             "none",
             (),
             "resolution",
@@ -478,7 +478,7 @@ def _default_registry() -> ProgressionRegistry:
             "none",
             (),
             "resolution",
-            "feature",
+            "expertise",
             "SRD 5.2.1 p.61: Expertise",
         ),
         ChoiceSet(
@@ -488,7 +488,7 @@ def _default_registry() -> ProgressionRegistry:
             "none",
             (),
             "resolution",
-            "feature",
+            "expertise",
             "SRD 5.2.1 p.78: Scholar",
         ),
     ]

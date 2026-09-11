@@ -41,6 +41,13 @@ class TestChecks(EvenniaTest):
         self.assertEqual(expertise.proficiency_contribution, 4)
         self.assertTrue(result.success)
 
+        self.char1.db.skill_expertise = ["Athletics"]
+        derived = resolve_check(
+            CheckRequest(self.char1, "Strength", 10, skill="Athletics"),
+            roller=lambda _: 4,
+        )
+        self.assertEqual(derived.proficiency_contribution, 4)
+
     def test_alternate_ability_sources_and_normal_check_outcomes(self):
         with self.assertRaises(CheckError):
             resolve_check(CheckRequest(self.char1, "Strength", 10, skill="Stealth"))

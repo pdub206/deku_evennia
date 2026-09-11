@@ -30,6 +30,7 @@ from systems.training import (
     CHOICE_STATE_ATTRIBUTE,
     TrainingError,
     default_trainer_profile,
+    find_trainer,
     initialize_choice_entitlements,
     practice_view,
     resolve_training,
@@ -292,6 +293,88 @@ class TestTrainingService(EvenniaTest):
         profile["choices"] = ["wizard.skills"]
         with self.assertRaisesRegex(TrainingError, "invalid choices"):
             set_trainer_profile(self.trainer, profile)
+
+    def test_exact_trainer_name_wins_and_partial_ambiguity_is_rejected(self):
+        """Explicit lookup prefers one exact name but never guesses a partial."""
+        second = create_object(
+            "typeclasses.characters.Character",
+            key="Fighter trainer veteran",
+            location=self.room1,
+        )
+        second.db.is_player_character = False
+        profile = default_trainer_profile()
+        profile["classes"] = ["Fighter"]
+        profile["choices"] = ["fighter.skills"]
+        set_trainer_profile(second, profile)
+
+        self.assertIs(find_trainer(self.char1, "Fighter trainer"), self.trainer)
+        with self.assertRaisesRegex(TrainingError, "Please name"):
+            find_trainer(self.char1, "trainer")
+
+    def test_location_lock_and_level_are_revalidated_without_consuming(self):
+        """Every mutable trainer condition is checked inside the transaction."""
+        original = deepcopy(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
+
+        self.trainer.move_to(self.room2, quiet=True)
+        with self.assertRaisesRegex(TrainingError, "not here"):
+            resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+        self.trainer.move_to(self.room1, quiet=True)
+
+        profile = default_trainer_profile()
+        profile["classes"] = ["Fighter"]
+        profile["choices"] = ["fighter.skills"]
+        profile["minimum_level"] = 2
+        set_trainer_profile(self.trainer, profile)
+        with self.assertRaisesRegex(TrainingError, "cannot help"):
+            resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+
+        profile["minimum_level"] = 1
+        profile["service_lock"] = "false()"
+        set_trainer_profile(self.trainer, profile)
+        with self.assertRaisesRegex(TrainingError, "cannot help"):
+            resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+
+        self.assertEqual(
+            self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE),
+            original,
+        )
+
+    def test_unknown_and_duplicate_submission_do_not_consume_capacity(self):
+        """Invalid retries leave both selected options and capacity unchanged."""
+        with self.assertRaisesRegex(TrainingError, "not available"):
+            resolve_training(self.char1, "fighter.skills", "Arcana", self.trainer)
+        resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+        with self.assertRaisesRegex(TrainingError, "already know"):
+            resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+        resolve_training(self.char1, "fighter.skills", "Acrobatics", self.trainer)
+        completed = deepcopy(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
+        with self.assertRaisesRegex(TrainingError, "not pending"):
+            resolve_training(self.char1, "fighter.skills", "History", self.trainer)
+        self.assertEqual(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE), completed)
+
+    def test_expertise_requires_proficiency_and_doubles_its_bonus(self):
+        """Rogue and Scholar choices use one proficiency-aware adapter."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.dexterity = 14
+        initialize_level_one(self.char2, class_key="Rogue", hp_base=8)
+        self.char2.db.skill_proficiencies = ["Acrobatics", "Stealth"]
+        profile = default_trainer_profile()
+        profile["classes"] = ["Rogue"]
+        profile["choices"] = ["rogue.expertise"]
+        set_trainer_profile(self.trainer, profile)
+
+        with self.assertRaisesRegex(TrainingError, "requires proficiency"):
+            resolve_training(self.char2, "rogue.expertise", "Athletics", self.trainer)
+        resolve_training(self.char2, "rogue.expertise", "Acrobatics", self.trainer)
+        resolve_training(self.char2, "rogue.expertise", "Stealth", self.trainer)
+
+        self.assertEqual(self.char2.db.skill_expertise, ["Acrobatics", "Stealth"])
+        self.assertEqual(self.char2.stats.skill_bonus("Acrobatics"), 6)
+        self.assertEqual(
+            practice_view(self.char2).expertise_proficiencies,
+            ("Acrobatics", "Stealth"),
+        )
 
     def test_magic_choice_adapters_use_magic_ownership_transactionally(self):
         """Magic choices grant only through their declared ownership adapters."""
