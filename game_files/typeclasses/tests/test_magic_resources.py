@@ -39,14 +39,14 @@ class TestMagicResources(EvenniaTest):
         self.assertIn(("wizard.spell_slot.1", 4), restored)
         self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 4)
 
-    def test_pact_magic_is_distinct_and_recovers_on_short_rest(self):
-        """Warlock Pact Magic never borrows an ordinary spell-slot resource."""
-        self.char1.db.char_class = "Warlock"
-        self.char1.db.level = 11
-        self.assertEqual(resource_maximum(self.char1, "warlock.pact_slot"), 3)
+    def test_fighter_resource_is_distinct_and_recovers_on_short_rest(self):
+        """A released class resource never borrows a spell-slot resource."""
+        self.char1.db.char_class = "Fighter"
+        self.char1.db.level = 3
+        self.assertEqual(resource_maximum(self.char1, "fighter.second_wind"), 2)
         with self.assertRaises(MagicResourceError):
-            resource_maximum(self.char1, "warlock.spell_slot.1")
-        spend_resource(self.char1, "warlock.pact_slot", 2)
+            resource_maximum(self.char1, "fighter.spell_slot.1")
+        spend_resource(self.char1, "fighter.second_wind", 2)
         restored = recover_profile(self.char1, "short_rest")
-        self.assertIn(("warlock.pact_slot", 3), restored)
-        self.assertEqual(resource_current(self.char1, "warlock.pact_slot"), 3)
+        self.assertIn(("fighter.second_wind", 2), restored)
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 2)

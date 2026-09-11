@@ -22,7 +22,7 @@ class TestMagicRest(EvenniaTest):
 
     def setUp(self):
         super().setUp()
-        self.char1.db.char_class = "Warlock"
+        self.char1.db.char_class = "Fighter"
         self.char1.db.level = 3
         self.char1.db.hp_max_override = 10
         self.char1.db.hp_current = 10
@@ -35,8 +35,8 @@ class TestMagicRest(EvenniaTest):
         return PulseEvent(sequence * 60, PulseLane.RECOVERY, sequence)
 
     def test_short_rest_restores_only_after_uninterrupted_hour(self):
-        """Pact Magic restores exactly on the 60th eligible recovery pulse."""
-        spend_resource(self.char1, "warlock.pact_slot", 1)
+        """A short-rest class resource restores on the 60th eligible pulse."""
+        spend_resource(self.char1, "fighter.second_wind", 1)
         for sequence in range(1, SHORT_REST_PULSES):
             self.assertFalse(
                 advance_magic_rest(self.char1, self._event(sequence)).profiles
@@ -44,16 +44,16 @@ class TestMagicRest(EvenniaTest):
         completed = advance_magic_rest(self.char1, self._event(SHORT_REST_PULSES))
 
         self.assertEqual(completed.profiles, ("short_rest",))
-        self.assertEqual(resource_current(self.char1, "warlock.pact_slot"), 2)
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 2)
 
     def test_interruption_and_sequence_gap_reset_progress_without_recovery(self):
         """Standing or offline time cannot be converted into retroactive rest."""
-        spend_resource(self.char1, "warlock.pact_slot", 1)
+        spend_resource(self.char1, "fighter.second_wind", 1)
         advance_magic_rest(self.char1, self._event(1))
         self.char1.db.position = "standing"
         stopped = advance_magic_rest(self.char1, self._event(2))
         self.assertEqual(stopped.reason, "interrupted")
-        self.assertEqual(resource_current(self.char1, "warlock.pact_slot"), 1)
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 1)
 
         self.char1.db.position = "resting"
         gap = advance_magic_rest(self.char1, self._event(4))

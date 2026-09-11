@@ -588,7 +588,7 @@ def _default_registry() -> ProgressionRegistry:
             ("Dexterity", "Intelligence"),
             ("Light",),
             ("simple",),
-            ("finesse", "light"),
+            ("hand_crossbow", "rapier", "scimitar", "short_sword"),
             "Simple weapons and Martial weapons with Finesse or Light",
             "Stealth",
             "Low",
