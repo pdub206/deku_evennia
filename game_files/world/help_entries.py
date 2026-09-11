@@ -87,6 +87,112 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "acid splash",
+        "aliases": ["acid"],
+        "category": "Magic",
+        "text": """
+            Acid Splash is a Wizard evocation cantrip. Cast it at one detected
+            hostile creature in your room. The target makes a Dexterity saving
+            throw, taking 1d6 Acid damage on a failure and no damage on a
+            success. It costs no spell slot and takes one combat action.
+
+            Alpha adaptation: the SRD spell affects a small sphere; the alpha
+            narrows it to one creature because area targeting is not released.
+        """,
+    },
+    {
+        "key": "fire bolt",
+        "aliases": ["firebolt"],
+        "category": "Magic",
+        "text": """
+            Fire Bolt is a Wizard evocation cantrip. Make a spell attack against
+            one detected hostile creature in your room. On a hit, it deals 1d10
+            Fire damage. It costs no spell slot and takes one combat action.
+
+            The alpha targets creatures only. Igniting unattended objects is
+            deferred until object fire consequences exist.
+        """,
+    },
+    {
+        "key": "poison spray",
+        "aliases": ["poison"],
+        "category": "Magic",
+        "text": """
+            Poison Spray is a Wizard necromancy cantrip. Make a spell attack
+            against one detected hostile creature in your room. On a hit, it
+            deals 1d12 Poison damage. It costs no spell slot and takes one
+            combat action.
+        """,
+    },
+    {
+        "key": "sacred flame",
+        "aliases": ["sacred"],
+        "category": "Magic",
+        "text": """
+            Sacred Flame is a Cleric evocation cantrip. Cast it at one detected
+            hostile creature in your room. The target makes a Dexterity saving
+            throw, taking 1d8 Radiant damage on a failure and no damage on a
+            success. It costs no spell slot and takes one combat action. The
+            room-range model has no tabletop cover modifier.
+        """,
+    },
+    {
+        "key": "spare the dying",
+        "aliases": ["spare"],
+        "category": "Magic",
+        "text": """
+            Spare the Dying is a Cleric necromancy cantrip. Cast it at one
+            detected creature in your room that is dying at 0 Hit Points. The
+            creature becomes stable without a Medicine check but remains
+            unconscious. It cannot restore a dead creature. It costs no spell
+            slot and takes one combat action.
+        """,
+    },
+    {
+        "key": "thaumaturgy",
+        "aliases": ["phantom sound"],
+        "category": "Magic",
+        "text": """
+            Thaumaturgy is a Cleric transmutation cantrip. It costs no spell
+            slot and takes one action. Everyone in your room hears an ominous,
+            harmless phantom sound.
+
+            Alpha adaptation: casting always uses the SRD Phantom Sound option
+            and originates the sound at you. The other Thaumaturgy options are
+            not part of the alpha.
+        """,
+    },
+    {
+        "key": "cure wounds",
+        "aliases": ["cure"],
+        "category": "Magic",
+        "text": """
+            Cure Wounds is a level 1 Cleric abjuration spell. Touch a living
+            creature, including yourself, to restore 2d8 plus your Wisdom
+            modifier Hit Points. It can return a dying or stable creature to
+            consciousness but cannot restore the dead. Casting takes one combat
+            action and expends one level 1 Cleric spell slot.
+
+            The alpha casts this only with a level 1 slot; higher-slot casting
+            is not yet available.
+        """,
+    },
+    {
+        "key": "healing word",
+        "aliases": ["heal word"],
+        "category": "Magic",
+        "text": """
+            Healing Word is a level 1 Cleric abjuration spell. Choose one living
+            creature in your room, including yourself, to restore 2d4 plus your
+            Wisdom modifier Hit Points. It can return a dying or stable creature
+            to consciousness but cannot restore the dead. It expends one level
+            1 Cleric spell slot.
+
+            Alpha adaptation: Bonus Actions use one ordinary combat action.
+            Higher-slot casting is not yet available.
+        """,
+    },
+    {
         "key": "check diagnostics",
         "aliases": ["@check", "builder checks", "adv-04"],
         "category": "Building",

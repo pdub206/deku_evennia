@@ -4,6 +4,7 @@ from types import MappingProxyType
 
 from evennia.utils.test_resources import EvenniaTest
 from systems.magic import (
+    MAGIC_REGISTRY,
     AccessMode,
     CastSnapshot,
     ClassAccess,
@@ -161,6 +162,59 @@ class TestMagicRegistry(EvenniaTest):
         )
         self.assertTrue(registry.requires_srd_references)
 
+    def test_released_cantrips_are_complete_and_deterministic(self):
+        """The first alpha catalog exposes only executable SRD cantrips."""
+        self.assertEqual(
+            tuple(MAGIC_REGISTRY.definitions),
+            (
+                "wizard.acid_splash",
+                "wizard.fire_bolt",
+                "wizard.poison_spray",
+                "cleric.sacred_flame",
+                "cleric.spare_the_dying",
+                "cleric.thaumaturgy",
+                "cleric.cure_wounds",
+                "cleric.healing_word",
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                definition.key
+                for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
+            ),
+            (
+                "wizard.acid_splash",
+                "wizard.fire_bolt",
+                "wizard.poison_spray",
+            ),
+        )
+        self.assertEqual(
+            MAGIC_REGISTRY.resolve("sacred flame").key,
+            "cleric.sacred_flame",
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 0
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 1)
+            ),
+            3,
+        )
+        cantrips = tuple(
+            definition
+            for definition in MAGIC_REGISTRY.definitions.values()
+            if definition.spell_level == 0
+        )
+        for definition in cantrips:
+            self.assertEqual(definition.spell_level, 0)
+            self.assertEqual(definition.access_modes, (AccessMode.LEARNED,))
+            self.assertIn(definition.action_category, {"combat", "manipulate"})
+        for definition in MAGIC_REGISTRY.definitions.values():
+            self.assertTrue(definition.srd_reference.startswith("SRD 5.2.1 "))
+            self.assertIn(
+                definition.player_help.summary,
+                MAGIC_REGISTRY.player_help_entry(definition.key)["text"],
+            )
+
     def test_save_effect_and_disabled_entries_are_safe(self):
         definition = arcane_bolt(
             key="cleric.radiant_ward",
@@ -204,10 +258,16 @@ class TestMagicRegistry(EvenniaTest):
             1,
             13,
             5,
+            3,
             MappingProxyType({"arcane_energy": 1}),
         )
         restored = deserialize_cast_snapshot(snapshot.serialize())
         self.assertEqual(restored.target_ids, (12,))
+        self.assertEqual(restored.spellcasting_modifier, 3)
+        legacy = snapshot.serialize()
+        legacy["registry_version"] = 1
+        legacy.pop("spellcasting_modifier")
+        self.assertEqual(deserialize_cast_snapshot(legacy).spellcasting_modifier, 0)
         validate_persistent_magic_state({"known": ["wizard.arcane_bolt"], "choice": 1})
         with self.assertRaises(MagicRegistryError):
             validate_persistent_magic_state({"callback": lambda: None})

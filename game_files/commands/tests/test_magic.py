@@ -6,9 +6,11 @@ from commands.default_cmdsets import CharacterCmdSet
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
-from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.dice import RollResult
+from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
+from systems.injury import InjuryState, apply_damage, injury_record
 from systems.magic import (
+    MAGIC_REGISTRY,
     AccessMode,
     ClassAccess,
     Damage,
@@ -23,14 +25,19 @@ from systems.magic import (
     TargetingMode,
     build_magic_registry,
 )
-from systems.magic_actions import cast_action, grant_action
+from systems.magic_actions import (
+    cast_action,
+    grant_action,
+    mark_preparation_window,
+    prepare_action,
+)
+from systems.magic_resources import resource_current, restore_resource
 from systems.magic_rest import (
     MAGIC_REST_ATTRIBUTE,
     SAFE_REST_TAG,
     SAFE_REST_TAG_CATEGORY,
     advance_magic_rest,
 )
-from systems.magic_resources import resource_current, restore_resource
 from systems.pulses import PulseEvent, PulseLane
 
 _WARD_EFFECT = EffectDefinition(
@@ -286,3 +293,53 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertEqual(result.reason, "saved")
         self.assertEqual(result.amount, 3)
         self.assertEqual(self.char2.stats.hp_current, 17)
+
+    def test_released_cleric_cantrip_handlers_change_the_world(self):
+        """Spare the Dying and Thaumaturgy execute their declared adapters."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        initialize_level_one(self.char2, class_key="Cleric", hp_base=8)
+        self.char1.db.hp_current = 10
+        with patch("systems.injury._is_staff_immune", return_value=False):
+            injury = apply_damage(self.char1, 10, emit_messages=False)
+        self.assertEqual(injury.state, InjuryState.DYING)
+
+        grant_action(self.char2, "cleric.spare_the_dying", AccessMode.LEARNED)
+        result = cast_action(
+            self.char2,
+            "spare the dying",
+            target_name=self.char1.key,
+            registry=MAGIC_REGISTRY,
+        )
+        self.assertEqual(result.reason, "stabilized")
+        self.assertEqual(injury_record(self.char1).state, InjuryState.INCAPACITATED)
+
+        grant_action(self.char2, "cleric.thaumaturgy", AccessMode.LEARNED)
+        with patch.object(self.room1, "msg_contents") as room_message:
+            result = cast_action(self.char2, "thaumaturgy", registry=MAGIC_REGISTRY)
+        self.assertEqual(result.reason, "manifested")
+        self.assertIn("phantom sound", room_message.call_args.args[0])
+
+    def test_released_cleric_healing_snapshots_wisdom_and_spends_one_slot(self):
+        """Cure Wounds uses committed potency and the Cleric slot resource."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.wisdom = 16
+        initialize_level_one(self.char2, class_key="Cleric", hp_base=8)
+        mark_preparation_window(self.char2, 1)
+        prepare_action(self.char2, "cleric.cure_wounds")
+        self.char1.db.hp_max_override = 20
+        self.char1.db.hp_current = 1
+
+        with patch("systems.dice.roll", side_effect=(1, 1)):
+            result = cast_action(
+                self.char2,
+                "cure wounds",
+                target_name=self.char1.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.amount, 5)
+        self.assertEqual(result.snapshot.spellcasting_modifier, 3)
+        self.assertEqual(self.char1.stats.hp_current, 6)
+        self.assertEqual(resource_current(self.char2, "cleric.spell_slot.1"), 1)

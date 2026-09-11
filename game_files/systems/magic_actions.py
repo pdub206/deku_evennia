@@ -20,6 +20,7 @@ from systems.injury import (
     InjuryState,
     apply_damage,
     apply_healing,
+    apply_stabilization,
     injury_record,
 )
 from systems.magic import (
@@ -814,6 +815,7 @@ def _snapshot(
         caster.stats.level,
         8 + proficiency + modifier if definition.save is not None else None,
         proficiency + modifier if definition.handler_key == "spell_attack" else None,
+        modifier,
         MappingProxyType(reservation),
     )
 
@@ -841,7 +843,10 @@ def _execute(
     if definition.handler_key == "utility":
         return MagicActionResult(True, "cast", definition, target, snapshot)
     if definition.handler_key == "healing":
-        amount = _roll_dice(definition.healing)
+        amount = _roll_dice(
+            definition.healing,
+            spellcasting_modifier=snapshot.spellcasting_modifier,
+        )
         result = apply_healing(target, amount, emit_messages=False)
         if not result.accepted:
             raise MagicActionError("That target cannot be healed.")
@@ -860,6 +865,21 @@ def _execute(
         return _apply_effects(caster, definition, target, snapshot)
     if definition.handler_key == "effect":
         return _apply_effects(caster, definition, target, snapshot)
+    if definition.handler_key == "stabilize":
+        result = apply_stabilization(target, emit_messages=False)
+        if not result.accepted:
+            raise MagicActionError("That creature is not dying.")
+        _message(caster, target, definition, "You stabilize")
+        return MagicActionResult(True, "stabilized", definition, target, snapshot)
+    if definition.handler_key == "thaumaturgy":
+        caster.msg("You create an ominous phantom sound.")
+        if caster.location is not None:
+            caster.location.msg_contents(
+                "An ominous phantom sound echoes through the area.",
+                exclude=[caster],
+                from_obj=caster,
+            )
+        return MagicActionResult(True, "manifested", definition, target, snapshot)
     # Movement and area consequences require their owning MAGIC-04/INTERACT
     # adapters. Rejecting them is safer than a partial cast that spends a
     # resource without a declared consequence.
@@ -1005,11 +1025,12 @@ def _saving_throw_damage(
     )
 
 
-def _roll_dice(dice: Any) -> int:
+def _roll_dice(dice: Any, *, spellcasting_modifier: int = 0) -> int:
     """Roll validated MAGIC-01 dice exclusively through the shared dice API."""
     from systems.dice import roll
 
-    return sum(roll(dice.sides) for _ in range(dice.count)) + dice.bonus
+    modifier = spellcasting_modifier if dice.add_spellcasting_modifier else 0
+    return sum(roll(dice.sides) for _ in range(dice.count)) + dice.bonus + modifier
 
 
 def _message(caster: Any, target: Any, definition: MagicDefinition, text: str) -> None:

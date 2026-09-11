@@ -14,9 +14,9 @@ from uuid import uuid4
 
 from evennia.utils import logger
 from systems.action_policy import Position
+from systems.checks import CheckRequest, CheckResult, resolve_check
 from systems.combat_outcomes import InjuryState, predict_damage_transition
 from systems.dice import roll
-from systems.checks import CheckRequest, CheckResult, resolve_check
 from systems.pulses import PulseEvent, PulseLane
 
 INJURY_ATTRIBUTE = "injury_state"
@@ -354,6 +354,31 @@ def attempt_stabilization(
             f"{check.total - check.die_result} = {check.total}."
         )
         _announce(target, result)
+    return result
+
+
+def apply_stabilization(owner: Any, *, emit_messages: bool = True) -> InjuryResult:
+    """Make one living creature at 0 HP stable without an ability check.
+
+    This is the narrow transition used by effects such as Spare the Dying. It
+    retains COMBAT-04 ownership of injury storage without granting callers the
+    broader repair authority intended for staff.
+    """
+    if not hasattr(owner, "stats"):
+        raise InjuryError("Stabilization requires a character target.")
+    record = injury_record(owner)
+    previous_hp = owner.stats.hp_current
+    if record.state is not InjuryState.DYING or previous_hp != 0:
+        return _result(
+            False, previous_hp, previous_hp, record, "invalid_target", previous=record
+        )
+    stable = InjuryRecord(InjuryState.INCAPACITATED, last_recovery=record.last_recovery)
+    _write(owner, stable)
+    result = _result(
+        True, previous_hp, previous_hp, stable, "stabilized", previous=record
+    )
+    if emit_messages:
+        _announce(owner, result)
     return result
 
 

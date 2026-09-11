@@ -20,7 +20,7 @@ from typing import Any
 from systems.equipment import DAMAGE_TYPES
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
-MAGIC_REGISTRY_VERSION = 1
+MAGIC_REGISTRY_VERSION = 2
 MAX_ALIASES = 12
 MAX_TAGS = 16
 MAX_TARGETS = 32
@@ -152,6 +152,7 @@ class DiceExpression:
     count: int
     sides: int
     bonus: int = 0
+    add_spellcasting_modifier: bool = False
 
     def notation(self) -> str:
         """Return the canonical player-safe notation for this expression."""
@@ -251,6 +252,12 @@ STANDARD_HANDLERS: Mapping[str, HandlerContract] = MappingProxyType(
                     TargetingMode.ROOM,
                 }
             ),
+        ),
+        "stabilize": HandlerContract(
+            "stabilize", frozenset(), frozenset({TargetingMode.CREATURE})
+        ),
+        "thaumaturgy": HandlerContract(
+            "thaumaturgy", frozenset(), frozenset({TargetingMode.SELF})
         ),
         "utility": HandlerContract("utility"),
     }
@@ -369,6 +376,7 @@ class CastSnapshot:
     cast_level: int
     save_dc: int | None
     attack_bonus: int | None
+    spellcasting_modifier: int
     resource_reservation: Mapping[str, int]
 
     def serialize(self) -> dict[str, Any]:
@@ -381,6 +389,7 @@ class CastSnapshot:
             "cast_level": self.cast_level,
             "save_dc": self.save_dc,
             "attack_bonus": self.attack_bonus,
+            "spellcasting_modifier": self.spellcasting_modifier,
             "resource_reservation": dict(self.resource_reservation),
         }
 
@@ -460,8 +469,10 @@ def validate_persistent_magic_state(value: Any) -> None:
 
 
 def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
-    """Reconstruct strictly validated primitive delayed-cast state."""
-    if not isinstance(value, Mapping) or set(value) != {
+    """Reconstruct validated current or version-1 primitive cast state."""
+    if not isinstance(value, Mapping):
+        raise MagicRegistryError("A cast snapshot has an invalid shape.")
+    required = {
         "source_key",
         "registry_version",
         "caster_id",
@@ -470,7 +481,11 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
         "save_dc",
         "attack_bonus",
         "resource_reservation",
-    }:
+    }
+    current = required | {"spellcasting_modifier"}
+    if frozenset(value) not in {frozenset(required), frozenset(current)}:
+        raise MagicRegistryError("A cast snapshot has an invalid shape.")
+    if "spellcasting_modifier" not in value and value["registry_version"] != 1:
         raise MagicRegistryError("A cast snapshot has an invalid shape.")
     source_key = value["source_key"]
     _validate_key(source_key, "magic key")
@@ -492,7 +507,9 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
         for item in targets
     ):
         raise MagicRegistryError("A cast snapshot has invalid targets.")
-    for name in ("save_dc", "attack_bonus"):
+    for name in ("save_dc", "attack_bonus", "spellcasting_modifier"):
+        if name not in value:
+            continue
         number = value[name]
         if number is not None and (
             isinstance(number, bool)
@@ -514,6 +531,7 @@ def deserialize_cast_snapshot(value: Mapping[str, Any]) -> CastSnapshot:
         value["cast_level"],
         value["save_dc"],
         value["attack_bonus"],
+        value.get("spellcasting_modifier", 0),
         MappingProxyType(dict(reservation)),
     )
 
@@ -800,6 +818,8 @@ def _validate_dice(dice: DiceExpression) -> None:
         or abs(dice.bonus) > MAX_DICE_BONUS
     ):
         raise MagicRegistryError("A magic dice bonus is outside the supported range.")
+    if not isinstance(dice.add_spellcasting_modifier, bool):
+        raise MagicRegistryError("Magic dice must declare a bounded modifier rule.")
 
 
 def _validate_save(save: Save | None) -> None:
@@ -927,7 +947,17 @@ def _default_class_keys() -> tuple[str, ...]:
 def _default_resource_keys() -> tuple[str, ...]:
     from systems.progression import CLASS_PROGRESSION
 
-    return ("hp", *(resource.key for resource in CLASS_PROGRESSION.resources.values()))
+    keys = ["hp", *(resource.key for resource in CLASS_PROGRESSION.resources.values())]
+    for access in CLASS_PROGRESSION.spell_access.values():
+        class_key = access.key.removesuffix(".spell_access")
+        keys.extend(
+            f"{class_key}.spell_slot.{spell_level}"
+            for spell_level, maxima in enumerate(access.spell_slots, start=1)
+            if any(maxima)
+        )
+        if any(access.pact_slots):
+            keys.append(f"{class_key}.pact_slot")
+    return tuple(keys)
 
 
 def _canonical_ability(value: Any) -> str:
@@ -1011,7 +1041,207 @@ def _render_player_help(definition: MagicDefinition) -> str:
     return "\n\n".join(parts)
 
 
-# SRD content is registered only after its class feature, resource, effect, and
-# casting adapters exist.  An empty registry fails closed rather than exposing
-# invented or mechanically incomplete actions.
-MAGIC_REGISTRY = build_magic_registry((), require_srd_references=True)
+_RELEASED_MAGIC = (
+    MagicDefinition(
+        key="wizard.acid_splash",
+        display_name="Acid Splash",
+        aliases=("acid",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("cantrip", "alpha_single_target"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="combat",
+        handler_key="saving_throw",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        damage=Damage(DiceExpression(1, 6), "acid"),
+        save=Save("Dexterity"),
+        player_help=PlayerHelp(
+            "acid splash",
+            "Burst acid around one nearby foe; a successful Dexterity save negates the damage.",
+            "Alpha adaptation: the SRD sphere is narrowed to one detected hostile creature in your room.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Acid Splash",
+    ),
+    MagicDefinition(
+        key="wizard.fire_bolt",
+        display_name="Fire Bolt",
+        aliases=("firebolt",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("cantrip",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="combat",
+        handler_key="spell_attack",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        damage=Damage(DiceExpression(1, 10), "fire"),
+        player_help=PlayerHelp(
+            "fire bolt",
+            "Hurl fire at one nearby foe with a ranged spell attack.",
+            "The alpha targets creatures only; igniting unattended objects is not yet supported.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Fire Bolt",
+    ),
+    MagicDefinition(
+        key="wizard.poison_spray",
+        display_name="Poison Spray",
+        aliases=("poison",),
+        kind=MagicKind.SPELL,
+        school="necromancy",
+        tags=("cantrip",),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="combat",
+        handler_key="spell_attack",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        damage=Damage(DiceExpression(1, 12), "poison"),
+        player_help=PlayerHelp(
+            "poison spray",
+            "Spray toxic mist at one nearby foe with a ranged spell attack.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Poison Spray",
+    ),
+    MagicDefinition(
+        key="cleric.sacred_flame",
+        display_name="Sacred Flame",
+        aliases=("sacred",),
+        kind=MagicKind.SPELL,
+        school="evocation",
+        tags=("cantrip",),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="combat",
+        handler_key="saving_throw",
+        targeting=Targeting(TargetingMode.HOSTILE, filters=("character", "living")),
+        range=RangeCategory.ROOM,
+        damage=Damage(DiceExpression(1, 8), "radiant"),
+        save=Save("Dexterity"),
+        player_help=PlayerHelp(
+            "sacred flame",
+            "Call down radiance on one nearby foe; a successful Dexterity save negates the damage.",
+            "Room-range casting has no tabletop cover modifier.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Sacred Flame",
+    ),
+    MagicDefinition(
+        key="cleric.spare_the_dying",
+        display_name="Spare the Dying",
+        aliases=("spare",),
+        kind=MagicKind.SPELL,
+        school="necromancy",
+        tags=("cantrip",),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="combat",
+        handler_key="stabilize",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            allow_dead_or_dying=True,
+        ),
+        range=RangeCategory.ROOM,
+        player_help=PlayerHelp(
+            "spare the dying",
+            "Make one nearby living creature at 0 Hit Points stable without a Medicine check.",
+            "The target must be dying rather than dead.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Spare the Dying",
+    ),
+    MagicDefinition(
+        key="cleric.thaumaturgy",
+        display_name="Thaumaturgy",
+        aliases=("phantom sound",),
+        kind=MagicKind.SPELL,
+        school="transmutation",
+        tags=("cantrip", "alpha_fixed_option"),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.LEARNED,),
+        action_category="manipulate",
+        handler_key="thaumaturgy",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        player_help=PlayerHelp(
+            "thaumaturgy",
+            "Create an ominous, harmless sound that everyone in your room can hear.",
+            "Alpha adaptation: casting always selects the SRD Phantom Sound option and originates it at the caster.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Thaumaturgy",
+    ),
+    MagicDefinition(
+        key="cleric.cure_wounds",
+        display_name="Cure Wounds",
+        aliases=("cure",),
+        kind=MagicKind.SPELL,
+        school="abjuration",
+        tags=("level_1", "healing"),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="healing",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            include_caster=True,
+            allow_dead_or_dying=True,
+        ),
+        range=RangeCategory.TOUCH,
+        spell_level=1,
+        cost=ResourceCost("cleric.spell_slot.1", 1),
+        healing=DiceExpression(2, 8, add_spellcasting_modifier=True),
+        player_help=PlayerHelp(
+            "cure wounds",
+            "Restore 2d8 plus your Wisdom modifier Hit Points to a creature you can touch.",
+            "The alpha casts this only with a level 1 slot; higher-slot casting is not yet available.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Cure Wounds",
+    ),
+    MagicDefinition(
+        key="cleric.healing_word",
+        display_name="Healing Word",
+        aliases=("heal word",),
+        kind=MagicKind.SPELL,
+        school="abjuration",
+        tags=("level_1", "healing", "alpha_action_adaptation"),
+        class_access=(ClassAccess("Cleric", 1),),
+        access_modes=(AccessMode.PREPARED,),
+        action_category="combat",
+        handler_key="healing",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            include_caster=True,
+            allow_dead_or_dying=True,
+        ),
+        range=RangeCategory.ROOM,
+        spell_level=1,
+        cost=ResourceCost("cleric.spell_slot.1", 1),
+        healing=DiceExpression(2, 4, add_spellcasting_modifier=True),
+        player_help=PlayerHelp(
+            "healing word",
+            "Restore 2d4 plus your Wisdom modifier Hit Points to one nearby creature.",
+            "Alpha adaptation: Bonus Actions use one ordinary combat action. Higher-slot casting is unavailable.",
+        ),
+        srd_reference="SRD 5.2.1 Spell Descriptions: Healing Word",
+    ),
+)
+
+
+# Only content with a complete execution path belongs in this selectable graph.
+MAGIC_REGISTRY = build_magic_registry(
+    _RELEASED_MAGIC,
+    help_keys=(
+        "acid splash",
+        "fire bolt",
+        "poison spray",
+        "sacred flame",
+        "spare the dying",
+        "thaumaturgy",
+        "cure wounds",
+        "healing word",
+    ),
+    require_srd_references=True,
+)
