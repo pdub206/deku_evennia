@@ -131,7 +131,7 @@ class CharacterStats:
 
     @property
     def level(self) -> int:
-        """Return character level, constrained to the supported 1-20 range."""
+        """Return a valid SRD level; PC advancement applies the release cap."""
         return max(1, min(20, int(self._attribute("level", 1))))
 
     def set_level(self, level: int) -> None:

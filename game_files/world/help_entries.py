@@ -126,7 +126,8 @@ HELP_ENTRY_DICTS = [
         "text": """
             The class progression registry is the sole source for selectable
             class keys, level grants, training, resources, and spell access.
-            A class is selectable only when all twenty levels and every
+            The alpha exposes only Cleric, Fighter, Rogue, and Wizard through
+            level 3. A class is selectable only when all three released levels and every
             referenced feature, choice, resource, spell access entry, owner,
             and help key validate together.
 
@@ -328,8 +329,7 @@ HELP_ENTRY_DICTS = [
             Character creation follows five steps from the SRD 5.2.1:
 
             1. |yChoose a Class|n — Your class defines your vocation, talents, and
-               fighting style.  Available classes: Barbarian, Bard, Cleric, Druid,
-               Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard.
+               fighting style. Alpha classes are Cleric, Fighter, Rogue, and Wizard.
 
             2. |yChoose Your Origin|n — Your origin has two parts:
                - Background: represents your pre-adventuring occupation and gives

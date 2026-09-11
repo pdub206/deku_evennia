@@ -111,11 +111,9 @@ class TestRandomRoll(EvenniaTest):
 class TestClassData(EvenniaTest):
     def test_hp_bases(self):
         expected = {
-            "Barbarian": 12,
+            "Cleric": 8,
             "Fighter": 10,
-            "Paladin": 10,
-            "Ranger": 10,
-            "Sorcerer": 6,
+            "Rogue": 8,
             "Wizard": 6,
         }
         for cls_name, expected_hp in expected.items():
@@ -142,9 +140,9 @@ class TestClassData(EvenniaTest):
 
     def test_weapon_training_is_machine_readable(self):
         self.assertEqual(CLASSES["Fighter"]["weapon_categories"], ["simple", "martial"])
-        self.assertIn("shortsword", CLASSES["Monk"]["weapon_proficiencies"])
-        self.assertIn("rapier", CLASSES["Rogue"]["weapon_proficiencies"])
-        self.assertIn("dagger", CLASSES["Wizard"]["weapon_proficiencies"])
+        self.assertEqual(tuple(CLASSES), ("Cleric", "Fighter", "Rogue", "Wizard"))
+        self.assertIn("finesse", CLASSES["Rogue"]["weapon_proficiencies"])
+        self.assertEqual(CLASSES["Wizard"]["weapon_categories"], ["simple"])
 
 
 class TestBackgroundData(EvenniaTest):
@@ -207,12 +205,12 @@ class TestChargenEnd(EvenniaTest):
         session.new_char = char
         return session
 
-    def test_barbarian_fighter_hp(self):
-        """Barbarian with CON 16 should have hp_max = 12 + 3 = 15."""
+    def test_fighter_hp(self):
+        """Fighter with CON 14 should have hp_max = 10 + 2 = 12."""
         char = self.char1  # provided by EvenniaTest
 
         # Set the temp chargen attributes.
-        char.db.chargen_class = "Barbarian"
+        char.db.chargen_class = "Fighter"
         char.db.chargen_background = "Soldier"
         char.db.chargen_species = "Human"
         char.db.chargen_languages = ["Elvish", "Dwarvish"]
@@ -236,12 +234,12 @@ class TestChargenEnd(EvenniaTest):
 
         # CON after bonus = 14 (no bonus on CON in this scenario)
         # ability_modifier(14) = 2 → hp_max = 12 + 2 = 14
-        self.assertEqual(char.db.hp_base, 12)
-        self.assertEqual(char.stats.hp_max, 14)
+        self.assertEqual(char.db.hp_base, 10)
+        self.assertEqual(char.stats.hp_max, 12)
         self.assertEqual(char.db.level, 1)
         self.assertEqual(char.db.xp, 0)
         self.assertEqual(char.stats.proficiency_bonus, 2)
-        self.assertEqual(char.db.char_class, "Barbarian")
+        self.assertEqual(char.db.char_class, "Fighter")
         self.assertEqual(char.db.background, "Soldier")
         self.assertEqual(char.db.species, "Human")
         self.assertEqual(char.db.alignment, "Neutral Good")

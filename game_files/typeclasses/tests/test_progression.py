@@ -7,6 +7,7 @@ from systems.progression import (
     CLASS_PROGRESSION,
     MAX_CLASS_LEVEL,
     SELECTABLE_CLASS_NAMES,
+    UNAVAILABLE_CLASS_NAMES,
     RegistryValidationError,
     build_registry,
 )
@@ -15,7 +16,7 @@ from systems.progression import (
 class TestClassProgressionRegistry(EvenniaTest):
     """Every selectable class must resolve through the one validated registry."""
 
-    def test_all_selectable_classes_have_twenty_complete_levels(self):
+    def test_all_selectable_classes_have_three_complete_levels(self):
         self.assertEqual(tuple(CLASS_PROGRESSION.definitions), SELECTABLE_CLASS_NAMES)
         for class_key in SELECTABLE_CLASS_NAMES:
             definition = CLASS_PROGRESSION.class_for(class_key)
@@ -31,42 +32,39 @@ class TestClassProgressionRegistry(EvenniaTest):
             self.assertTrue(definition.srd_reference.startswith("SRD 5.2.1 "))
             self.assertIn(class_key, definition.srd_reference)
 
-    def test_level_one_choice_and_repeated_feature_keys_resolve(self):
+    def test_every_declared_grant_key_resolves(self):
         for definition in CLASS_PROGRESSION.definitions.values():
-            first = definition.grants_at(1)
-            self.assertIn(definition.skill_choice_key, first.choice_keys)
-            self.assertTrue(first.automatic_feature_keys)
-            self.assertEqual(
-                first.automatic_feature_keys,
-                definition.grants_at(MAX_CLASS_LEVEL).automatic_feature_keys,
+            self.assertIn(
+                definition.skill_choice_key, definition.grants_at(1).choice_keys
             )
-            self.assertEqual(
-                CLASS_PROGRESSION.features[first.automatic_feature_keys[0]].repeat_mode,
-                "upgrade",
-            )
+            for grants in definition.levels:
+                for key in grants.automatic_feature_keys:
+                    self.assertIn(key, CLASS_PROGRESSION.features)
+                for key in grants.resource_keys:
+                    self.assertIn(key, CLASS_PROGRESSION.resources)
+                for key in grants.spell_access_keys:
+                    self.assertIn(key, CLASS_PROGRESSION.spell_access)
+                for key in grants.choice_keys:
+                    self.assertIn(key, CLASS_PROGRESSION.choices)
 
-    def test_srd_spell_access_tables_retain_slots_and_pact_magic_separately(self):
-        """Slot counts use their class tables rather than generic resource curves."""
-        bard = CLASS_PROGRESSION.spell_access["bard.spell_access"]
-        self.assertEqual(bard.cantrips[0], 2)
-        self.assertEqual(bard.spells_prepared[0], 4)
-        self.assertEqual(bard.spell_slots[0][0], 2)
-        self.assertEqual(bard.spell_slots[1][2], 2)
-        self.assertEqual(bard.spell_slots[8][16], 1)
-        self.assertEqual(bard.pact_slots, (0,) * MAX_CLASS_LEVEL)
+    def test_alpha_spell_access_matches_cleric_and_wizard_tables(self):
+        for key in ("cleric.spell_access", "wizard.spell_access"):
+            access = CLASS_PROGRESSION.spell_access[key]
+            self.assertEqual(access.cantrips, (3, 3, 3))
+            self.assertEqual(access.spells_prepared, (4, 5, 6))
+            self.assertEqual(access.maximum_spell_level, (1, 1, 2))
+            self.assertEqual(access.spell_slots[0], (2, 3, 4))
+            self.assertEqual(access.spell_slots[1], (0, 0, 2))
+        self.assertEqual(
+            CLASS_PROGRESSION.spell_access["wizard.spell_access"].spellbook_entries,
+            (6, 8, 10),
+        )
 
-        paladin = CLASS_PROGRESSION.spell_access["paladin.spell_access"]
-        self.assertEqual(paladin.spell_slots[0][0], 2)
-        self.assertEqual(paladin.spell_slots[1][4], 2)
-        self.assertEqual(paladin.spell_slots[4][16], 1)
-
-        warlock = CLASS_PROGRESSION.spell_access["warlock.spell_access"]
-        self.assertEqual(warlock.spell_slots, ((0,) * MAX_CLASS_LEVEL,) * 9)
-        self.assertEqual(warlock.pact_slots[0], 1)
-        self.assertEqual(warlock.pact_slots[10], 3)
-        self.assertEqual(warlock.pact_slot_level[8], 5)
-        self.assertEqual(warlock.maximum_spell_level[10], 6)
-        self.assertTrue(warlock.srd_reference.startswith("SRD 5.2.1 "))
+    def test_unreleased_classes_are_unavailable(self):
+        for key in UNAVAILABLE_CLASS_NAMES:
+            self.assertFalse(CLASS_PROGRESSION.is_available(key))
+            with self.assertRaises(RegistryValidationError):
+                CLASS_PROGRESSION.class_for(key)
 
     def test_registry_projection_is_immutable_and_deterministic(self):
         summaries = CLASS_PROGRESSION.chargen_summaries()
@@ -76,7 +74,7 @@ class TestClassProgressionRegistry(EvenniaTest):
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
         )
-        self.assertEqual(CLASS_PROGRESSION.version, 2)
+        self.assertEqual(CLASS_PROGRESSION.version, 3)
 
     def test_invalid_level_gap_and_unknown_feature_fail_closed(self):
         fighter = CLASS_PROGRESSION.class_for("Fighter")

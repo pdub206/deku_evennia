@@ -188,8 +188,10 @@ class TestTrainingService(EvenniaTest):
         before = self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE)
         view = practice_view(self.char1)
 
-        self.assertEqual(len(view.pending_choices), 1)
-        self.assertEqual(view.pending_choices[0]["choice_key"], "fighter.skills")
+        self.assertEqual(
+            [item["choice_key"] for item in view.pending_choices],
+            ["fighter.skills", "fighter.fighting_style"],
+        )
         self.assertEqual(before, self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
 
     def test_trainer_resolves_multi_selection_without_duplicate_proficiency(self):
@@ -205,7 +207,10 @@ class TestTrainingService(EvenniaTest):
         self.assertTrue(first.applied)
         self.assertTrue(second.applied)
         self.assertEqual(self.char1.db.skill_proficiencies, ["Acrobatics", "Athletics"])
-        self.assertEqual(state["pending"], [])
+        self.assertEqual(
+            [item["choice_key"] for item in state["pending"]],
+            ["fighter.fighting_style"],
+        )
         self.assertEqual(state["resolved"][0]["selected"], ["Athletics", "Acrobatics"])
         self.assertEqual(state["resolved"][0]["origin"], "trainer")
 
@@ -218,21 +223,21 @@ class TestTrainingService(EvenniaTest):
 
         with self.assertRaises(TrainingError):
             resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 1)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
 
         profile["classes"] = ["Fighter"]
         set_trainer_profile(self.trainer, profile)
         self.char1.db.skill_proficiencies = ["Athletics"]
         with self.assertRaises(TrainingError):
             resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 1)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
 
     def test_entitlement_creation_is_idempotent(self):
         """A replayed level grant cannot create another copy of the choice."""
         initialize_choice_entitlements(self.char1, "Fighter", 1)
         initialize_choice_entitlements(self.char1, "Fighter", 1)
 
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 1)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
 
     def test_magic_choice_adapters_use_magic_ownership_transactionally(self):
         """Magic choices grant only through their declared ownership adapters."""

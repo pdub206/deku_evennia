@@ -1,10 +1,4 @@
-"""Immutable, validated class-progression definitions (ADV-02).
-
-Definitions in this module are data, not executable game behaviour.  Systems
-refer to their stable keys and remain responsible for applying their own
-effects.  This keeps Attributes safe to serialize and makes a registry version
-useful for later reconciliation rather than silently changing existing PCs.
-"""
+"""Immutable, validated class progression for the Milestone 3 alpha."""
 
 from __future__ import annotations
 
@@ -14,57 +8,47 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
-MAX_CLASS_LEVEL = 20
-# Version 2 replaces provisional spell-access curves with SRD 5.2.1 tables.
-CLASS_REGISTRY_VERSION = 2
-MAX_SRD_REFERENCE_LENGTH = 160
-SRD_REFERENCE_PREFIX = "SRD 5.2.1 "
-SELECTABLE_CLASS_NAMES = (
+MAX_CLASS_LEVEL = 3
+CLASS_REGISTRY_VERSION = 3
+SELECTABLE_CLASS_NAMES = ("Cleric", "Fighter", "Rogue", "Wizard")
+UNAVAILABLE_CLASS_NAMES = (
     "Barbarian",
     "Bard",
-    "Cleric",
     "Druid",
-    "Fighter",
     "Monk",
     "Paladin",
     "Ranger",
-    "Rogue",
     "Sorcerer",
     "Warlock",
-    "Wizard",
 )
 
 
 class RegistryValidationError(ValueError):
-    """Raised when class data cannot safely be offered to a player."""
+    """Raised when progression data is unsafe to expose."""
 
 
 @dataclass(frozen=True)
 class FeatureDefinition:
-    """A stable feature key and the system which owns its eventual effects."""
-
     key: str
     owner: str
     prerequisites: tuple[str, ...]
     grant_mode: str
     repeat_mode: str
     help_key: str
+    srd_reference: str = "SRD 5.2.1 class feature"
 
 
 @dataclass(frozen=True)
 class ResourceProgression:
-    """A resource maximum and recovery policy, expressed only as primitives."""
-
     key: str
     owner: str
     maxima: tuple[int, ...]
     recovery_profile: str
+    srd_reference: str = "SRD 5.2.1 class features table"
 
 
 @dataclass(frozen=True)
 class SpellAccess:
-    """One class's spell-access counts at each character level."""
-
     key: str
     casting_ability: str
     cantrips: tuple[int, ...]
@@ -82,13 +66,6 @@ class SpellAccess:
 
 @dataclass(frozen=True)
 class ChoiceSet:
-    """A data-only entitlement ADV-03 can resolve without class-specific code.
-
-    ``option_adapter`` identifies the narrow system that owns the selected
-    stable keys.  It is deliberately not a callable or import path: class
-    progression remains declarative and the adapter enforces its own rules.
-    """
-
     key: str
     count: int
     legal_options: tuple[str, ...]
@@ -96,12 +73,11 @@ class ChoiceSet:
     mutual_exclusions: tuple[tuple[str, ...], ...]
     prerequisite_timing: str
     option_adapter: str = "skill"
+    srd_reference: str = "SRD 5.2.1 class feature"
 
 
 @dataclass(frozen=True)
 class LevelGrants:
-    """The stable keys granted or made available at one level."""
-
     level: int
     automatic_feature_keys: tuple[str, ...] = ()
     resource_keys: tuple[str, ...] = ()
@@ -111,8 +87,6 @@ class LevelGrants:
 
 @dataclass(frozen=True)
 class ClassDefinition:
-    """Complete immutable progression and chargen information for one class."""
-
     key: str
     display_name: str
     likes: str
@@ -131,7 +105,6 @@ class ClassDefinition:
     levels: tuple[LevelGrants, ...]
 
     def grants_at(self, level: int) -> LevelGrants:
-        """Return one validated level's data without allowing partial lookup."""
         if not 1 <= level <= MAX_CLASS_LEVEL:
             raise KeyError(f"Class level must be 1 through {MAX_CLASS_LEVEL}.")
         return self.levels[level - 1]
@@ -139,8 +112,6 @@ class ClassDefinition:
 
 @dataclass(frozen=True)
 class ProgressionRegistry:
-    """Read-only registry shared by chargen and progression consumers."""
-
     version: int
     definitions: Mapping[str, ClassDefinition]
     features: Mapping[str, FeatureDefinition]
@@ -150,28 +121,24 @@ class ProgressionRegistry:
     fingerprint: str
 
     def class_for(self, key: str) -> ClassDefinition:
-        """Look up a canonical class key or fail closed."""
-        if not isinstance(key, str):
-            raise RegistryValidationError(f"Unknown or unavailable class: {key!r}")
-        try:
-            return self.definitions[key]
-        except KeyError as err:
-            raise RegistryValidationError(
-                f"Unknown or unavailable class: {key}"
-            ) from err
+        if not isinstance(key, str) or key not in self.definitions:
+            raise RegistryValidationError(f"Unknown or unavailable class: {key}")
+        return self.definitions[key]
 
     def is_available(self, key: object) -> bool:
-        """Return whether a class passed the complete registry validation."""
         return isinstance(key, str) and key in self.definitions
 
     def chargen_summary(self, key: str) -> Mapping[str, Any]:
-        """Project registry data into the legacy chargen presentation shape."""
         definition = self.class_for(key)
         choice = self.choices[definition.skill_choice_key]
         return MappingProxyType(
             {
                 "likes": definition.likes,
-                "primary_ability": _one_or_many(definition.primary_abilities),
+                "primary_ability": (
+                    definition.primary_abilities[0]
+                    if len(definition.primary_abilities) == 1
+                    else list(definition.primary_abilities)
+                ),
                 "hit_die": definition.hit_die,
                 "hp_base": definition.hit_die,
                 "complexity": definition.complexity,
@@ -186,10 +153,39 @@ class ProgressionRegistry:
         )
 
     def chargen_summaries(self) -> Mapping[str, Mapping[str, Any]]:
-        """Return source-ordered, immutable summaries for the legacy UI only."""
         return MappingProxyType(
             {key: self.chargen_summary(key) for key in self.definitions}
         )
+
+
+def _index(values: Iterable[Any], label: str) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for value in values:
+        if not isinstance(value.key, str) or not value.key or value.key in result:
+            raise RegistryValidationError(
+                f"Duplicate or invalid {label} key: {value.key!r}"
+            )
+        result[value.key] = value
+    return result
+
+
+def _curve(values: tuple[int, ...], label: str) -> None:
+    if len(values) != MAX_CLASS_LEVEL or any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in values
+    ):
+        raise RegistryValidationError(f"{label} must have three non-negative integers.")
+    if any(right < left for left, right in zip(values, values[1:])):
+        raise RegistryValidationError(f"{label} cannot decrease.")
+
+
+def _reference(value: str, label: str) -> None:
+    if (
+        not isinstance(value, str)
+        or not value.startswith("SRD 5.2.1 ")
+        or len(value) > 160
+    ):
+        raise RegistryValidationError(f"{label} needs an SRD 5.2.1 reference.")
 
 
 def build_registry(
@@ -200,699 +196,547 @@ def build_registry(
     choices: Iterable[ChoiceSet],
     *,
     version: int = CLASS_REGISTRY_VERSION,
-    available_owners: Iterable[str] = ("advancement", "magic", "resources"),
+    available_owners: Iterable[str] = ("advancement", "combat", "magic", "resources"),
     required_help_keys: Iterable[str] = ("class progression",),
 ) -> ProgressionRegistry:
-    """Validate and freeze a complete class-progression graph.
-
-    The function is intentionally public: tests and builder tooling can verify
-    proposed definitions before a reload makes them selectable.
-    """
-    definitions_by_key = _indexed(definitions, "class")
-    features_by_key = _indexed(features, "feature")
-    resources_by_key = _indexed(resources, "resource")
-    spells_by_key = _indexed(spell_access, "spell access")
-    choices_by_key = _indexed(choices, "choice")
-    owners = frozenset(available_owners)
-    help_keys = frozenset(required_help_keys)
-
-    if tuple(definitions_by_key) != SELECTABLE_CLASS_NAMES:
+    """Validate and freeze the complete alpha dependency graph."""
+    classes = _index(definitions, "class")
+    feature_map = _index(features, "feature")
+    resource_map = _index(resources, "resource")
+    spell_map = _index(spell_access, "spell access")
+    choice_map = _index(choices, "choice")
+    if tuple(classes) != SELECTABLE_CLASS_NAMES:
         raise RegistryValidationError(
-            "Selectable classes must be exactly the twelve source-controlled classes."
+            "Selectable classes must be exactly the four alpha classes."
         )
-    for definition in definitions_by_key.values():
-        _validate_class(
-            definition, features_by_key, resources_by_key, spells_by_key, choices_by_key
-        )
-    for feature in features_by_key.values():
-        if feature.owner not in owners:
+    owners, help_keys = frozenset(available_owners), frozenset(required_help_keys)
+    for feature in feature_map.values():
+        if feature.owner not in owners or feature.help_key not in help_keys:
             raise RegistryValidationError(
-                f"Feature '{feature.key}' has no owning adapter."
+                f"Feature '{feature.key}' has no owner or help."
             )
-        if feature.help_key not in help_keys:
+        if feature.grant_mode not in {
+            "automatic",
+            "choice",
+        } or feature.repeat_mode not in {"once", "repeat", "upgrade"}:
             raise RegistryValidationError(
-                f"Feature '{feature.key}' references missing help '{feature.help_key}'."
-            )
-        if feature.grant_mode not in {"automatic", "choice"}:
-            raise RegistryValidationError(
-                f"Feature '{feature.key}' has invalid grant mode."
-            )
-        if feature.repeat_mode not in {"once", "repeat", "upgrade"}:
-            raise RegistryValidationError(
-                f"Feature '{feature.key}' has invalid repeat mode."
-            )
-        if feature.key in feature.prerequisites:
-            raise RegistryValidationError(
-                f"Feature '{feature.key}' cannot require itself."
+                f"Feature '{feature.key}' has invalid grant behavior."
             )
         if any(
-            prerequisite not in features_by_key
-            for prerequisite in feature.prerequisites
+            key not in feature_map or key == feature.key
+            for key in feature.prerequisites
         ):
             raise RegistryValidationError(
-                f"Feature '{feature.key}' has an unknown prerequisite."
+                f"Feature '{feature.key}' has an invalid prerequisite."
             )
-    _validate_feature_cycles(features_by_key)
-    for resource in resources_by_key.values():
-        if resource.owner not in owners or resource.recovery_profile not in {
-            "short_rest",
-            "long_rest",
-            "none",
-        }:
-            raise RegistryValidationError(
-                f"Resource '{resource.key}' has an unavailable owner or recovery profile."
-            )
-        _validate_non_decreasing(resource.maxima, f"Resource '{resource.key}' maxima")
-    for access in spells_by_key.values():
-        _validate_spell_access(access)
-    for choice in choices_by_key.values():
-        if choice.count < 1 or choice.count > len(choice.legal_options):
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has an impossible count."
-            )
-        if len(set(choice.legal_options)) != len(choice.legal_options):
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has duplicate legal options."
-            )
-        if any(
-            not isinstance(option, str) or not option.strip()
-            for option in choice.legal_options
-        ):
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has an invalid legal option."
-            )
-        if choice.replacement_policy not in {"none", "replace_one"}:
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has an invalid replacement policy."
-            )
-        if choice.prerequisite_timing not in {"grant", "resolution"}:
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has invalid prerequisite timing."
-            )
-        if choice.option_adapter not in {
-            "skill",
-            "magic_learned",
-            "magic_prepared",
-            "magic_spellbook",
-            "magic_innate",
-        }:
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has an unavailable option adapter."
-            )
-        if (
-            choice.replacement_policy == "replace_one"
-            and choice.option_adapter != "magic_learned"
-        ):
-            raise RegistryValidationError(
-                f"Choice '{choice.key}' has no safe replacement adapter."
-            )
-
-    payload = {
-        "version": version,
-        "definitions": [asdict(value) for value in definitions_by_key.values()],
-        "features": [asdict(value) for value in features_by_key.values()],
-        "resources": [asdict(value) for value in resources_by_key.values()],
-        "spell_access": [asdict(value) for value in spells_by_key.values()],
-        "choices": [asdict(value) for value in choices_by_key.values()],
-    }
-    fingerprint = sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
-    return ProgressionRegistry(
-        version,
-        MappingProxyType(definitions_by_key),
-        MappingProxyType(features_by_key),
-        MappingProxyType(resources_by_key),
-        MappingProxyType(spells_by_key),
-        MappingProxyType(choices_by_key),
-        fingerprint,
-    )
-
-
-def _indexed(values: Iterable[Any], label: str) -> dict[str, Any]:
-    indexed: dict[str, Any] = {}
-    for value in values:
-        if not isinstance(value.key, str) or not value.key or value.key in indexed:
-            raise RegistryValidationError(
-                f"Duplicate or invalid {label} key: {value.key!r}"
-            )
-        indexed[value.key] = value
-    return indexed
-
-
-def _validate_class(
-    definition: ClassDefinition,
-    features: Mapping[str, FeatureDefinition],
-    resources: Mapping[str, ResourceProgression],
-    spells: Mapping[str, SpellAccess],
-    choices: Mapping[str, ChoiceSet],
-) -> None:
-    _validate_srd_reference(definition.srd_reference, f"Class '{definition.key}'")
-    if (
-        definition.hit_die not in {6, 8, 10, 12}
-        or definition.fixed_hp_gain != definition.hit_die // 2 + 1
-    ):
-        raise RegistryValidationError(
-            f"Class '{definition.key}' has invalid hit-die HP progression."
-        )
-    if len(definition.saving_throws) != 2 or len(definition.primary_abilities) not in {
-        1,
-        2,
-    }:
-        raise RegistryValidationError(
-            f"Class '{definition.key}' has invalid core abilities."
-        )
-    if definition.skill_choice_key not in choices:
-        raise RegistryValidationError(
-            f"Class '{definition.key}' has no valid skill choice set."
-        )
-    if len(definition.levels) != MAX_CLASS_LEVEL or tuple(
-        level.level for level in definition.levels
-    ) != tuple(range(1, MAX_CLASS_LEVEL + 1)):
-        raise RegistryValidationError(
-            f"Class '{definition.key}' must declare levels 1 through 20."
-        )
-    for grants in definition.levels:
-        for key in grants.automatic_feature_keys:
-            if key not in features:
-                raise RegistryValidationError(
-                    f"Class '{definition.key}' references unknown feature '{key}'."
-                )
-        for key in grants.resource_keys:
-            if key not in resources:
-                raise RegistryValidationError(
-                    f"Class '{definition.key}' references unknown resource '{key}'."
-                )
-        for key in grants.spell_access_keys:
-            if key not in spells:
-                raise RegistryValidationError(
-                    f"Class '{definition.key}' references unknown spell access '{key}'."
-                )
-        for key in grants.choice_keys:
-            if key not in choices:
-                raise RegistryValidationError(
-                    f"Class '{definition.key}' references unknown choice '{key}'."
-                )
-
-
-def _validate_feature_cycles(features: Mapping[str, FeatureDefinition]) -> None:
+        _reference(feature.srd_reference, f"Feature '{feature.key}'")
     visiting: set[str] = set()
     visited: set[str] = set()
 
     def visit(key: str) -> None:
         if key in visiting:
             raise RegistryValidationError("Feature prerequisites contain a cycle.")
-        if key in visited:
-            return
-        visiting.add(key)
-        for prerequisite in features[key].prerequisites:
-            visit(prerequisite)
-        visiting.remove(key)
-        visited.add(key)
+        if key not in visited:
+            visiting.add(key)
+            for dependency in feature_map[key].prerequisites:
+                visit(dependency)
+            visiting.remove(key)
+            visited.add(key)
 
-    for key in features:
+    for key in feature_map:
         visit(key)
-
-
-def _validate_non_decreasing(values: tuple[int, ...], label: str) -> None:
-    if len(values) != MAX_CLASS_LEVEL or any(
-        isinstance(value, bool) or not isinstance(value, int) or value < 0
-        for value in values
-    ):
-        raise RegistryValidationError(
-            f"{label} must have twenty non-negative integer entries."
-        )
-    if any(after < before for before, after in zip(values, values[1:])):
-        raise RegistryValidationError(f"{label} cannot decrease.")
-
-
-def _validate_srd_reference(value: object, label: str) -> None:
-    """Require a concise, reviewable citation for source-controlled data."""
-    if (
-        not isinstance(value, str)
-        or not value.startswith(SRD_REFERENCE_PREFIX)
-        or len(value) > MAX_SRD_REFERENCE_LENGTH
-    ):
-        raise RegistryValidationError(
-            f"{label} needs an SRD 5.2.1 section or table reference."
-        )
-
-
-def _validate_spell_access(access: SpellAccess) -> None:
-    for name in (
-        "cantrips",
-        "spells_known",
-        "spells_prepared",
-        "spellbook_entries",
-        "maximum_spell_level",
-    ):
-        values = getattr(access, name)
-        _validate_non_decreasing(values, f"Spell access '{access.key}' {name}")
-    if any(value > 9 for value in access.maximum_spell_level):
-        raise RegistryValidationError(
-            f"Spell access '{access.key}' exceeds ninth-level spells."
-        )
-    if len(access.spell_slots) != 9:
-        raise RegistryValidationError(
-            f"Spell access '{access.key}' needs nine spell-slot columns."
-        )
-    for spell_level, slots in enumerate(access.spell_slots, start=1):
-        _validate_non_decreasing(
-            slots, f"Spell access '{access.key}' level-{spell_level} slots"
-        )
-        if any(value > 4 for value in slots):
+    for resource in resource_map.values():
+        if resource.owner not in owners or resource.recovery_profile not in {
+            "short_rest",
+            "long_rest",
+            "none",
+        }:
             raise RegistryValidationError(
-                f"Spell access '{access.key}' has an invalid slot maximum."
+                f"Resource '{resource.key}' has no owner or recovery profile."
             )
-    _validate_non_decreasing(
-        access.pact_slots, f"Spell access '{access.key}' pact slots"
+        _curve(resource.maxima, f"Resource '{resource.key}' maxima")
+        _reference(resource.srd_reference, f"Resource '{resource.key}'")
+    for access in spell_map.values():
+        for field in (
+            "cantrips",
+            "spells_known",
+            "spells_prepared",
+            "spellbook_entries",
+            "maximum_spell_level",
+            "pact_slots",
+            "pact_slot_level",
+        ):
+            _curve(getattr(access, field), f"Spell access '{access.key}' {field}")
+        if len(access.spell_slots) != 9:
+            raise RegistryValidationError(
+                f"Spell access '{access.key}' needs nine slot columns."
+            )
+        for slots in access.spell_slots:
+            _curve(slots, f"Spell access '{access.key}' slots")
+        _reference(access.srd_reference, f"Spell access '{access.key}'")
+    for choice in choice_map.values():
+        if not 1 <= choice.count <= len(choice.legal_options) or len(
+            set(choice.legal_options)
+        ) != len(choice.legal_options):
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has invalid options or count."
+            )
+        if (
+            choice.replacement_policy not in {"none", "replace_one"}
+            or choice.prerequisite_timing not in {"grant", "resolution"}
+            or choice.option_adapter not in {"skill", "feature"}
+        ):
+            raise RegistryValidationError(f"Choice '{choice.key}' has invalid policy.")
+        _reference(choice.srd_reference, f"Choice '{choice.key}'")
+    for definition in classes.values():
+        _reference(definition.srd_reference, f"Class '{definition.key}'")
+        if (
+            definition.hit_die not in {6, 8, 10}
+            or definition.fixed_hp_gain != definition.hit_die // 2 + 1
+        ):
+            raise RegistryValidationError(
+                f"Class '{definition.key}' has invalid HP progression."
+            )
+        if (
+            definition.skill_choice_key not in choice_map
+            or len(definition.saving_throws) != 2
+        ):
+            raise RegistryValidationError(
+                f"Class '{definition.key}' has invalid core training."
+            )
+        if len(definition.levels) != 3 or tuple(
+            item.level for item in definition.levels
+        ) != (1, 2, 3):
+            raise RegistryValidationError(
+                f"Class '{definition.key}' must declare levels 1 through 3."
+            )
+        for level in definition.levels:
+            for key, registry in (
+                *((key, feature_map) for key in level.automatic_feature_keys),
+                *((key, resource_map) for key in level.resource_keys),
+                *((key, spell_map) for key in level.spell_access_keys),
+                *((key, choice_map) for key in level.choice_keys),
+            ):
+                if key not in registry:
+                    raise RegistryValidationError(
+                        f"Class '{definition.key}' references unknown key '{key}'."
+                    )
+    payload = {
+        "version": version,
+        "classes": [asdict(v) for v in classes.values()],
+        "features": [asdict(v) for v in feature_map.values()],
+        "resources": [asdict(v) for v in resource_map.values()],
+        "spells": [asdict(v) for v in spell_map.values()],
+        "choices": [asdict(v) for v in choice_map.values()],
+    }
+    fingerprint = sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    return ProgressionRegistry(
+        version,
+        MappingProxyType(classes),
+        MappingProxyType(feature_map),
+        MappingProxyType(resource_map),
+        MappingProxyType(spell_map),
+        MappingProxyType(choice_map),
+        fingerprint,
     )
-    _validate_non_decreasing(
-        access.pact_slot_level, f"Spell access '{access.key}' pact slot level"
+
+
+def _feature(key: str, owner: str, page: int, *requirements: str) -> FeatureDefinition:
+    label = key.rsplit(".", 1)[-1].replace("_", " ").title()
+    return FeatureDefinition(
+        key,
+        owner,
+        tuple(requirements),
+        "automatic",
+        "once",
+        "class progression",
+        f"SRD 5.2.1 p.{page}: {label}",
     )
-    if any(value > 5 for value in access.pact_slot_level):
-        raise RegistryValidationError(
-            f"Spell access '{access.key}' exceeds fifth-level Pact Magic slots."
-        )
-    if access.preparation_timing not in {"long_rest"}:
-        raise RegistryValidationError(
-            f"Spell access '{access.key}' has an unavailable preparation timing."
-        )
-    _validate_srd_reference(access.srd_reference, f"Spell access '{access.key}'")
-
-
-def _one_or_many(values: tuple[str, ...]) -> str | list[str]:
-    return values[0] if len(values) == 1 else list(values)
-
-
-# SRD 5.2.1 full-caster tables (Bard, Cleric, Druid, Sorcerer, Wizard),
-# normalized as one row per character level and nine columns for spell levels.
-_FULL_SPELL_SLOTS = (
-    (2, 0, 0, 0, 0, 0, 0, 0, 0),
-    (3, 0, 0, 0, 0, 0, 0, 0, 0),
-    (4, 2, 0, 0, 0, 0, 0, 0, 0),
-    (4, 3, 0, 0, 0, 0, 0, 0, 0),
-    (4, 3, 2, 0, 0, 0, 0, 0, 0),
-    (4, 3, 3, 0, 0, 0, 0, 0, 0),
-    (4, 3, 3, 1, 0, 0, 0, 0, 0),
-    (4, 3, 3, 2, 0, 0, 0, 0, 0),
-    (4, 3, 3, 3, 1, 0, 0, 0, 0),
-    (4, 3, 3, 3, 2, 0, 0, 0, 0),
-    (4, 3, 3, 3, 2, 1, 0, 0, 0),
-    (4, 3, 3, 3, 2, 1, 0, 0, 0),
-    (4, 3, 3, 3, 2, 1, 1, 0, 0),
-    (4, 3, 3, 3, 2, 1, 1, 0, 0),
-    (4, 3, 3, 3, 2, 1, 1, 1, 0),
-    (4, 3, 3, 3, 2, 1, 1, 1, 0),
-    (4, 3, 3, 3, 2, 1, 1, 1, 1),
-    (4, 3, 3, 3, 3, 1, 1, 1, 1),
-    (4, 3, 3, 3, 3, 2, 1, 1, 1),
-    (4, 3, 3, 3, 3, 2, 2, 1, 1),
-)
-# SRD 5.2.1 Paladin and Ranger tables, likewise one row per character level.
-_HALF_SPELL_SLOTS = (
-    (2, 0, 0, 0, 0),
-    (2, 0, 0, 0, 0),
-    (3, 0, 0, 0, 0),
-    (3, 0, 0, 0, 0),
-    (4, 2, 0, 0, 0),
-    (4, 2, 0, 0, 0),
-    (4, 3, 0, 0, 0),
-    (4, 3, 0, 0, 0),
-    (4, 3, 2, 0, 0),
-    (4, 3, 2, 0, 0),
-    (4, 3, 3, 0, 0),
-    (4, 3, 3, 0, 0),
-    (4, 3, 3, 1, 0),
-    (4, 3, 3, 1, 0),
-    (4, 3, 3, 2, 0),
-    (4, 3, 3, 2, 0),
-    (4, 3, 3, 3, 1),
-    (4, 3, 3, 3, 1),
-    (4, 3, 3, 3, 2),
-    (4, 3, 3, 3, 2),
-)
-_NO_SPELL_SLOTS = tuple((0,) * 9 for _ in range(MAX_CLASS_LEVEL))
-_NO_PACT_SLOTS = (0,) * MAX_CLASS_LEVEL
-
-
-def _slot_columns(
-    rows: tuple[tuple[int, ...], ...], *, slot_levels: int
-) -> tuple[tuple[int, ...], ...]:
-    """Transpose source-table rows into stable level-keyed slot columns."""
-    return tuple(
-        tuple(row[spell_level] if spell_level < slot_levels else 0 for row in rows)
-        for spell_level in range(9)
-    )
-
-
-_FULL_SLOT_COLUMNS = _slot_columns(_FULL_SPELL_SLOTS, slot_levels=9)
-_HALF_SLOT_COLUMNS = _slot_columns(_HALF_SPELL_SLOTS, slot_levels=5)
 
 
 def _default_registry() -> ProgressionRegistry:
-    # Kept private in chargen_data so presentation has no competing public
-    # class source.  The registry is the sole public authoritative interface.
-    from world.chargen_data import _CLASS_SUMMARIES
-
-    resources_by_class = {
-        "Barbarian": ("rage", "long_rest"),
-        "Bard": ("bardic_inspiration", "long_rest"),
-        "Cleric": ("channel_divinity", "short_rest"),
-        "Druid": ("wild_shape", "short_rest"),
-        "Fighter": ("second_wind", "short_rest"),
-        "Monk": ("focus", "short_rest"),
-        "Paladin": ("lay_on_hands", "long_rest"),
-        "Ranger": (),
-        "Rogue": ("cunning_strike", "none"),
-        "Sorcerer": ("sorcery_points", "long_rest"),
-        "Warlock": ("pact_magic", "short_rest"),
-        "Wizard": ("arcane_recovery", "long_rest"),
-    }
-    class_references = {
-        "Barbarian": "SRD 5.2.1 p.28: Barbarian Features table",
-        "Bard": "SRD 5.2.1 p.31: Bard Features table",
-        "Cleric": "SRD 5.2.1 p.36: Cleric Features table",
-        "Druid": "SRD 5.2.1 p.41: Druid Features table",
-        "Fighter": "SRD 5.2.1 p.46: Fighter Features table",
-        "Monk": "SRD 5.2.1 p.50: Monk Features table",
-        "Paladin": "SRD 5.2.1 p.53: Paladin Features table",
-        "Ranger": "SRD 5.2.1 p.56: Ranger Features table",
-        "Rogue": "SRD 5.2.1 p.61: Rogue Features table",
-        "Sorcerer": "SRD 5.2.1 p.64: Sorcerer Features table",
-        "Warlock": "SRD 5.2.1 p.70: Warlock Features table",
-        "Wizard": "SRD 5.2.1 p.77: Wizard Features table",
-    }
-    full_maximum_spell_level = (
-        1,
-        1,
-        2,
-        2,
-        3,
-        3,
-        4,
-        4,
-        5,
-        5,
-        6,
-        6,
-        7,
-        7,
-        8,
-        8,
-        9,
-        9,
-        9,
-        9,
+    features = (
+        _feature("cleric.spellcasting", "magic", 36),
+        _feature("cleric.channel_divinity", "magic", 37),
+        _feature("cleric.life_domain", "advancement", 40),
+        _feature("cleric.disciple_of_life", "magic", 40, "cleric.life_domain"),
+        _feature(
+            "cleric.preserve_life",
+            "magic",
+            40,
+            "cleric.life_domain",
+            "cleric.channel_divinity",
+        ),
+        _feature("fighter.second_wind", "combat", 47),
+        _feature("fighter.weapon_mastery", "combat", 47),
+        _feature("fighter.action_surge", "combat", 47),
+        _feature("fighter.tactical_mind", "combat", 47, "fighter.second_wind"),
+        _feature("fighter.champion", "advancement", 49),
+        _feature("fighter.improved_critical", "combat", 49, "fighter.champion"),
+        _feature("fighter.remarkable_athlete", "combat", 49, "fighter.champion"),
+        _feature("rogue.expertise", "advancement", 61),
+        _feature("rogue.sneak_attack", "combat", 61),
+        _feature("rogue.thieves_cant", "advancement", 62),
+        _feature("rogue.weapon_mastery", "combat", 62),
+        _feature("rogue.cunning_action", "combat", 62),
+        _feature("rogue.thief", "advancement", 64),
+        _feature("rogue.steady_aim", "combat", 62),
+        _feature("rogue.fast_hands", "combat", 64, "rogue.thief"),
+        _feature("rogue.second_story_work", "advancement", 64, "rogue.thief"),
+        _feature("wizard.spellcasting", "magic", 77),
+        _feature("wizard.ritual_adept", "magic", 78),
+        _feature("wizard.arcane_recovery", "magic", 78),
+        _feature("wizard.scholar", "advancement", 78),
+        _feature("wizard.evoker", "advancement", 82),
+        _feature("wizard.evocation_savant", "magic", 82, "wizard.evoker"),
+        _feature("wizard.potent_cantrip", "magic", 82, "wizard.evoker"),
     )
-    half_maximum_spell_level = (
-        1,
-        1,
-        1,
-        1,
-        2,
-        2,
-        2,
-        2,
-        3,
-        3,
-        3,
-        3,
-        4,
-        4,
-        4,
-        4,
-        5,
-        5,
-        5,
-        5,
-    )
-    prepared_full = (
-        4,
-        5,
-        6,
-        7,
-        9,
-        10,
-        11,
-        12,
-        14,
-        15,
-        16,
-        16,
-        17,
-        17,
-        18,
-        18,
-        19,
-        20,
-        21,
-        22,
-    )
-    prepared_half = (
-        2,
-        3,
-        4,
-        5,
-        6,
-        6,
-        7,
-        7,
-        9,
-        9,
-        10,
-        10,
-        11,
-        11,
-        12,
-        12,
-        14,
-        14,
-        15,
-        15,
-    )
-    spell_access_data = {
-        "Bard": {
-            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
-            "prepared": prepared_full,
-            "maximum": full_maximum_spell_level,
-            "slots": _FULL_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.31: Bard Features table",
-        },
-        "Cleric": {
-            "cantrips": (3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
-            "prepared": prepared_full,
-            "maximum": full_maximum_spell_level,
-            "slots": _FULL_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.36: Cleric Features table",
-        },
-        "Druid": {
-            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
-            "prepared": prepared_full,
-            "maximum": full_maximum_spell_level,
-            "slots": _FULL_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.41: Druid Features table",
-        },
-        "Paladin": {
-            "cantrips": (0,) * MAX_CLASS_LEVEL,
-            "prepared": prepared_half,
-            "maximum": half_maximum_spell_level,
-            "slots": _HALF_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.53: Paladin Features table",
-        },
-        "Ranger": {
-            "cantrips": (0,) * MAX_CLASS_LEVEL,
-            "prepared": prepared_half,
-            "maximum": half_maximum_spell_level,
-            "slots": _HALF_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.57: Ranger Features table",
-        },
-        "Sorcerer": {
-            "cantrips": (4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),
-            "prepared": (
-                2,
-                4,
-                6,
-                7,
-                9,
-                10,
-                11,
-                12,
-                14,
-                15,
-                16,
-                16,
-                17,
-                17,
-                18,
-                18,
-                19,
-                20,
-                21,
-                22,
+    skills = {
+        "Cleric": (2, ("History", "Insight", "Medicine", "Persuasion", "Religion"), 36),
+        "Fighter": (
+            2,
+            (
+                "Acrobatics",
+                "Animal Handling",
+                "Athletics",
+                "History",
+                "Insight",
+                "Intimidation",
+                "Perception",
+                "Persuasion",
+                "Survival",
             ),
-            "maximum": full_maximum_spell_level,
-            "slots": _FULL_SLOT_COLUMNS,
-            "reference": "SRD 5.2.1 p.64: Sorcerer Features table",
-        },
-        "Warlock": {
-            "cantrips": (2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4),
-            "prepared": (
-                2,
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-                9,
-                10,
-                10,
-                11,
-                11,
-                12,
-                12,
-                13,
-                13,
-                14,
-                14,
-                15,
-                15,
+            46,
+        ),
+        "Rogue": (
+            4,
+            (
+                "Acrobatics",
+                "Athletics",
+                "Deception",
+                "Insight",
+                "Intimidation",
+                "Investigation",
+                "Perception",
+                "Persuasion",
+                "Sleight of Hand",
+                "Stealth",
             ),
-            "maximum": full_maximum_spell_level,
-            "slots": _slot_columns(_NO_SPELL_SLOTS, slot_levels=9),
-            "pact_slots": (1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4),
-            "pact_levels": (1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
-            "reference": "SRD 5.2.1 p.70: Warlock Features table",
-        },
-        "Wizard": {
-            "cantrips": (3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5),
-            "prepared": (
-                4,
-                5,
-                6,
-                7,
-                9,
-                10,
-                11,
-                12,
-                14,
-                15,
-                16,
-                16,
-                17,
-                18,
-                19,
-                21,
-                22,
-                23,
-                24,
-                25,
+            61,
+        ),
+        "Wizard": (
+            2,
+            (
+                "Arcana",
+                "History",
+                "Insight",
+                "Investigation",
+                "Medicine",
+                "Nature",
+                "Religion",
             ),
-            "maximum": full_maximum_spell_level,
-            "slots": _FULL_SLOT_COLUMNS,
-            "spellbook_entries": tuple(6 + 2 * (level - 1) for level in range(1, 21)),
-            "reference": "SRD 5.2.1 p.77: Wizard Features table",
-        },
+            77,
+        ),
     }
-    features: list[FeatureDefinition] = []
-    resources: list[ResourceProgression] = []
-    spell_access: list[SpellAccess] = []
-    choices: list[ChoiceSet] = []
-    definitions: list[ClassDefinition] = []
-    for name in SELECTABLE_CLASS_NAMES:
-        summary = _CLASS_SUMMARIES[name]
-        key = name.lower()
-        skill_choice_key = f"{key}.skills"
-        choices.append(
-            ChoiceSet(
-                skill_choice_key,
-                summary["skill_choices"],
-                tuple(summary["skills_available"]),
-                "none",
-                (),
-                "grant",
-            )
+    choices = [
+        ChoiceSet(
+            f"{name.lower()}.skills",
+            count,
+            options,
+            "none",
+            (),
+            "grant",
+            srd_reference=f"SRD 5.2.1 p.{page}: Core {name} Traits",
         )
-        feature_key = f"{key}.class_features"
-        features.append(
-            FeatureDefinition(
-                feature_key,
-                "advancement",
-                (),
-                "automatic",
-                "upgrade",
-                "class progression",
-            )
-        )
-        resource_keys: tuple[str, ...] = ()
-        if resources_by_class[name]:
-            resource_name, recovery = resources_by_class[name]
-            resource_key = f"{key}.{resource_name}"
-            # A data-only capacity curve; the owning system decides how a use is spent.
-            maxima = tuple(1 + (level - 1) // 4 for level in range(1, 21))
-            resources.append(
-                ResourceProgression(resource_key, "resources", maxima, recovery)
-            )
-            resource_keys = (resource_key,)
-        spell_keys: tuple[str, ...] = ()
-        if name in spell_access_data:
-            access_data = spell_access_data[name]
-            spell_key = f"{key}.spell_access"
-            spell_access.append(
-                SpellAccess(
-                    spell_key,
-                    str(
-                        summary["primary_ability"]
-                        if isinstance(summary["primary_ability"], str)
-                        else summary["primary_ability"][-1]
-                    ),
-                    access_data["cantrips"],
-                    (0,) * MAX_CLASS_LEVEL,
-                    access_data["prepared"],
-                    access_data.get("spellbook_entries", (0,) * MAX_CLASS_LEVEL),
-                    access_data["maximum"],
-                    access_data["slots"],
-                    access_data.get("pact_slots", _NO_PACT_SLOTS),
-                    access_data.get("pact_levels", _NO_PACT_SLOTS),
-                    access_data["reference"],
-                    preparation_timing=access_data.get(
-                        "preparation_timing", "long_rest"
-                    ),
-                )
-            )
-            spell_keys = (spell_key,)
-        levels = tuple(
+        for name, (count, options, page) in skills.items()
+    ]
+    choices += [
+        ChoiceSet(
+            "cleric.divine_order",
+            1,
+            ("Protector", "Thaumaturge"),
+            "none",
+            (),
+            "resolution",
+            "feature",
+            "SRD 5.2.1 p.37: Divine Order",
+        ),
+        ChoiceSet(
+            "fighter.fighting_style",
+            1,
+            ("Archery", "Defense", "Great Weapon Fighting", "Two-Weapon Fighting"),
+            "none",
+            (),
+            "resolution",
+            "feature",
+            "SRD 5.2.1 p.46: Fighting Style",
+        ),
+        ChoiceSet(
+            "rogue.expertise",
+            2,
+            skills["Rogue"][1],
+            "none",
+            (),
+            "resolution",
+            "feature",
+            "SRD 5.2.1 p.61: Expertise",
+        ),
+        ChoiceSet(
+            "wizard.scholar",
+            1,
+            ("Arcana", "History", "Investigation", "Medicine", "Nature", "Religion"),
+            "none",
+            (),
+            "resolution",
+            "feature",
+            "SRD 5.2.1 p.78: Scholar",
+        ),
+    ]
+    resources = (
+        ResourceProgression(
+            "fighter.second_wind",
+            "resources",
+            (2, 2, 2),
+            "short_rest",
+            "SRD 5.2.1 p.47: Second Wind",
+        ),
+        ResourceProgression(
+            "fighter.action_surge",
+            "resources",
+            (0, 1, 1),
+            "short_rest",
+            "SRD 5.2.1 p.47: Action Surge",
+        ),
+        ResourceProgression(
+            "cleric.channel_divinity",
+            "resources",
+            (0, 2, 2),
+            "short_rest",
+            "SRD 5.2.1 p.37: Channel Divinity",
+        ),
+        ResourceProgression(
+            "wizard.arcane_recovery",
+            "resources",
+            (1, 1, 1),
+            "long_rest",
+            "SRD 5.2.1 p.78: Arcane Recovery",
+        ),
+    )
+    zero = (0, 0, 0)
+    slots = ((2, 3, 4), (0, 0, 2), zero, zero, zero, zero, zero, zero, zero)
+    spell_access = (
+        SpellAccess(
+            "cleric.spell_access",
+            "Wisdom",
+            (3, 3, 3),
+            zero,
+            (4, 5, 6),
+            zero,
+            (1, 1, 2),
+            slots,
+            zero,
+            zero,
+            "SRD 5.2.1 p.36: Cleric Features table",
+            "table count",
+        ),
+        SpellAccess(
+            "wizard.spell_access",
+            "Intelligence",
+            (3, 3, 3),
+            zero,
+            (4, 5, 6),
+            (6, 8, 10),
+            (1, 1, 2),
+            slots,
+            zero,
+            zero,
+            "SRD 5.2.1 p.77: Wizard Features table",
+            "table count",
+        ),
+    )
+    core = {
+        "Cleric": (
+            ("Wisdom",),
+            "Wisdom",
+            8,
+            ("Wisdom", "Charisma"),
+            ("Light", "Medium", "Shields"),
+            ("simple",),
+            (),
+            "Simple weapons",
+            "Gods",
+            "High",
+            36,
+        ),
+        "Fighter": (
+            ("Strength", "Dexterity"),
+            None,
+            10,
+            ("Strength", "Constitution"),
+            ("Light", "Medium", "Heavy", "Shields"),
+            ("simple", "martial"),
+            (),
+            "Simple and Martial weapons",
+            "Battle",
+            "Average",
+            46,
+        ),
+        "Rogue": (
+            ("Dexterity",),
+            None,
+            8,
+            ("Dexterity", "Intelligence"),
+            ("Light",),
+            ("simple",),
+            ("finesse", "light"),
+            "Simple weapons and Martial weapons with Finesse or Light",
+            "Stealth",
+            "Low",
+            61,
+        ),
+        "Wizard": (
+            ("Intelligence",),
+            "Intelligence",
+            6,
+            ("Intelligence", "Wisdom"),
+            (),
+            ("simple",),
+            (),
+            "Simple weapons",
+            "Arcane study",
+            "High",
+            77,
+        ),
+    }
+    levels = {
+        "Cleric": (
             LevelGrants(
-                level,
-                (feature_key,),
-                resource_keys,
-                spell_keys,
-                (skill_choice_key,) if level == 1 else (),
-            )
-            for level in range(1, 21)
-        )
-        primary = summary["primary_ability"]
+                1,
+                ("cleric.spellcasting",),
+                spell_access_keys=("cleric.spell_access",),
+                choice_keys=("cleric.skills", "cleric.divine_order"),
+            ),
+            LevelGrants(
+                2,
+                ("cleric.channel_divinity",),
+                ("cleric.channel_divinity",),
+                ("cleric.spell_access",),
+            ),
+            LevelGrants(
+                3,
+                (
+                    "cleric.life_domain",
+                    "cleric.disciple_of_life",
+                    "cleric.preserve_life",
+                ),
+                ("cleric.channel_divinity",),
+                ("cleric.spell_access",),
+            ),
+        ),
+        "Fighter": (
+            LevelGrants(
+                1,
+                ("fighter.second_wind", "fighter.weapon_mastery"),
+                ("fighter.second_wind",),
+                choice_keys=("fighter.skills", "fighter.fighting_style"),
+            ),
+            LevelGrants(
+                2,
+                ("fighter.action_surge", "fighter.tactical_mind"),
+                ("fighter.second_wind", "fighter.action_surge"),
+            ),
+            LevelGrants(
+                3,
+                (
+                    "fighter.champion",
+                    "fighter.improved_critical",
+                    "fighter.remarkable_athlete",
+                ),
+                ("fighter.second_wind", "fighter.action_surge"),
+            ),
+        ),
+        "Rogue": (
+            LevelGrants(
+                1,
+                (
+                    "rogue.expertise",
+                    "rogue.sneak_attack",
+                    "rogue.thieves_cant",
+                    "rogue.weapon_mastery",
+                ),
+                choice_keys=("rogue.skills", "rogue.expertise"),
+            ),
+            LevelGrants(2, ("rogue.cunning_action",)),
+            LevelGrants(
+                3,
+                (
+                    "rogue.thief",
+                    "rogue.steady_aim",
+                    "rogue.fast_hands",
+                    "rogue.second_story_work",
+                ),
+            ),
+        ),
+        "Wizard": (
+            LevelGrants(
+                1,
+                (
+                    "wizard.spellcasting",
+                    "wizard.ritual_adept",
+                    "wizard.arcane_recovery",
+                ),
+                ("wizard.arcane_recovery",),
+                ("wizard.spell_access",),
+                ("wizard.skills",),
+            ),
+            LevelGrants(
+                2,
+                ("wizard.scholar",),
+                ("wizard.arcane_recovery",),
+                ("wizard.spell_access",),
+                ("wizard.scholar",),
+            ),
+            LevelGrants(
+                3,
+                ("wizard.evoker", "wizard.evocation_savant", "wizard.potent_cantrip"),
+                ("wizard.arcane_recovery",),
+                ("wizard.spell_access",),
+            ),
+        ),
+    }
+    definitions = []
+    for name in SELECTABLE_CLASS_NAMES:
+        (
+            primary,
+            casting,
+            die,
+            saves,
+            armor,
+            categories,
+            weapons,
+            prose,
+            likes,
+            complexity,
+            page,
+        ) = core[name]
         definitions.append(
             ClassDefinition(
                 name,
                 name,
-                summary["likes"],
-                (primary,) if isinstance(primary, str) else tuple(primary),
-                (
-                    primary
-                    if isinstance(primary, str) and name in spell_access_data
-                    else (primary[-1] if name in spell_access_data else None)
-                ),
-                summary["hit_die"],
-                summary["hit_die"] // 2 + 1,
-                tuple(summary["saving_throws"]),
-                tuple(summary["armor_training"]),
-                tuple(summary["weapon_categories"]),
-                tuple(summary["weapon_proficiencies"]),
-                summary["weapon_profs"],
-                summary["complexity"],
-                skill_choice_key,
-                class_references[name],
-                levels,
+                likes,
+                primary,
+                casting,
+                die,
+                die // 2 + 1,
+                saves,
+                armor,
+                categories,
+                weapons,
+                prose,
+                complexity,
+                f"{name.lower()}.skills",
+                f"SRD 5.2.1 p.{page}: Core {name} Traits",
+                levels[name],
             )
         )
     return build_registry(definitions, features, resources, spell_access, choices)

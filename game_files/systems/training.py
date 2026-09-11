@@ -326,7 +326,11 @@ def _validate_option(
         character.attributes.get("skill_proficiencies") or []
     ):
         raise TrainingError("You already know that option.")
-    if choice.option_adapter != "skill":
+    if choice.option_adapter == "feature" and option in (
+        character.attributes.get("class_feature_choices") or []
+    ):
+        raise TrainingError("You already know that option.")
+    if choice.option_adapter not in {"skill", "feature"}:
         _validate_unowned_magic_option(character, choice, option)
     if any(
         option in group and any(item in group for item in selected)
@@ -339,6 +343,10 @@ def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> Non
     if choice.option_adapter == "skill":
         known = list(character.attributes.get("skill_proficiencies") or [])
         character.db.skill_proficiencies = sorted(set(known + options))
+        return
+    if choice.option_adapter == "feature":
+        known = list(character.attributes.get("class_feature_choices") or [])
+        character.db.class_feature_choices = sorted(set(known + options))
         return
     try:
         from systems.magic_actions import (

@@ -47,9 +47,12 @@ class TestAdvancement(EvenniaTest):
             result.applied_grants,
             (
                 "hp_level_2",
-                "fighter.class_features",
+                "fighter.action_surge",
+                "fighter.tactical_mind",
                 "hp_level_3",
-                "fighter.class_features",
+                "fighter.champion",
+                "fighter.improved_critical",
+                "fighter.remarkable_athlete",
             ),
         )
         # hp_base stores the fixed six; CharacterStats applies CON once/level.
@@ -58,7 +61,15 @@ class TestAdvancement(EvenniaTest):
         self.assertEqual(self.char1.stats.hp_current, 21)
         self.assertEqual(
             self.char1.db.class_progression["grants"],
-            ["fighter.class_features"] * 3,
+            [
+                "fighter.second_wind",
+                "fighter.weapon_mastery",
+                "fighter.action_surge",
+                "fighter.tactical_mind",
+                "fighter.champion",
+                "fighter.improved_critical",
+                "fighter.remarkable_athlete",
+            ],
         )
 
     def test_level_one_records_the_registry_identity_without_copying_definitions(self):
