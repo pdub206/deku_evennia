@@ -299,6 +299,62 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "acid arrow",
+        "aliases": ["arrow of acid"],
+        "category": "Magic",
+        "text": """
+            Acid Arrow is a level 2 Wizard evocation spell. Make a spell attack
+            against one detected hostile creature in your room. A hit deals
+            6d4 Acid damage; a miss still deals 2d4. Casting takes one combat
+            action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: the hit's delayed 2d4 damage is resolved
+            immediately. Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "scorching ray",
+        "aliases": ["scorching"],
+        "category": "Magic",
+        "text": """
+            Scorching Ray is a level 2 Wizard evocation spell. Make three
+            separate spell attacks against one detected hostile creature in
+            your room. Each hit deals 2d6 Fire damage. Casting takes one combat
+            action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: all three rays must target the same creature.
+            Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "shatter",
+        "aliases": ["shattering"],
+        "category": "Magic",
+        "text": """
+            Shatter is a level 2 Wizard evocation spell. One detected hostile
+            creature in your room makes a Constitution saving throw, taking
+            3d8 Thunder damage on a failure or half as much on a success. It
+            takes one combat action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a
+            sphere. Object damage and the Construct save penalty are omitted.
+        """,
+    },
+    {
+        "key": "blur",
+        "aliases": ["blurred"],
+        "category": "Magic",
+        "text": """
+            Blur is a level 2 Wizard illusion spell. Weapon and spell attacks
+            against you have Disadvantage for up to 10 six-second effect pulses
+            while you concentrate. It takes one combat action and expends one
+            level 2 Wizard spell slot.
+
+            The alpha has no Blindsight or Truesight exception because those
+            senses are not released. Higher-slot casting is unavailable.
+        """,
+    },
+    {
         "key": "check diagnostics",
         "aliases": ["@check", "builder checks", "adv-04"],
         "category": "Building",

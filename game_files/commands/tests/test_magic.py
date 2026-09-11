@@ -476,3 +476,107 @@ class TestMagicCommands(EvenniaCommandTest):
         self.assertTrue(consume_prone_action(self.char2))
         self.assertFalse(self.char2.effects.has("combat.prone"))
         self.assertEqual(resource_current(self.char1, "wizard.spell_slot.1"), 1)
+
+    def test_released_acid_arrow_deals_miss_damage_and_spends_level_two_slot(self):
+        """Acid Arrow deals its reduced miss damage through canonical injury."""
+        self.char1.db.level = 3
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.acid_arrow")
+        prepare_action(self.char1, "wizard.acid_arrow")
+        self.char2.db.hp_max_override = 20
+        self.char2.db.hp_current = 20
+
+        with patch("systems.dice.roll", side_effect=(1, 2, 3)):
+            result = cast_action(
+                self.char1,
+                "acid arrow",
+                target_name=self.char2.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.reason, "miss")
+        self.assertEqual(result.amount, 5)
+        self.assertEqual(self.char2.stats.hp_current, 15)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 1)
+
+    def test_released_scorching_ray_resolves_three_independent_attacks(self):
+        """Scorching Ray totals damage only for rays that hit one alpha target."""
+        self.char1.db.level = 3
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.scorching_ray")
+        prepare_action(self.char1, "wizard.scorching_ray")
+        self.char2.db.hp_max_override = 30
+        self.char2.db.hp_current = 30
+
+        with patch("systems.dice.roll", side_effect=(20, 1, 15, 3, 4, 5, 6)):
+            result = cast_action(
+                self.char1,
+                "scorching ray",
+                target_name=self.char2.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.amount, 18)
+        self.assertEqual(self.char2.stats.hp_current, 12)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 1)
+
+    def test_released_shatter_halves_damage_on_a_successful_save(self):
+        """Shatter applies its declared Constitution save to level-two damage."""
+        self.char1.db.level = 3
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.shatter")
+        prepare_action(self.char1, "wizard.shatter")
+        self.char2.db.hp_max_override = 30
+        self.char2.db.hp_current = 30
+        saved = RollResult(20, 0, 20, 10, True)
+
+        with (
+            patch("systems.dice.roll_check", return_value=saved),
+            patch("systems.magic_actions._roll_dice", return_value=15),
+        ):
+            result = cast_action(
+                self.char1,
+                "shatter",
+                target_name=self.char2.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(result.reason, "saved")
+        self.assertEqual(result.amount, 7)
+        self.assertEqual(self.char2.stats.hp_current, 23)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 1)
+
+    def test_released_blur_imposes_disadvantage_on_spell_attacks(self):
+        """Blur links concentration and forces spell attacks to roll twice."""
+        self.char1.db.level = 3
+        mark_preparation_window(self.char1, 1)
+        grant_spellbook_entry(self.char1, "wizard.blur")
+        prepare_action(self.char1, "wizard.blur")
+        result = cast_action(self.char1, "blur", registry=MAGIC_REGISTRY)
+
+        self.assertEqual(result.reason, "effect_applied")
+        self.assertTrue(self.char1.effects.has("magic.blur"))
+        self.assertIsNotNone(self.char1.attributes.get("magic_concentration"))
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 1)
+
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        initialize_level_one(self.char2, class_key="Wizard", hp_base=6)
+        grant_action(self.char2, "wizard.fire_bolt", AccessMode.LEARNED)
+        self.char2.db.is_player_character = False
+        self.char1.db.is_player_character = False
+        hit_points = self.char1.stats.hp_current
+        with (
+            patch("systems.attacks.can_attack") as can_attack,
+            patch("systems.dice.roll", side_effect=(20, 1)),
+        ):
+            can_attack.return_value.allowed = True
+            attack = cast_action(
+                self.char2,
+                "fire bolt",
+                target_name=self.char1.key,
+                registry=MAGIC_REGISTRY,
+            )
+
+        self.assertEqual(attack.reason, "miss")
+        self.assertEqual(self.char1.stats.hp_current, hit_points)

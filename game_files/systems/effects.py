@@ -1111,3 +1111,17 @@ EFFECT_REGISTRY.register(
         removal_categories=frozenset({"magic", "physical"}),
     )
 )
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.blur",
+        name="Blur",
+        duration=10,
+        clears_on_death=True,
+        conditions=frozenset({"blurred"}),
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Your outline becomes blurred."),
+            "expire": EffectMessage(target="Your outline stops shifting."),
+        },
+    )
+)

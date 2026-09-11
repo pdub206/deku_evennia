@@ -823,7 +823,11 @@ def _snapshot(
         (target.id,),
         caster.stats.level,
         8 + proficiency + modifier if definition.save is not None else None,
-        proficiency + modifier if definition.handler_key == "spell_attack" else None,
+        (
+            proficiency + modifier
+            if definition.handler_key in {"spell_attack", "acid_arrow", "scorching_ray"}
+            else None
+        ),
         modifier,
         MappingProxyType(reservation),
     )
@@ -881,6 +885,10 @@ def _execute(
         start_fight(caster, target)
         _message(caster, target, definition, "You strike")
         return MagicActionResult(True, "hit", definition, target, snapshot, amount)
+    if definition.handler_key == "acid_arrow":
+        return _acid_arrow(caster, definition, target, snapshot)
+    if definition.handler_key == "scorching_ray":
+        return _scorching_ray(caster, definition, target, snapshot)
     if definition.handler_key == "saving_throw":
         if definition.damage is not None:
             return _saving_throw_damage(caster, definition, target, snapshot)
@@ -1012,10 +1020,7 @@ def _spell_attack(
     caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
 ) -> MagicActionResult:
     """Resolve a snapshotted spell attack through canonical injury handling."""
-    from systems.dice import roll
-
-    roll_value = roll(20)
-    if roll_value + (snapshot.attack_bonus or 0) < target.stats.armor_class:
+    if not _spell_attack_hits(target, snapshot):
         _message(caster, target, definition, "You miss")
         return MagicActionResult(True, "miss", definition, target, snapshot)
     amount = _roll_dice(definition.damage.dice)
@@ -1031,6 +1036,67 @@ def _spell_attack(
         caster, target, definition, f"You hit {target.get_display_name(caster)} with"
     )
     return MagicActionResult(True, "hit", definition, target, snapshot, amount)
+
+
+def _acid_arrow(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Resolve Acid Arrow's miss damage and compressed delayed hit damage."""
+    hit = _spell_attack_hits(target, snapshot)
+    if hit:
+        amount = _roll_dice(definition.damage.dice)
+    else:
+        from systems.dice import roll
+
+        amount = roll(4) + roll(4)
+    injury = apply_damage(
+        target, amount, emit_messages=False, source=caster, source_kind="magic"
+    )
+    if not injury.accepted:
+        raise MagicActionError("That target cannot be affected right now.")
+    from systems.combat import start_fight
+
+    start_fight(caster, target)
+    _message(caster, target, definition, "You hit" if hit else "You splash")
+    return MagicActionResult(
+        True, "hit" if hit else "miss", definition, target, snapshot, amount
+    )
+
+
+def _scorching_ray(
+    caster: Any, definition: MagicDefinition, target: Any, snapshot: CastSnapshot
+) -> MagicActionResult:
+    """Resolve three independent rays against one alpha target."""
+    hits = sum(_spell_attack_hits(target, snapshot) for _ in range(3))
+    amount = sum(_roll_dice(definition.damage.dice) for _ in range(hits))
+    if amount:
+        injury = apply_damage(
+            target, amount, emit_messages=False, source=caster, source_kind="magic"
+        )
+        if not injury.accepted:
+            raise MagicActionError("That target cannot be affected right now.")
+    from systems.combat import start_fight
+
+    start_fight(caster, target)
+    _message(caster, target, definition, f"You strike with {hits} ray(s) of")
+    return MagicActionResult(
+        True, "hit" if hits else "miss", definition, target, snapshot, amount
+    )
+
+
+def _spell_attack_hits(target: Any, snapshot: CastSnapshot) -> bool:
+    """Resolve one spell attack with natural rolls and magical concealment."""
+    from systems.dice import roll
+
+    natural_roll = roll(20)
+    if target.effects.has_condition("blurred"):
+        natural_roll = min(natural_roll, roll(20))
+    if natural_roll == 1:
+        return False
+    return (
+        natural_roll == 20
+        or natural_roll + (snapshot.attack_bonus or 0) >= target.stats.armor_class
+    )
 
 
 def _saving_throw_damage(

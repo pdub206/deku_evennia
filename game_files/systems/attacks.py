@@ -15,12 +15,16 @@ from typing import Any
 from systems.action_policy import ActionCategory
 from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult
-from systems.combat_math import (HIT_LOCATION_WEIGHTS,
-                                 resolve_attack_calculation)
+from systems.combat_math import HIT_LOCATION_WEIGHTS, resolve_attack_calculation
 from systems.dice import roll
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
-from systems.injury import (InjuryError, InjuryState, announce_transition,
-                            apply_damage, injury_record)
+from systems.injury import (
+    InjuryError,
+    InjuryState,
+    announce_transition,
+    apply_damage,
+    injury_record,
+)
 from systems.pulses import PulseEvent
 
 
@@ -146,6 +150,7 @@ def resolve_basic_attack(
         )
 
     profile = profile or attacker.stats.attack_profile()
+    has_disadvantage = has_disadvantage or target.effects.has_condition("blurred")
     target_injury = injury_record(target)
     target_unconscious = target_injury.state in {
         InjuryState.DYING,
