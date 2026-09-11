@@ -1,8 +1,8 @@
 """ADV-01's canonical, transactional experience and level service.
 
 The module deliberately owns only XP, level, and the fixed hit-point gain
-available before ADV-02's progression registry exists.  Callers must use a
-stable source identity; a duplicate identity is a durable no-op.
+available before ADV-02's alpha registry is complete. Callers must use a stable
+source identity; a duplicate identity is a durable no-op.
 """
 
 from __future__ import annotations
@@ -10,16 +10,20 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
+from string import hexdigits
 from typing import Any
 
 from django.db import transaction
 from systems.progression import CLASS_PROGRESSION, RegistryValidationError
 
-MAX_LEVEL = 20
+SRD_MAX_LEVEL = 20
+RELEASE_LEVEL_CAP = 3
+# Compatibility for callers that mean the highest presently attainable level.
+MAX_LEVEL = RELEASE_LEVEL_CAP
 MAX_LEDGER_ENTRIES = 128
 MAX_COMPACTED_SOURCES = 4096
 ADVANCEMENT_ATTRIBUTE = "advancement_ledger"
-ADVANCEMENT_VERSION = 1
+ADVANCEMENT_VERSION = 2
 
 # SRD 5.2.1, cumulative experience points for character levels 1--20.
 XP_THRESHOLDS = (
@@ -50,6 +54,14 @@ class AdvancementError(ValueError):
     """Raised when an XP operation cannot safely be completed."""
 
 
+class _RepairRequired(AdvancementError):
+    """Carry an inspectable quarantine reason out of a rolled-back transaction."""
+
+    def __init__(self, reason: str):
+        super().__init__("Character advancement requires staff repair.")
+        self.reason = reason
+
+
 @dataclass(frozen=True)
 class AdvancementResult:
     """The committed or idempotently recovered outcome of an XP operation."""
@@ -67,9 +79,14 @@ class AdvancementResult:
 
 
 def earned_level(xp: int) -> int:
-    """Return the effective 1--20 level earned by a cumulative XP total."""
+    """Return the uncapped SRD level earned by a cumulative XP total."""
     _non_negative_integer(xp, "XP")
-    return min(MAX_LEVEL, sum(xp >= threshold for threshold in XP_THRESHOLDS))
+    return min(SRD_MAX_LEVEL, sum(xp >= threshold for threshold in XP_THRESHOLDS))
+
+
+def effective_level(xp: int) -> int:
+    """Return the level currently attainable under the alpha release cap."""
+    return min(RELEASE_LEVEL_CAP, earned_level(xp))
 
 
 def award_xp(
@@ -83,69 +100,74 @@ def award_xp(
     """
     _non_negative_integer(amount, "XP award")
     source = _source_digest(source_kind, source_id)
-    _validate_character(character)
+    try:
+        with transaction.atomic():
+            _lock_character(character)
+            _validate_character(character)
+            old_xp, stored_level = _stored_xp_and_level(character)
+            old_level = effective_level(old_xp)
+            if stored_level != old_level:
+                raise _RepairRequired("level_xp_mismatch")
+            _progression_state(character, old_level)
 
-    with transaction.atomic():
-        _lock_character(character)
-        ledger = _ledger(character)
-        prior = _find_entry(ledger, source)
-        if prior is not None:
-            if prior["amount"] != amount:
+            ledger = _ledger(character)
+            prior = _find_entry(ledger, source)
+            if prior is not None:
+                if prior["amount"] != amount:
+                    return _result_from_payload(
+                        prior["result"], applied=False, reason="conflicting_source"
+                    )
                 return _result_from_payload(
-                    prior["result"], applied=False, reason="conflicting_source"
+                    prior["result"], applied=False, reason="duplicate_source"
                 )
-            return _result_from_payload(
-                prior["result"], applied=False, reason="duplicate_source"
-            )
-        if source in ledger["compacted_sources"]:
-            return AdvancementResult(
-                character.stats.xp,
-                character.stats.xp,
-                character.stats.level,
-                character.stats.level,
-                (),
-                (),
-                (),
-                character.stats.level == MAX_LEVEL,
-                False,
-                "compacted_source",
-            )
+            if source in ledger["compacted_sources"]:
+                return AdvancementResult(
+                    old_xp,
+                    old_xp,
+                    old_level,
+                    old_level,
+                    (),
+                    (),
+                    (),
+                    old_level == RELEASE_LEVEL_CAP,
+                    False,
+                    "compacted_source",
+                )
 
-        old_xp, stored_level = _stored_xp_and_level(character)
-        old_level = earned_level(old_xp)
-        if stored_level != old_level:
-            _mark_repair_required(character, "level_xp_mismatch")
-            raise AdvancementError("Character advancement requires staff repair.")
-
-        new_xp = old_xp + amount
-        new_level = earned_level(new_xp)
-        missing_hp = character.stats.hp_max - character.stats.hp_current
-        crossed = tuple(
-            threshold
-            for threshold in XP_THRESHOLDS[old_level:new_level]
-            if threshold <= new_xp
-        )
-        grants, pending_choices = _apply_levels(character, old_level, new_level)
-        character.db.xp = new_xp
-        character.db.level = new_level
-        _preserve_missing_hp(character, missing_hp)
-        result = AdvancementResult(
-            old_xp,
-            new_xp,
-            old_level,
-            new_level,
-            crossed,
-            tuple(grants),
-            pending_choices,
-            new_level == MAX_LEVEL,
-            True,
-            "awarded" if amount else "zero_award",
-        )
-        ledger["entries"].append(
-            {"source": source, "amount": amount, "result": _result_payload(result)}
-        )
-        _compact_ledger(ledger)
-        _write_ledger(character, ledger)
+            new_xp = old_xp + amount
+            new_level = effective_level(new_xp)
+            missing_hp = character.stats.hp_max - character.stats.hp_current
+            crossed = tuple(XP_THRESHOLDS[old_level:new_level])
+            grants, pending_choices = _apply_levels(character, old_level, new_level)
+            character.db.xp = new_xp
+            character.db.level = new_level
+            _preserve_missing_hp(character, missing_hp)
+            result = AdvancementResult(
+                old_xp,
+                new_xp,
+                old_level,
+                new_level,
+                crossed,
+                tuple(grants),
+                pending_choices,
+                new_level == RELEASE_LEVEL_CAP,
+                True,
+                "awarded" if amount else "zero_award",
+            )
+            ledger["entries"].append(
+                {"source": source, "amount": amount, "result": _result_payload(result)}
+            )
+            _compact_ledger(ledger)
+            _write_ledger(character, ledger)
+    except _RepairRequired as err:
+        _mark_repair_required(character, err.reason)
+        raise AdvancementError("Character advancement requires staff repair.") from err
+    except Exception:
+        # Django rolls persistent writes back, but Evennia's in-process
+        # Attribute cache must also forget values written inside the failed
+        # transaction.
+        _discard_attribute_cache(character)
+        raise
     return result
 
 
@@ -196,19 +218,28 @@ def _apply_levels(
     except RegistryValidationError as err:
         raise AdvancementError("Character advancement requires staff repair.") from err
     constitution = character.stats.ability_modifier("Constitution")
-    gain = max(1, definition.fixed_hp_gain + constitution)
-    character.db.hp_base = character.stats.hp_base + gain * (new_level - old_level)
+    # CharacterStats applies Constitution once per current level. Store only
+    # the class basis here, increasing it when necessary to preserve the SRD's
+    # minimum one total HP gained per level for an extreme negative modifier.
+    basis_gain = max(definition.fixed_hp_gain, 1 - constitution)
+    character.db.hp_base = character.stats.hp_base + basis_gain * (
+        new_level - old_level
+    )
     from systems.training import initialize_choice_entitlements
 
     pending: list[str] = []
+    applied: list[str] = []
+    progression = _progression_state(character, old_level)
     for level in range(old_level + 1, new_level + 1):
-        choices = definition.grants_at(level).choice_keys
+        level_grants = definition.grants_at(level)
+        choices = level_grants.choice_keys
         initialize_choice_entitlements(character, definition.key, level)
         pending.extend(choices)
-    return (
-        [f"hp_level_{level}" for level in range(old_level + 1, new_level + 1)],
-        tuple(pending),
-    )
+        applied.append(f"hp_level_{level}")
+        applied.extend(level_grants.automatic_feature_keys)
+        progression["grants"].extend(level_grants.automatic_feature_keys)
+    character.db.class_progression = progression
+    return applied, tuple(pending)
 
 
 def _preserve_missing_hp(character: Any, missing_hp: int) -> None:
@@ -227,8 +258,7 @@ def _validate_character(character: Any) -> None:
     if character.attributes.get("advancement_repair_required"):
         raise AdvancementError("Character advancement requires staff repair.")
     if not CLASS_PROGRESSION.is_available(character.attributes.get("char_class")):
-        _mark_repair_required(character, "missing_or_unknown_class")
-        raise AdvancementError("Character advancement requires staff repair.")
+        raise _RepairRequired("missing_or_unknown_class")
 
 
 def _stored_xp_and_level(character: Any) -> tuple[int, int]:
@@ -245,11 +275,43 @@ def _stored_xp_and_level(character: Any) -> tuple[int, int]:
         or xp < 0
         or isinstance(level, bool)
         or not isinstance(level, int)
-        or not 1 <= level <= MAX_LEVEL
+        or not 1 <= level <= RELEASE_LEVEL_CAP
     ):
-        _mark_repair_required(character, "invalid_xp_or_level")
-        raise AdvancementError("Character advancement requires staff repair.")
+        raise _RepairRequired("invalid_xp_or_level")
     return xp, level
+
+
+def _progression_state(character: Any, level: int) -> dict[str, Any]:
+    """Return a safe mutable copy of the character's grant provenance."""
+    raw = character.attributes.get("class_progression")
+    class_key = character.attributes.get("char_class")
+    try:
+        definition = CLASS_PROGRESSION.class_for(class_key)
+        expected_grants = [
+            key
+            for grants in definition.levels[:level]
+            for key in grants.automatic_feature_keys
+        ]
+    except (RegistryValidationError, TypeError):
+        raise _RepairRequired("invalid_class_progression") from None
+    if (
+        not isinstance(raw, Mapping)
+        or set(raw) != {"class_key", "registry_version", "fingerprint", "grants"}
+        or raw["class_key"] != class_key
+        or raw["registry_version"] != CLASS_PROGRESSION.version
+        or raw["fingerprint"] != CLASS_PROGRESSION.fingerprint
+        or not isinstance(raw["grants"], Sequence)
+        or isinstance(raw["grants"], (str, bytes))
+        or any(not isinstance(key, str) or not key for key in raw["grants"])
+        or list(raw["grants"]) != expected_grants
+    ):
+        raise _RepairRequired("invalid_class_progression")
+    return {
+        "class_key": raw["class_key"],
+        "registry_version": raw["registry_version"],
+        "fingerprint": raw["fingerprint"],
+        "grants": list(raw["grants"]),
+    }
 
 
 def _lock_character(character: Any) -> None:
@@ -258,6 +320,10 @@ def _lock_character(character: Any) -> None:
     if not isinstance(object_id, int) or isinstance(object_id, bool) or object_id <= 0:
         raise AdvancementError("A saved character is required.")
     character.__class__.objects.select_for_update().get(pk=object_id)
+    # The caller may have populated Evennia's aggressive Attribute cache before
+    # waiting for this lock. Force all subsequent reads to see the winner's
+    # committed state rather than applying an award to that stale snapshot.
+    _discard_attribute_cache(character)
 
 
 def _source_digest(source_kind: str, source_id: str | int) -> str:
@@ -291,8 +357,7 @@ def _ledger(character: Any) -> dict[str, Any]:
     if raw is None:
         return _new_ledger()
     if not _valid_ledger(raw):
-        _mark_repair_required(character, "invalid_ledger")
-        raise AdvancementError("Character advancement requires staff repair.")
+        raise _RepairRequired("invalid_ledger")
     return {
         "version": ADVANCEMENT_VERSION,
         "entries": [dict(entry) for entry in raw["entries"]],
@@ -320,24 +385,39 @@ def _valid_ledger(raw: Any) -> bool:
     ):
         return False
     try:
-        return all(_valid_entry(entry) for entry in raw["entries"]) and all(
-            isinstance(source, str) and len(source) == 64
-            for source in raw["compacted_sources"]
+        entry_sources = [entry["source"] for entry in raw["entries"]]
+        compacted = list(raw["compacted_sources"])
+        return (
+            all(_valid_entry(entry) for entry in raw["entries"])
+            and all(_valid_digest(source) for source in compacted)
+            and len(set(entry_sources)) == len(entry_sources)
+            and len(set(compacted)) == len(compacted)
+            and not set(entry_sources).intersection(compacted)
         )
     except (AdvancementError, KeyError, TypeError):
         return False
 
 
 def _valid_entry(entry: Any) -> bool:
-    return (
+    if not (
         isinstance(entry, Mapping)
         and set(entry) == {"source", "amount", "result"}
-        and isinstance(entry["source"], str)
-        and len(entry["source"]) == 64
+        and _valid_digest(entry["source"])
         and isinstance(entry["amount"], int)
         and not isinstance(entry["amount"], bool)
         and entry["amount"] >= 0
-        and _result_from_payload(entry["result"]) is not None
+    ):
+        return False
+    result = _result_from_payload(entry["result"])
+    return result.new_xp - result.old_xp == entry["amount"]
+
+
+def _valid_digest(value: Any) -> bool:
+    """Return whether a stored source identity is a complete SHA-256 digest."""
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in hexdigits for character in value)
     )
 
 
@@ -354,7 +434,7 @@ def _compact_ledger(ledger: dict[str, Any]) -> None:
     # A full compacted identity ring remains bounded. At saturation, a caller
     # must use ADV-06 rather than silently losing replay protection.
     if len(ledger["compacted_sources"]) > MAX_COMPACTED_SOURCES:
-        raise AdvancementError("Advancement audit capacity requires staff repair.")
+        raise _RepairRequired("ledger_capacity")
 
 
 def _result_payload(result: AdvancementResult) -> dict[str, Any]:
@@ -389,13 +469,33 @@ def _result_from_payload(
     _non_negative_integer(raw["old_xp"], "Stored XP")
     _non_negative_integer(raw["new_xp"], "Stored XP")
     if not all(
-        isinstance(raw[key], int) and 1 <= raw[key] <= MAX_LEVEL
+        isinstance(raw[key], int)
+        and not isinstance(raw[key], bool)
+        and 1 <= raw[key] <= RELEASE_LEVEL_CAP
         for key in ("old_level", "new_level")
     ):
         raise AdvancementError("Stored level is invalid.")
     for key in ("crossed_thresholds", "applied_grants", "pending_choices"):
         if not isinstance(raw[key], Sequence) or isinstance(raw[key], (str, bytes)):
             raise AdvancementError("Stored advancement result is invalid.")
+    if (
+        raw["new_xp"] < raw["old_xp"]
+        or raw["new_level"] < raw["old_level"]
+        or effective_level(raw["old_xp"]) != raw["old_level"]
+        or effective_level(raw["new_xp"]) != raw["new_level"]
+        or tuple(raw["crossed_thresholds"])
+        != XP_THRESHOLDS[raw["old_level"] : raw["new_level"]]
+        or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in raw["crossed_thresholds"]
+        )
+        or any(
+            not isinstance(value, str) or not value
+            for key in ("applied_grants", "pending_choices")
+            for value in raw[key]
+        )
+    ):
+        raise AdvancementError("Stored advancement result is invalid.")
     if not isinstance(raw["capped"], bool) or not isinstance(raw["reason"], str):
         raise AdvancementError("Stored advancement result is invalid.")
     return AdvancementResult(
@@ -414,4 +514,12 @@ def _result_from_payload(
 
 def _mark_repair_required(character: Any, reason: str) -> None:
     """Persist a minimal, inspectable quarantine without altering XP or level."""
+    _discard_attribute_cache(character)
     character.db.advancement_repair_required = reason
+
+
+def _discard_attribute_cache(character: Any) -> None:
+    """Discard idmapper values that may outlive a database rollback or lock wait."""
+    for attribute in character.attributes.all():
+        attribute.flush_from_cache(force=True)
+    character.attributes.reset_cache()

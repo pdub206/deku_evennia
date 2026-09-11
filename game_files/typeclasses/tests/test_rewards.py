@@ -2,7 +2,7 @@
 
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
-from systems.advancement import initialize_level_one
+from systems.advancement import award_xp, initialize_level_one
 from systems.injury import apply_damage
 from systems.rewards import record_damage, reward_result
 
@@ -16,12 +16,17 @@ class TestCombatRewards(EvenniaTest):
         self.char1.db.char_class = "Fighter"
         self.char1.db.hit_die = 10
         initialize_level_one(self.char1, class_key="Fighter", hp_base=10)
-        self.char1.db.xp = 6500
-        self.char1.db.level = 5
+        self.char1.db.hp_current = self.char1.stats.hp_max
+        award_xp(
+            self.char1,
+            900,
+            source_kind="test_setup",
+            source_id=self.id(),
+        )
         self.char2.db.is_player_character = False
         self.char2.db.hp_current = 10
         self.char2.db.hp_base = 10
-        self.char2.db.level = 5
+        self.char2.db.level = 3
         self.char2.db.xp_reward = 11
 
     def test_direct_kill_awards_adjusted_xp_once(self):
@@ -31,22 +36,18 @@ class TestCombatRewards(EvenniaTest):
 
         self.assertEqual(result.final_xp, 11)
         self.assertEqual(result.credited_id, self.char1.id)
-        self.assertEqual(self.char1.stats.xp, 6511)
+        self.assertEqual(self.char1.stats.xp, 911)
         # Replaying the same death is served from its durable audit result.
         self.assertEqual(reward_result(injury.death_id).final_xp, 11)
-        self.assertEqual(self.char1.stats.xp, 6511)
+        self.assertEqual(self.char1.stats.xp, 911)
 
-    def test_level_adjustment_clamps_floors_and_keeps_minimum_one(self):
-        """The authored base is adjusted only after a recipient is selected."""
+    def test_level_adjustment_uses_the_released_pc_level(self):
+        """Reward scaling remains valid while PCs are capped at level three."""
         self.char2.db.level = 1
-        self.char2.db.xp_reward = 9
-        self.char1.db.level = 11
-        self.char1.db.xp = 85000
+        self.char2.db.xp_reward = 10
         low = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
-        self.assertEqual(reward_result(low.death_id).final_xp, 0)
+        self.assertEqual(reward_result(low.death_id).final_xp, 8)
 
-        self.char1.db.level = 10
-        self.char1.db.xp = 64000
         npc = create_object(
             "typeclasses.characters.Character", key="high foe", location=self.room1
         )
@@ -83,4 +84,4 @@ class TestCombatRewards(EvenniaTest):
         injury = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
         result = reward_result(injury.death_id)
         self.assertEqual(result.reason, "invalid_xp_reward")
-        self.assertEqual(self.char1.stats.xp, 6500)
+        self.assertEqual(self.char1.stats.xp, 900)

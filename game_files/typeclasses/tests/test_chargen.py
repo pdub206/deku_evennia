@@ -8,6 +8,7 @@ Run from the game/ directory:
 from unittest.mock import MagicMock
 
 from evennia.utils.test_resources import EvenniaTest
+from systems.progression import CLASS_PROGRESSION
 from world.chargen_data import (
     ABILITY_NAMES,
     ALIGNMENTS,
@@ -196,6 +197,12 @@ class TestChargenEnd(EvenniaTest):
 
     def _make_session(self, char):
         """Return a minimal mock session with a new_char attribute."""
+        if char.db.chargen_skill_proficiencies is None:
+            definition = CLASS_PROGRESSION.class_for(char.db.chargen_class)
+            choice = CLASS_PROGRESSION.choices[definition.skill_choice_key]
+            char.db.chargen_skill_proficiencies = list(
+                choice.legal_options[: choice.count]
+            )
         session = MagicMock()
         session.new_char = char
         return session

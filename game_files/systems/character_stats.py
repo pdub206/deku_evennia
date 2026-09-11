@@ -136,10 +136,12 @@ class CharacterStats:
 
     def set_level(self, level: int) -> None:
         """Persist a level without awarding level-up benefits."""
+        if self._attribute("is_player_character") is True:
+            raise ValueError(
+                "Player levels must change through the advancement service."
+            )
         if not 1 <= level <= 20:
             raise ValueError("Level must be between 1 and 20.")
-        # TODO(ADV-01): The level-up transaction must add each earned level's
-        # class HP contribution to hp_base before calling this mutator.
         self.owner.db.level = level
         self._clamp_current_hp()
 
@@ -150,6 +152,8 @@ class CharacterStats:
 
     def set_xp(self, xp: int) -> None:
         """Persist experience without applying advancement thresholds."""
+        if self._attribute("is_player_character") is True:
+            raise ValueError("Player XP must change through the advancement service.")
         if xp < 0:
             raise ValueError("XP cannot be negative.")
         self.owner.db.xp = xp
