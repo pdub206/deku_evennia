@@ -1113,6 +1113,16 @@ EFFECT_REGISTRY.register(
 )
 EFFECT_REGISTRY.register(
     EffectDefinition(
+        key="combat.hidden",
+        name="Hidden",
+        clears_on_death=True,
+        stacking=StackingPolicy.REPLACE,
+        conditions=frozenset({"hidden"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
         key="magic.blur",
         name="Blur",
         duration=10,

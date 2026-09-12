@@ -46,6 +46,25 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "@check",
+        "aliases": ["check diagnostics", "adv-04 diagnostics"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |w@check <target> = <ability>[/<skill>] <dc>|n to run a
+            consequence-free diagnostic check for a visible character in your
+            room. Difficulty Classes must be whole numbers from 5 through 30.
+            Ability and skill names must be registered, and a skill must use its
+            normal ability unless a code-owned action explicitly permits an
+            alternate ability.
+
+            This command cannot apply action consequences, search remotely,
+            reveal hidden targets, bypass locks, or accept a DC from player text
+            on behalf of another command. It reports only the selected check's
+            public roll and total.
+        """,
+    },
+    {
         "key": "magic",
         "aliases": ["spells", "abilities", "casting"],
         "category": "Magic",
@@ -779,7 +798,7 @@ HELP_ENTRY_DICTS = [
     },
     {
         "key": "tactical combat",
-        "aliases": ["aim", "backstab", "bash", "kick", "tactical actions"],
+        "aliases": ["aim", "backstab", "bash", "hide", "kick", "tactical actions"],
         "category": "Combat",
         "text": """
             Tactical actions are prepared now and resolve on your next ready
@@ -798,6 +817,12 @@ HELP_ENTRY_DICTS = [
             two Rogue levels, once per combat round, when your target is unaware
             of you in a solo fight or is focused on someone else in a larger
             fight. A miss does not use that round's successful Sneak Attack.
+
+            |whide|n uses one combat action to make a Dexterity (Stealth) check
+            against your current target's passive Wisdom (Perception). Success
+            hides you only from that target and enables one solo-fight backstab
+            attempt. The hidden state is consumed by that attempt or cleared
+            when you leave combat. Failure does not reveal the target's score.
 
             |wbash [target]|n requires a shield. Your Strength (Athletics) is
             contested by the target's better Athletics or Acrobatics. A creature

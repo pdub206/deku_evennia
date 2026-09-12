@@ -19,7 +19,12 @@ from systems.attacks import (
     resolve_basic_attack,
 )
 from systems.character_stats import AttackProfile
-from systems.checks import CheckRequest, CheckResult, resolve_opposed_check
+from systems.checks import (
+    CheckRequest,
+    CheckResult,
+    resolve_opposed_check,
+    stealth_against_passive,
+)
 from systems.combat import CombatActionResult, get_encounter_id, get_target
 from systems.dice import RollResult
 from systems.effects import ApplyOutcome, RemovalReason
@@ -27,6 +32,7 @@ from systems.equipment import HIT_LOCATIONS
 from systems.pulses import PulseEvent
 
 PRONE_EFFECT_KEY = "combat.prone"
+HIDDEN_EFFECT_KEY = "combat.hidden"
 KICK_LOCATIONS = ("body", "left leg", "right leg")
 KICK_LOCATION_WEIGHTS = MappingProxyType({"body": 6, "left leg": 1, "right leg": 1})
 _SIZE_ORDER = {
@@ -159,7 +165,7 @@ def execute_tactical_intent(
 def clear_combat_conditions(character: Any) -> None:
     """Clear encounter-only effects whenever their owner leaves combat."""
     for effect in character.effects.all():
-        if effect.key == PRONE_EFFECT_KEY:
+        if effect.key in {PRONE_EFFECT_KEY, HIDDEN_EFFECT_KEY}:
             character.effects.remove(
                 effect.instance_id, reason=RemovalReason.ADMIN, quiet=True
             )
@@ -216,6 +222,7 @@ def _backstab(
     attack = resolve_basic_attack(
         actor, target, event, extra_damage_dice=dice, attack_name="backstab"
     )
+    _remove_hidden_from(actor, target)
     # A miss is an attempt but not a successfully applied Sneak Attack.
     if attack.outcome is not AttackOutcome.MISS:
         actor.db.combat_sneak_attack_round = event.sequence
@@ -245,6 +252,40 @@ def _backstab_reason(actor: Any, target: Any, event: PulseEvent) -> str:
     elif get_target(target) is actor:
         return "target_focused_on_you"
     return ""
+
+
+def _hide(
+    actor: Any, target: Any, event: PulseEvent, intent: Mapping[str, Any]
+) -> TacticalActionResult:
+    """Contest Stealth against the current target's passive Perception."""
+    contest = stealth_against_passive(actor, target)
+    common = {
+        "acted": True,
+        "action": "hide",
+        "pulse": event.sequence,
+        "actor_id": actor.id,
+        "target_id": target.id,
+        "attacker_roll": contest.actor,
+        "defender_roll": contest.opponent,
+    }
+    if not contest.actor_wins:
+        _remove_hidden_from(actor, target)
+        actor.msg(f"You fail to hide from {target.get_display_name(actor)}.")
+        return TacticalActionResult(reason="detected", **common)
+    application = actor.effects.add(
+        HIDDEN_EFFECT_KEY,
+        source=target,
+        source_key="rogue.hide",
+        quiet=True,
+    )
+    applied = application.outcome in {ApplyOutcome.APPLIED, ApplyOutcome.REPLACED}
+    if applied:
+        actor.msg(f"You hide from {target.get_display_name(actor)}.")
+    return TacticalActionResult(
+        accepted=applied,
+        effect_applied=HIDDEN_EFFECT_KEY if applied else None,
+        **common,
+    )
 
 
 def _kick(
@@ -359,8 +400,27 @@ def _is_finesse_weapon(weapon: Any) -> bool:
 
 
 def _hidden_from(actor: Any, target: Any) -> bool:
-    """Consume ADV-04's canonical hidden condition without duplicating stealth."""
-    return actor.effects.has_condition("hidden")
+    """Return whether an ADV-04 result hid the actor from this exact target."""
+    return any(
+        effect.key == HIDDEN_EFFECT_KEY
+        and getattr(effect.source, "id", None) == target.id
+        for effect in actor.effects.all()
+    )
+
+
+def _remove_hidden_from(actor: Any, target: Any) -> None:
+    """Consume an observer-specific hidden result after detection or attack."""
+    instance = next(
+        (
+            effect
+            for effect in actor.effects.all()
+            if effect.key == HIDDEN_EFFECT_KEY
+            and getattr(effect.source, "id", None) == target.id
+        ),
+        None,
+    )
+    if instance is not None:
+        actor.effects.remove(instance.instance_id, quiet=True)
 
 
 def _participant_count(actor: Any) -> int:
@@ -388,6 +448,7 @@ def _register_defaults() -> None:
         "aim": _aim,
         "backstab": _backstab,
         "bash": _bash,
+        "hide": _hide,
         "kick": _kick,
     }.items():
         if TACTICAL_ACTIONS.get(key) is None:

@@ -6,8 +6,12 @@ from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.attacks import can_attack
 from systems.combat import get_target, schedule_tactical_action, start_fight
-from systems.combat_controls import (estimate_threat, set_combat_prompt,
-                                     set_combat_verbose, set_wimpy)
+from systems.combat_controls import (
+    estimate_threat,
+    set_combat_prompt,
+    set_combat_verbose,
+    set_wimpy,
+)
 from systems.equipment import HIT_LOCATIONS
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -60,6 +64,38 @@ class CmdAttack(Command):
             )
             return
         self.caller.msg(f"You begin fighting {target.get_display_name(self.caller)}.")
+
+
+class CmdHide(Command):
+    """Queue a Stealth attempt against your current combat target.
+
+    Usage:
+      hide
+
+    The attempt uses one normal combat action. Success enables one subsequent
+    backstab attempt against that exact target.
+    """
+
+    key = "hide"
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Queue an observer-specific hide attempt without rolling immediately."""
+        if self.args.strip():
+            self.caller.msg("Usage: hide")
+            return
+        target = get_target(self.caller)
+        if target is None:
+            self.caller.msg("You must be fighting someone before you can hide.")
+            return
+        result = schedule_tactical_action(self.caller, "hide", target)
+        if not result.accepted:
+            self.caller.msg("You cannot prepare to hide right now.")
+            return
+        self.caller.msg(
+            f"You prepare to hide from {target.get_display_name(self.caller)}."
+        )
 
 
 class CmdConsider(Command):

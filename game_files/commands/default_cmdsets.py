@@ -35,6 +35,7 @@ from commands.combat import (
     CmdCombatPrompt,
     CmdCombatVerbose,
     CmdConsider,
+    CmdHide,
     CmdKick,
     CmdWimpy,
 )
@@ -132,6 +133,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdEffects)
         self.add(CmdAttack)
         self.add(CmdConsider)
+        self.add(CmdHide)
         self.add(CmdAim)
         self.add(CmdBackstab)
         self.add(CmdBash)

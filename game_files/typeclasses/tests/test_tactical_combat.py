@@ -19,10 +19,12 @@ from systems.combat import (
 from systems.dice import RollResult
 from systems.pulses import PulseEvent, PulseLane
 from systems.tactical_combat import (
+    HIDDEN_EFFECT_KEY,
     PRONE_EFFECT_KEY,
     _aim,
     _backstab,
     _bash,
+    _hide,
     _kick,
     consume_prone_action,
     resolve_combat_action,
@@ -174,6 +176,41 @@ class TestPhysicalTactics(EvenniaTest):
         self.assertTrue(self.char2.effects.has(PRONE_EFFECT_KEY))
         self.assertTrue(consume_prone_action(self.char2))
         self.assertFalse(self.char2.effects.has(PRONE_EFFECT_KEY))
+
+    def test_hide_uses_adv04_and_backstab_consumes_observer_specific_state(self):
+        """Stealth succeeds against one target and is spent by its backstab."""
+        self.char1.db.char_class = "Rogue"
+        create_object(
+            "typeclasses.objects.Item",
+            key="knife",
+            location=self.char1,
+            attributes=(
+                ("type", "weapon"),
+                ("subtype", "piercing"),
+                ("damage", "1d4"),
+                ("wear_locations", ["wield"]),
+                ("worn_location", "wield"),
+                ("finesse", True),
+            ),
+        )
+        contest = SimpleNamespace(
+            actor=RollResult(20, 0, 20, 0, True),
+            opponent=RollResult(10, 0, 10, 0, False),
+            actor_wins=True,
+        )
+        with patch(
+            "systems.tactical_combat.stealth_against_passive", return_value=contest
+        ) as check:
+            hidden = _hide(self.char1, self.char2, self.event, {})
+
+        self.assertTrue(hidden.accepted)
+        self.assertTrue(self.char1.effects.has(HIDDEN_EFFECT_KEY))
+        check.assert_called_once_with(self.char1, self.char2)
+
+        attack = AttackResult(acted=True, accepted=True, outcome=AttackOutcome.MISS)
+        with patch("systems.tactical_combat.resolve_basic_attack", return_value=attack):
+            _backstab(self.char1, self.char2, self.event, {})
+        self.assertFalse(self.char1.effects.has(HIDDEN_EFFECT_KEY))
 
     def test_rescue_primitive_retargets_only_the_requested_enemy(self):
         ally = create_object(Character, key="Ally", location=self.room1)
