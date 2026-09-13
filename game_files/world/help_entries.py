@@ -602,6 +602,20 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "remarkable athlete",
+        "aliases": ["champion athletics"],
+        "category": "Character",
+        "text": """
+            A level-3 Champion has advantage on Strength (Athletics) checks,
+            including the shared checks used for climbing and shield bashes.
+
+            This is the alpha adaptation of Remarkable Athlete. Initiative
+            benefits and movement after a critical hit require initiative and
+            measured tactical-movement systems that are not released in the
+            alpha, so this feature does not claim those benefits yet.
+        """,
+    },
+    {
         "key": "class progression registry",
         "aliases": ["adv-02", "class registry", "progression validation"],
         "category": "Building",
