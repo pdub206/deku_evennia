@@ -3,15 +3,9 @@
 from unittest.mock import patch
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.advancement import (
-    ADVANCEMENT_ATTRIBUTE,
-    RELEASE_LEVEL_CAP,
-    XP_THRESHOLDS,
-    AdvancementError,
-    award_xp,
-    earned_level,
-    initialize_level_one,
-)
+from systems.advancement import (ADVANCEMENT_ATTRIBUTE, RELEASE_LEVEL_CAP,
+                                 XP_THRESHOLDS, AdvancementError, award_xp,
+                                 earned_level, initialize_level_one)
 from systems.progression import CLASS_PROGRESSION
 
 
@@ -71,6 +65,22 @@ class TestAdvancement(EvenniaTest):
                 "fighter.remarkable_athlete",
             ],
         )
+
+    def test_crossing_multiple_levels_registers_each_levels_choices(self):
+        """Later choices validate against the level reached in the same award."""
+        self.char2.db.is_player_character = True
+        self.char2.db.constitution = 10
+        self.char2.db.char_class = "Wizard"
+        self.char2.db.hit_die = 6
+        initialize_level_one(self.char2, class_key="Wizard", hp_base=6)
+
+        result = award_xp(
+            self.char2, 900, source_kind="quest", source_id="wizard-three"
+        )
+
+        self.assertEqual(result.new_level, 3)
+        self.assertIn("wizard.scholar", result.pending_choices)
+        self.assertIn("wizard.evocation_savant_spells", result.pending_choices)
 
     def test_level_one_records_the_registry_identity_without_copying_definitions(self):
         """A later registry edit can be reconciled without rewriting the PC."""

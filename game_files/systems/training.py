@@ -15,12 +15,8 @@ from typing import Any
 
 from django.db import transaction
 from systems.action_policy import ActionCategory
-from systems.progression import (
-    CLASS_PROGRESSION,
-    MAX_CLASS_LEVEL,
-    ChoiceSet,
-    RegistryValidationError,
-)
+from systems.progression import (CLASS_PROGRESSION, MAX_CLASS_LEVEL, ChoiceSet,
+                                 RegistryValidationError)
 
 CHOICE_STATE_ATTRIBUTE = "progression_choices"
 CHOICE_STATE_VERSION = 2
@@ -355,15 +351,16 @@ def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> Non
         character.db.skill_expertise = sorted(set(known + options))
         return
     try:
-        from systems.magic_actions import (
-            MagicActionError,
-            grant_action,
-            grant_spellbook_entry,
-        )
+        from systems.magic_actions import (MagicActionError, grant_action,
+                                           grant_spellbook_entry)
 
-        if choice.option_adapter == "magic_spellbook":
+        if choice.option_adapter in {"magic_spellbook", "magic_spellbook_bonus"}:
             for option in options:
-                grant_spellbook_entry(character, option)
+                grant_spellbook_entry(
+                    character,
+                    option,
+                    bonus=choice.option_adapter == "magic_spellbook_bonus",
+                )
             return
         mode = _MAGIC_CHOICE_MODES.get(choice.option_adapter)
         if mode is None:
@@ -379,15 +376,13 @@ def _validate_unowned_magic_option(
 ) -> None:
     """Reject an already-owned magic option before consuming a choice."""
     try:
-        from systems.magic_actions import (
-            MagicActionError,
-            has_action_entitlement,
-            has_spellbook_entry,
-        )
+        from systems.magic_actions import (MagicActionError,
+                                           has_action_entitlement,
+                                           has_spellbook_entry)
 
         mode = (
             "spellbook"
-            if choice.option_adapter == "magic_spellbook"
+            if choice.option_adapter in {"magic_spellbook", "magic_spellbook_bonus"}
             else _MAGIC_CHOICE_MODES.get(choice.option_adapter)
         )
         if mode is None:

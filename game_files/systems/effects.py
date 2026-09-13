@@ -1123,6 +1123,16 @@ EFFECT_REGISTRY.register(
 )
 EFFECT_REGISTRY.register(
     EffectDefinition(
+        key="combat.steady_aim",
+        name="Steady Aim",
+        clears_on_death=True,
+        stacking=StackingPolicy.REJECT,
+        conditions=frozenset({"steady_aim"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
         key="magic.blur",
         name="Blur",
         duration=10,

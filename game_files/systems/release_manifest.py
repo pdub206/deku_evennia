@@ -82,7 +82,7 @@ _CLASS_TACTICAL_ACTIONS = MappingProxyType(
     {
         "Cleric": (),
         "Fighter": ("aim", "bash", "kick"),
-        "Rogue": ("aim", "backstab", "hide"),
+        "Rogue": ("aim", "backstab", "hide", "steady_aim"),
         "Wizard": (),
     }
 )

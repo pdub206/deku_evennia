@@ -62,7 +62,7 @@ class TestAlphaReleaseManifest(EvenniaTest):
         expected_tactics = {
             "Cleric": (),
             "Fighter": ("aim", "bash", "kick"),
-            "Rogue": ("aim", "backstab", "hide"),
+            "Rogue": ("aim", "backstab", "hide", "steady_aim"),
             "Wizard": (),
         }
         for class_key, released in ALPHA_RELEASE_MANIFEST.classes.items():

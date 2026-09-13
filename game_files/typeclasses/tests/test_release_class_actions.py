@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import award_xp, initialize_level_one
 from systems.attacks import AttackOutcome, resolve_basic_attack
@@ -10,9 +11,11 @@ from systems.combat import start_fight
 from systems.dice import RollResult
 from systems.magic import AccessMode
 from systems.magic_actions import (available_actions, cast_action,
-                                   grant_action, mark_preparation_window,
-                                   prepare_action)
+                                   grant_action, has_spellbook_entry,
+                                   mark_preparation_window, prepare_action)
 from systems.magic_resources import resource_current, spend_resource
+from systems.training import (default_trainer_profile, resolve_training,
+                              set_trainer_profile)
 
 
 class TestReleasedClassActions(EvenniaTest):
@@ -159,6 +162,38 @@ class TestReleasedClassActions(EvenniaTest):
 
         self.assertEqual(result.reason, "miss")
         self.assertEqual(result.amount, 4)
+
+    def test_evocation_savant_adds_two_eligible_spellbook_entries(self):
+        """The level-three feature resolves as two bonus Evocation choices."""
+        self._initialize("Wizard", 6)
+        result = award_xp(self.char1, 900, source_kind="test", source_id="wizard-three")
+        trainer = create_object(
+            "typeclasses.characters.Character",
+            key="Wizard trainer",
+            location=self.room1,
+        )
+        trainer.db.is_player_character = False
+        profile = default_trainer_profile()
+        profile["classes"] = ["Wizard"]
+        profile["choices"] = ["wizard.evocation_savant_spells"]
+        set_trainer_profile(trainer, profile)
+
+        resolve_training(
+            self.char1,
+            "wizard.evocation_savant_spells",
+            "wizard.magic_missile",
+            trainer,
+        )
+        resolve_training(
+            self.char1,
+            "wizard.evocation_savant_spells",
+            "wizard.scorching_ray",
+            trainer,
+        )
+
+        self.assertIn("wizard.evocation_savant_spells", result.pending_choices)
+        self.assertTrue(has_spellbook_entry(self.char1, "wizard.magic_missile"))
+        self.assertTrue(has_spellbook_entry(self.char1, "wizard.scorching_ray"))
 
     def test_remarkable_athlete_advantages_strength_athletics(self):
         """Champion's check benefit enters ADV-04 as a named advantage source."""

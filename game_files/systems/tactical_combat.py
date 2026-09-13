@@ -25,6 +25,7 @@ from systems.pulses import PulseEvent
 
 PRONE_EFFECT_KEY = "combat.prone"
 HIDDEN_EFFECT_KEY = "combat.hidden"
+STEADY_AIM_EFFECT_KEY = "combat.steady_aim"
 KICK_LOCATIONS = ("body", "left leg", "right leg")
 KICK_LOCATION_WEIGHTS = MappingProxyType({"body": 6, "left leg": 1, "right leg": 1})
 _SIZE_ORDER = {
@@ -109,6 +110,10 @@ def validate_tactical_intent(
         if location not in HIT_LOCATIONS:
             return None
         intent["location"] = location
+    elif action == "bash" and arguments:
+        if arguments != {"tactical_mind": True}:
+            return None
+        intent["tactical_mind"] = True
     elif arguments:
         return None
     return intent
@@ -161,7 +166,7 @@ def execute_tactical_intent(
 def clear_combat_conditions(character: Any) -> None:
     """Clear encounter-only effects whenever their owner leaves combat."""
     for effect in character.effects.all():
-        if effect.key in {PRONE_EFFECT_KEY, HIDDEN_EFFECT_KEY}:
+        if effect.key in {PRONE_EFFECT_KEY, HIDDEN_EFFECT_KEY, STEADY_AIM_EFFECT_KEY}:
             character.effects.remove(
                 effect.instance_id, reason=RemovalReason.ADMIN, quiet=True
             )
@@ -266,6 +271,7 @@ def _hide(
     }
     if not contest.actor_wins:
         _remove_hidden_from(actor, target)
+        _accelerate_rogue_bonus_action(actor, "rogue.cunning_action")
         actor.msg(f"You fail to hide from {target.get_display_name(actor)}.")
         return TacticalActionResult(reason="detected", **common)
     application = actor.effects.add(
@@ -276,10 +282,43 @@ def _hide(
     )
     applied = application.outcome in {ApplyOutcome.APPLIED, ApplyOutcome.REPLACED}
     if applied:
+        _accelerate_rogue_bonus_action(actor, "rogue.cunning_action")
         actor.msg(f"You hide from {target.get_display_name(actor)}.")
     return TacticalActionResult(
         accepted=applied,
         effect_applied=HIDDEN_EFFECT_KEY if applied else None,
+        **common,
+    )
+
+
+def _steady_aim(
+    actor: Any, target: Any, event: PulseEvent, _intent: Mapping[str, Any]
+) -> TacticalActionResult:
+    """Trade one queued action for advantage on the Rogue's following attack."""
+    from systems.class_features import has_granted_feature
+
+    common = {
+        "acted": True,
+        "action": "steady_aim",
+        "pulse": event.sequence,
+        "actor_id": actor.id,
+        "target_id": target.id,
+    }
+    if not has_granted_feature(actor, "rogue.steady_aim"):
+        return TacticalActionResult(reason="feature_required", **common)
+    application = actor.effects.add(
+        STEADY_AIM_EFFECT_KEY,
+        source=actor,
+        source_key="rogue.steady_aim",
+        quiet=True,
+    )
+    applied = application.outcome is not ApplyOutcome.REJECTED
+    if applied:
+        _accelerate_rogue_bonus_action(actor, "rogue.steady_aim")
+    return TacticalActionResult(
+        accepted=applied,
+        reason="aim_already_steady" if not applied else "",
+        effect_applied=STEADY_AIM_EFFECT_KEY if applied else None,
         **common,
     )
 
@@ -352,7 +391,20 @@ def _bash(
         ),
     )
     attacker_roll, defender_roll = contest.actor, contest.opponent
-    if not contest.actor_wins:
+    actor_wins = contest.actor_wins
+    if not actor_wins and intent.get("tactical_mind"):
+        from systems.class_features import has_granted_feature
+        from systems.dice import roll
+        from systems.magic_resources import MagicResourceError, spend_resource
+
+        if has_granted_feature(actor, "fighter.tactical_mind"):
+            actor_wins = attacker_roll.total + roll(10) > defender_roll.total
+            if actor_wins:
+                try:
+                    spend_resource(actor, "fighter.second_wind", 1)
+                except MagicResourceError:
+                    actor_wins = False
+    if not actor_wins:
         return TacticalActionResult(
             reason="contest_failed",
             attacker_roll=attacker_roll,
@@ -431,6 +483,15 @@ def _participant_count(actor: Any) -> int:
     )
 
 
+def _accelerate_rogue_bonus_action(actor: Any, feature_key: str) -> None:
+    """Represent a released Bonus Action as next-pulse readiness, never replay."""
+    from systems.class_features import has_granted_feature
+    from systems.combat import accelerate_next_action
+
+    if has_granted_feature(actor, feature_key):
+        accelerate_next_action(actor)
+
+
 def _size_rank(character: Any) -> int:
     """Map supported builder size labels to a conservative Medium default."""
     return _SIZE_ORDER.get(
@@ -446,6 +507,7 @@ def _register_defaults() -> None:
         "bash": _bash,
         "hide": _hide,
         "kick": _kick,
+        "steady_aim": _steady_aim,
     }.items():
         if TACTICAL_ACTIONS.get(key) is None:
             TACTICAL_ACTIONS.register(key, handler)

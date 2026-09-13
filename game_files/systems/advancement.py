@@ -279,6 +279,10 @@ def _apply_levels(
     character.db.hp_base = character.stats.hp_base + basis_gain * (
         new_level - old_level
     )
+    # Choice entitlement validation must see the transaction's earned level.
+    # Otherwise a multi-level gain writes level 2 choices and rejects them as
+    # too high when the same transaction begins processing level 3.
+    character.db.level = new_level
     from systems.training import initialize_choice_entitlements
 
     pending: list[str] = []

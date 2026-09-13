@@ -241,7 +241,7 @@ def mark_preparation_window(actor: Any, recovery_sequence: int) -> None:
     )
 
 
-def grant_spellbook_entry(actor: Any, action_key: str) -> None:
+def grant_spellbook_entry(actor: Any, action_key: str, *, bonus: bool = False) -> None:
     """Add one Wizard spellbook entry without also preparing that spell.
 
     Spellbook capacity and preparation capacity are separate SRD tables. This
@@ -263,7 +263,17 @@ def grant_spellbook_entry(actor: Any, action_key: str) -> None:
     entries = state[_SPELLBOOK_KEY]
     if action_key in entries:
         return
-    if len(entries) >= access.spellbook_entries[level - 1]:
+    from systems.class_features import has_granted_feature
+
+    has_savant = has_granted_feature(actor, "wizard.evocation_savant")
+    if bonus and (
+        not has_savant
+        or definition.school != "evocation"
+        or not 1 <= definition.spell_level <= 2
+    ):
+        raise MagicActionError("That spell is not an Evocation Savant choice.")
+    capacity = access.spellbook_entries[level - 1] + (2 if has_savant else 0)
+    if len(entries) >= capacity:
         raise MagicActionError("Your spellbook cannot hold another spell.")
     entries.append(action_key)
     entries.sort()

@@ -147,7 +147,8 @@ def resolve_basic_attack(
 
     profile = profile or attacker.stats.attack_profile()
     guiding_bolt = target.effects.has_condition("guiding_bolt_marked")
-    has_advantage = has_advantage or guiding_bolt
+    steady_aim = attacker.effects.has_condition("steady_aim")
+    has_advantage = has_advantage or guiding_bolt or steady_aim
     has_disadvantage = has_disadvantage or target.effects.has_condition("blurred")
     target_injury = injury_record(target)
     target_unconscious = target_injury.state in {
@@ -180,6 +181,17 @@ def resolve_basic_attack(
         )
         if instance is not None:
             target.effects.remove(instance.instance_id, quiet=True)
+    if steady_aim:
+        instance = next(
+            (
+                effect
+                for effect in attacker.effects.all()
+                if "steady_aim" in effect.conditions
+            ),
+            None,
+        )
+        if instance is not None:
+            attacker.effects.remove(instance.instance_id, quiet=True)
     if (
         calculation.hit_location is not None
         and calculation.hit_location not in HIT_LOCATIONS

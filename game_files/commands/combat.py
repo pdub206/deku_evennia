@@ -6,12 +6,8 @@ from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.attacks import can_attack
 from systems.combat import get_target, schedule_tactical_action, start_fight
-from systems.combat_controls import (
-    estimate_threat,
-    set_combat_prompt,
-    set_combat_verbose,
-    set_wimpy,
-)
+from systems.combat_controls import (estimate_threat, set_combat_prompt,
+                                     set_combat_verbose, set_wimpy)
 from systems.equipment import HIT_LOCATIONS
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -327,19 +323,20 @@ class CmdBackstab(_QueuedTacticalCommand):
         self._queue(target)
 
 
-class CmdBash(_QueuedTacticalCommand):
-    """Queue a shield bash against one combat target.
+class CmdSteadyAim(_QueuedTacticalCommand):
+    """Prepare Steady Aim for advantage on the following attack.
 
     Usage:
-      bash [target]
+      steady [target]
     """
 
-    key = "bash"
-    action_key = "bash"
+    key = "steady"
+    aliases = ("steadyaim",)
+    action_key = "steady_aim"
     help_category = "Combat"
 
     def func(self) -> None:
-        """Use the current target when no explicit target was supplied."""
+        """Use the current target unless another encounter target is named."""
         target = (
             get_target(self.caller)
             if not self.args.strip()
@@ -349,6 +346,33 @@ class CmdBash(_QueuedTacticalCommand):
             self.caller.msg("Specify a combat target.")
             return
         self._queue(target)
+
+
+class CmdBash(_QueuedTacticalCommand):
+    """Queue a shield bash against one combat target.
+
+    Usage:
+      bash[/mind] [target]
+    """
+
+    key = "bash"
+    action_key = "bash"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Use the current target when no explicit target was supplied."""
+        if any(switch != "mind" for switch in self.switches):
+            self.caller.msg("Usage: bash[/mind] [target]")
+            return
+        target = (
+            get_target(self.caller)
+            if not self.args.strip()
+            else self._find_target(self.args.strip())
+        )
+        if target is None:
+            self.caller.msg("Specify a combat target.")
+            return
+        self._queue(target, **({"tactical_mind": True} if self.switches else {}))
 
 
 class CmdKick(_QueuedTacticalCommand):

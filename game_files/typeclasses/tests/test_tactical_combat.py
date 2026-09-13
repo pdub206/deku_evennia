@@ -7,28 +7,17 @@ from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.attacks import AttackOutcome, AttackResult
-from systems.combat import (
-    COMBAT_CONFIG_KEY,
-    get_target,
-    process_combat_pulse,
-    rescue_retarget,
-    schedule_tactical_action,
-    set_combat_action_hook,
-    start_fight,
-)
+from systems.combat import (COMBAT_CONFIG_KEY, get_target,
+                            process_combat_pulse, rescue_retarget,
+                            schedule_tactical_action, set_combat_action_hook,
+                            start_fight)
 from systems.dice import RollResult
 from systems.pulses import PulseEvent, PulseLane
-from systems.tactical_combat import (
-    HIDDEN_EFFECT_KEY,
-    PRONE_EFFECT_KEY,
-    _aim,
-    _backstab,
-    _bash,
-    _hide,
-    _kick,
-    consume_prone_action,
-    resolve_combat_action,
-)
+from systems.tactical_combat import (HIDDEN_EFFECT_KEY, PRONE_EFFECT_KEY,
+                                     STEADY_AIM_EFFECT_KEY, _aim, _backstab,
+                                     _bash, _hide, _kick, _steady_aim,
+                                     consume_prone_action,
+                                     resolve_combat_action)
 from typeclasses.characters import Character
 
 
@@ -177,6 +166,44 @@ class TestPhysicalTactics(EvenniaTest):
         self.assertTrue(consume_prone_action(self.char2))
         self.assertFalse(self.char2.effects.has(PRONE_EFFECT_KEY))
 
+    def test_tactical_mind_spends_second_wind_only_when_it_changes_bash(self):
+        """The explicit intent applies 1d10 after failure and pays on success."""
+        create_object(
+            "typeclasses.objects.Item",
+            key="shield",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "shield"),
+                ("wear_locations", ["shield"]),
+                ("worn_location", "shield"),
+            ),
+        )
+        self.char1.db.char_class = "Fighter"
+        self.char1.db.level = 2
+        self.char1.db.class_progression = {
+            "grants": ["fighter.second_wind", "fighter.tactical_mind"]
+        }
+        actor_roll = RollResult(5, 0, 5, 5, True)
+        defender_roll = RollResult(10, 0, 10, 5, True)
+        contest = SimpleNamespace(
+            actor=SimpleNamespace(total=actor_roll.total),
+            opponent=SimpleNamespace(total=defender_roll.total),
+            actor_wins=False,
+        )
+        with (
+            patch(
+                "systems.tactical_combat.resolve_opposed_check", return_value=contest
+            ),
+            patch("systems.dice.roll", return_value=6),
+        ):
+            result = _bash(self.char1, self.char2, self.event, {"tactical_mind": True})
+
+        self.assertTrue(result.accepted)
+        from systems.magic_resources import resource_current
+
+        self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 1)
+
     def test_hide_uses_adv04_and_backstab_consumes_observer_specific_state(self):
         """Stealth succeeds against one target and is spent by its backstab."""
         self.char1.db.char_class = "Rogue"
@@ -211,6 +238,39 @@ class TestPhysicalTactics(EvenniaTest):
         with patch("systems.tactical_combat.resolve_basic_attack", return_value=attack):
             _backstab(self.char1, self.char2, self.event, {})
         self.assertFalse(self.char1.effects.has(HIDDEN_EFFECT_KEY))
+
+    def test_steady_aim_requires_its_grant_and_prepares_one_advantage(self):
+        """The Rogue feature creates one combat-scoped, non-stacking effect."""
+        denied = _steady_aim(self.char1, self.char2, self.event, {})
+        self.assertEqual(denied.reason, "feature_required")
+        self.char1.db.class_progression = {"grants": ["rogue.steady_aim"]}
+
+        with patch("systems.combat.accelerate_next_action") as accelerate:
+            applied = _steady_aim(self.char1, self.char2, self.event, {})
+
+        self.assertTrue(applied.accepted)
+        self.assertEqual(applied.effect_applied, STEADY_AIM_EFFECT_KEY)
+        self.assertTrue(self.char1.effects.has(STEADY_AIM_EFFECT_KEY))
+        accelerate.assert_called_once_with(self.char1)
+
+    def test_cunning_action_accelerates_a_rogue_hide_without_replaying_it(self):
+        """The alpha Bonus Action adapter advances cadence after one hide result."""
+        self.char1.db.class_progression = {"grants": ["rogue.cunning_action"]}
+        contest = SimpleNamespace(
+            actor=RollResult(20, 0, 20, 0, True),
+            opponent=RollResult(10, 0, 10, 0, False),
+            actor_wins=True,
+        )
+        with (
+            patch(
+                "systems.tactical_combat.stealth_against_passive", return_value=contest
+            ),
+            patch("systems.combat.accelerate_next_action") as accelerate,
+        ):
+            result = _hide(self.char1, self.char2, self.event, {})
+
+        self.assertTrue(result.accepted)
+        accelerate.assert_called_once_with(self.char1)
 
     def test_rescue_primitive_retargets_only_the_requested_enemy(self):
         ally = create_object(Character, key="Ally", location=self.room1)

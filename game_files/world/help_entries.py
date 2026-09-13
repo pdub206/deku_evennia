@@ -149,6 +149,19 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "evocation savant",
+        "aliases": ["evoker", "savant spells"],
+        "category": "Magic",
+        "text": """
+            At Wizard level 3, Evocation Savant creates a pending training
+            choice for two released level-1 or level-2 Evocation spells. A
+            qualified Wizard trainer adds both choices to your spellbook for
+            free. These are two bonus spellbook entries and do not reduce the
+            ten ordinary entries available at level 3. They are not prepared
+            automatically; prepare them after a completed Long Rest.
+        """,
+    },
+    {
         "key": "magic registry",
         "aliases": ["magic-01", "spell registry", "ability registry"],
         "category": "Building",
@@ -893,7 +906,15 @@ HELP_ENTRY_DICTS = [
     },
     {
         "key": "tactical combat",
-        "aliases": ["aim", "backstab", "bash", "hide", "kick", "tactical actions"],
+        "aliases": [
+            "aim",
+            "backstab",
+            "bash",
+            "hide",
+            "kick",
+            "steady",
+            "tactical actions",
+        ],
         "category": "Combat",
         "text": """
             Tactical actions are prepared now and resolve on your next ready
@@ -918,12 +939,25 @@ HELP_ENTRY_DICTS = [
             hides you only from that target and enables one solo-fight backstab
             attempt. The hidden state is consumed by that attempt or cleared
             when you leave combat. Failure does not reveal the target's score.
+            A Rogue with Cunning Action becomes ready again on the next combat
+            pulse after this attempt. Dash and Disengage require the later
+            movement-action surface and are not part of this alpha adaptation.
+
+            A level-3 Rogue may use |wsteady [target]|n. The alpha spends one
+            ordinary combat action to hold position and prepare advantage for
+            the following weapon attack; that advantage is consumed on the
+            attack whether it hits or misses, or cleared when combat ends. The
+            Rogue becomes ready again on the next pulse rather than resolving a
+            second action in the same pulse.
 
             |wbash [target]|n requires a shield. Your Strength (Athletics) is
             contested by the target's better Athletics or Acrobatics. A creature
             more than one size larger cannot be knocked down. A successful bash
             deals no damage, makes the target prone, and costs its next combat
             action as it regains its footing. Prone does not stack or refresh.
+            A level-2 Fighter may use |wbash/mind|n to apply Tactical Mind after
+            a failed bash check. One Second Wind use is spent only when the
+            added 1d10 changes that failure into a success.
 
             |wkick [target]|n is available to everyone and needs no free hand.
             It attacks with Strength for 1d4 + Strength bludgeoning damage at the

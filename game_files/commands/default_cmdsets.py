@@ -16,50 +16,20 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
-from commands.building import (
-    CmdAreas,
-    CmdBuild,
-    CmdItems,
-    CmdLoadArea,
-    CmdMobile,
-    CmdNpcs,
-    CmdRooms,
-    CmdSpawn,
-)
+from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
+                               CmdMobile, CmdNpcs, CmdRooms, CmdSpawn)
 from commands.change import CmdChange
 from commands.checks import CmdCheck
-from commands.combat import (
-    CmdAim,
-    CmdAttack,
-    CmdBackstab,
-    CmdBash,
-    CmdCombatPrompt,
-    CmdCombatVerbose,
-    CmdConsider,
-    CmdHide,
-    CmdKick,
-    CmdWimpy,
-)
+from commands.combat import (CmdAim, CmdAttack, CmdBackstab, CmdBash,
+                             CmdCombatPrompt, CmdCombatVerbose, CmdConsider,
+                             CmdHide, CmdKick, CmdSteadyAim, CmdWimpy)
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
-from commands.generic import (
-    CmdAccess,
-    CmdDrop,
-    CmdGet,
-    CmdGive,
-    CmdHelp,
-    CmdHome,
-    CmdInventory,
-    CmdJunk,
-    CmdLook,
-    CmdNick,
-    CmdPose,
-    CmdRemove,
-    CmdSetDesc,
-    CmdWear,
-)
+from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
+                              CmdHome, CmdInventory, CmdJunk, CmdLook, CmdNick,
+                              CmdPose, CmdRemove, CmdSetDesc, CmdWear)
 from commands.injury import CmdInjury, CmdStabilize
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
@@ -68,7 +38,8 @@ from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
 from commands.training import CmdPractice, CmdTrain
 from evennia import default_cmds
-from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
+from evennia.contrib.rpg.character_creator.character_creator import \
+    ContribCmdIC
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -140,6 +111,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdBackstab)
         self.add(CmdBash)
         self.add(CmdKick)
+        self.add(CmdSteadyAim)
         self.add(CmdWimpy)
         self.add(CmdCombatPrompt)
         self.add(CmdCombatVerbose)

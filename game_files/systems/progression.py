@@ -298,7 +298,17 @@ def build_registry(
         if (
             choice.replacement_policy != "none"
             or choice.prerequisite_timing not in {"grant", "resolution"}
-            or choice.option_adapter not in {"skill", "expertise", "feature"}
+            or choice.option_adapter
+            not in {
+                "skill",
+                "expertise",
+                "feature",
+                "magic_learned",
+                "magic_prepared",
+                "magic_innate",
+                "magic_spellbook",
+                "magic_spellbook_bonus",
+            }
         ):
             raise RegistryValidationError(f"Choice '{choice.key}' has invalid policy.")
         _reference(choice.srd_reference, f"Choice '{choice.key}'")
@@ -540,6 +550,22 @@ def _default_registry() -> ProgressionRegistry:
             "expertise",
             "SRD 5.2.1 p.78: Scholar",
         ),
+        ChoiceSet(
+            "wizard.evocation_savant_spells",
+            2,
+            (
+                "wizard.magic_missile",
+                "wizard.burning_hands",
+                "wizard.acid_arrow",
+                "wizard.scorching_ray",
+                "wizard.shatter",
+            ),
+            "none",
+            (),
+            "resolution",
+            "magic_spellbook_bonus",
+            "SRD 5.2.1 p.82: Evocation Savant",
+        ),
     ]
     resources = (
         ResourceProgression(
@@ -750,6 +776,7 @@ def _default_registry() -> ProgressionRegistry:
                 ("wizard.evoker", "wizard.evocation_savant", "wizard.potent_cantrip"),
                 ("wizard.arcane_recovery",),
                 ("wizard.spell_access",),
+                ("wizard.evocation_savant_spells",),
             ),
         ),
     }
