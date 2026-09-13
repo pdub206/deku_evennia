@@ -31,6 +31,7 @@ _BASE_MODIFIERS = frozenset(
         "armor_class",
         "attack_bonus",
         "carry_capacity",
+        "check_bonus",
         "damage_bonus",
         "hp_max",
         "passive_perception",
@@ -249,6 +250,10 @@ class EffectRegistry:
             raise EffectError(f"Unknown effect definition: {key}")
         return definition
 
+    def keys(self) -> tuple[str, ...]:
+        """Return registered keys in deterministic registration order."""
+        return tuple(self._definitions)
+
 
 EFFECT_REGISTRY = EffectRegistry()
 EffectRemovalListener = Callable[["ActiveEffect", RemovalReason], None]
@@ -265,6 +270,44 @@ def register_removal_listener(key: str, listener: EffectRemovalListener) -> None
     if not callable(listener) or key in _REMOVAL_LISTENERS:
         raise EffectError("Effect removal listener is invalid or already registered.")
     _REMOVAL_LISTENERS[key] = listener
+
+
+def removal_listener_registered(key: str) -> bool:
+    """Return whether a lifecycle adapter already owns ``key``.
+
+    Reload-safe systems use this narrow query before registering their module
+    callback again.  Callers still cannot replace or remove another system's
+    listener.
+    """
+    _validate_key(key, "effect removal listener")
+    return key in _REMOVAL_LISTENERS
+
+
+def has_active_effect_source(source: Any, source_key: str) -> bool:
+    """Return whether a source action still owns an active effect anywhere.
+
+    Replacement is deliberately rare, so this diagnostic scans character effect
+    records instead of maintaining a second, potentially stale source index.
+    Malformed records that do not belong to the requested source are left for
+    the existing staff repair workflow and cannot block another character.
+    """
+    _validate_key(source_key, "effect source")
+    source_dbref = getattr(source, "dbref", None)
+    if not isinstance(source_dbref, str) or not source_dbref:
+        raise EffectError("An effect source must be a saved object.")
+    from typeclasses.characters import Character
+
+    for owner in Character.objects.filter_family().iterator():
+        try:
+            if any(
+                effect.source_dbref == source_dbref and effect.source_key == source_key
+                for effect in owner.effects.all()
+            ):
+                return True
+        except EffectStorageError:
+            # A malformed unrelated record does not establish a dependency.
+            continue
+    return False
 
 
 @dataclass(frozen=True)
@@ -961,6 +1004,16 @@ def _is_modifier_name(name: str) -> bool:
         return detail in _ABILITY_KEYS
     if prefix == "skill":
         return detail in _SKILL_KEYS
+    if prefix == "check":
+        # ADV-04 consumes a bounded action key or ``ability:<name>``.  Effects
+        # remain declarative: they can alter a named check, never supply code.
+        if detail.startswith("ability:"):
+            return detail.removeprefix("ability:") in _ABILITY_KEYS
+        try:
+            _validate_key(detail, "check action")
+        except EffectError:
+            return False
+        return True
     if prefix == "recovery":
         # Resources own the semantics; RULES-04 only requires a stable resource
         # key so effects can provide numeric recovery bonuses or penalties.
@@ -1003,3 +1056,140 @@ def _validate_messages(messages: Mapping[str, EffectMessage]) -> None:
             unknown = fields - _MESSAGE_FIELDS
             if unknown:
                 raise EffectError(f"Unknown effect message field: {sorted(unknown)[0]}")
+
+
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.shield_of_faith",
+        name="Shield of Faith",
+        duration=100,
+        clears_on_death=True,
+        modifiers={"armor_class": 2},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(
+                target="A shimmering field surrounds you.",
+                room="A shimmering field surrounds {target}.",
+            ),
+            "expire": EffectMessage(target="Your shimmering field fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.detect_magic",
+        name="Detect Magic",
+        duration=100,
+        clears_on_death=True,
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "expire": EffectMessage(target="Your sense of nearby magic fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.longstrider",
+        name="Longstrider",
+        duration=600,
+        clears_on_death=True,
+        modifiers={"speed": 10},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Your stride lengthens with magic."),
+            "expire": EffectMessage(target="Your magically lengthened stride fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.prone",
+        name="Prone",
+        clears_on_death=True,
+        stacking=StackingPolicy.REJECT,
+        conditions=frozenset({"prone"}),
+        removal_categories=frozenset({"magic", "physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.hidden",
+        name="Hidden",
+        clears_on_death=True,
+        stacking=StackingPolicy.REPLACE,
+        conditions=frozenset({"hidden"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.steady_aim",
+        name="Steady Aim",
+        clears_on_death=True,
+        stacking=StackingPolicy.REJECT,
+        conditions=frozenset({"steady_aim"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.mastery_vex",
+        name="Vexed",
+        clears_on_death=True,
+        stacking=StackingPolicy.INDEPENDENT,
+        conditions=frozenset({"mastery_vexed"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.mastery_sap",
+        name="Sapped",
+        clears_on_death=True,
+        stacking=StackingPolicy.REPLACE,
+        conditions=frozenset({"mastery_sapped"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.blur",
+        name="Blur",
+        duration=10,
+        clears_on_death=True,
+        conditions=frozenset({"blurred"}),
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Your outline becomes blurred."),
+            "expire": EffectMessage(target="Your outline stops shifting."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.aid",
+        name="Aid",
+        duration=4800,
+        clears_on_death=True,
+        modifiers={"hp_max": 5},
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Divine resolve strengthens you."),
+            "expire": EffectMessage(target="Your divinely granted resolve fades."),
+        },
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="magic.guiding_bolt",
+        name="Guiding Bolt",
+        duration=2,
+        clears_on_death=True,
+        conditions=frozenset({"guiding_bolt_marked"}),
+        removal_categories=frozenset({"magic"}),
+        messages={
+            "apply": EffectMessage(target="Mystic light outlines you."),
+            "expire": EffectMessage(target="The mystic light outlining you fades."),
+        },
+    )
+)

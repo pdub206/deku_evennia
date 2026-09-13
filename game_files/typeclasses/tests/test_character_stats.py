@@ -233,23 +233,23 @@ class TestCharacterStats(EvenniaTest):
     def test_specific_weapon_training_applies_without_category_training(self):
         self.char1.db.char_class = "Rogue"
         self.char1.stats.set_ability_score("Dexterity", 14)
-        longsword = create_object(
+        rapier = create_object(
             "typeclasses.objects.Item",
-            key="a longsword",
+            key="a rapier",
             location=self.char1,
             attributes=(
                 ("type", "weapon"),
                 ("subtype", "slashing"),
                 ("damage", "1d8"),
                 ("weapon_category", "martial"),
-                ("weapon_kind", "long_sword"),
+                ("weapon_kind", "rapier"),
                 ("attack_ability", "dexterity"),
                 ("wear_locations", ["wield"]),
                 ("worn_location", "wield"),
             ),
         )
 
-        self.assertTrue(self.char1.equipment.is_weapon_proficient(longsword))
+        self.assertTrue(self.char1.equipment.is_weapon_proficient(rapier))
         self.assertEqual(self.char1.stats.attack_profile().attack_bonus, 4)
 
     def test_locational_mitigation_uses_worn_slot_and_physical_defaults(self):

@@ -102,7 +102,9 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
             changed = _set_target(state, actor_encounter, actor_id, target_id)
             _write_state(state)
             _refresh_prompts(actor, target)
-            return CombatOperationResult(True, changed, actor_encounter)
+            result = CombatOperationResult(True, changed, actor_encounter)
+            _interrupt_magic_rests(actor, target)
+            return result
         encounter_id = _merge_encounters(
             state, actor_encounter, target_encounter, actor_id, target_id
         )
@@ -130,7 +132,22 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
     _repair_state(state)
     _write_state(state)
     _refresh_prompts(actor, target)
-    return CombatOperationResult(True, True, encounter_id)
+    result = CombatOperationResult(True, True, encounter_id)
+    _interrupt_magic_rests(actor, target)
+    return result
+
+
+def _interrupt_magic_rests(*participants: Any) -> None:
+    """Discard rest credit as soon as combat initiative begins."""
+    try:
+        from systems.magic_rest import interrupt_magic_rest
+
+        for participant in participants:
+            interrupt_magic_rest(participant)
+    except Exception:
+        # Combat remains available if a rest record needs staff repair; the
+        # recovery lane will also isolate and report malformed progress.
+        return
 
 
 def join_fight(actor: Any, target: Any) -> CombatOperationResult:
@@ -328,6 +345,46 @@ def schedule_tactical_action(
     return CombatOperationResult(True, changed, encounter_id)
 
 
+def schedule_magic_action(
+    actor: Any, snapshot: Mapping[str, Any]
+) -> CombatOperationResult:
+    """Queue one validated primitive cast snapshot for the actor's next action."""
+    from systems.magic_actions import validate_magic_intent
+
+    actor_id = _object_id(actor)
+    intent = validate_magic_intent(snapshot)
+    if actor_id is None or intent is None:
+        return CombatOperationResult(False, False, reason="invalid_action")
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return CombatOperationResult(False, False, reason="not_fighting")
+    record = state["encounters"][str(encounter_id)]["participants"][str(actor_id)]
+    changed = record.get("pending_intent") != intent
+    record["pending_intent"] = intent
+    _write_state(state)
+    _refresh_prompts(actor)
+    return CombatOperationResult(True, changed, encounter_id)
+
+
+def accelerate_next_action(actor: Any) -> bool:
+    """Move one participant's next readiness to the next pulse without replaying now."""
+    actor_id = _object_id(actor)
+    if actor_id is None:
+        return False
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return False
+    record = state["encounters"][str(encounter_id)]["participants"][str(actor_id)]
+    record["ready_at"] = state["last_pulse"] + 1
+    _write_state(state)
+    _refresh_prompts(actor)
+    return True
+
+
 @dataclass(frozen=True)
 class CombatRetargetResult:
     """The low-level, atomic result of a future rescue attempt."""
@@ -493,6 +550,15 @@ def _process_encounter(
                     if target is None:
                         raise CombatError("Stabilization target is missing.")
                     attempt_stabilization(actor, target)
+                elif intent["kind"] == "magic":
+                    from systems.magic_actions import (MagicActionError,
+                                                       execute_magic_intent)
+
+                    try:
+                        execute_magic_intent(actor, intent)
+                    except MagicActionError as err:
+                        actor.msg(str(err))
+                        raise
                 else:
                     from systems.tactical_combat import execute_tactical_intent
 
@@ -957,6 +1023,13 @@ def _valid_intent(intent: Any) -> bool:
             from systems.tactical_combat import valid_tactical_intent
 
             return valid_tactical_intent(intent)
+        except Exception:
+            return False
+    if intent.get("kind") == "magic":
+        try:
+            from systems.magic_actions import valid_magic_intent
+
+            return valid_magic_intent(intent)
         except Exception:
             return False
     return (

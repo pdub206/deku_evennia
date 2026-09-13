@@ -1,0 +1,431 @@
+"""MAGIC-01 registry coverage."""
+
+from types import MappingProxyType
+
+from evennia.utils.test_resources import EvenniaTest
+from systems.magic import (MAGIC_REGISTRY, AccessMode, CastSnapshot,
+                           ClassAccess, Damage, DiceExpression,
+                           MagicDefinition, MagicKind, MagicRegistryError,
+                           PlayerHelp, RangeCategory, ResourceCost, Save,
+                           Scaling, Targeting, TargetingMode,
+                           build_magic_registry, deserialize_cast_snapshot,
+                           validate_persistent_magic_state)
+from world.help_entries import HELP_ENTRY_DICTS
+
+
+def arcane_bolt(**changes):
+    """Return one complete valid definition for focused registry tests."""
+    values = {
+        "key": "wizard.arcane_bolt",
+        "display_name": "Arcane Bolt",
+        "aliases": ("bolt",),
+        "kind": MagicKind.SPELL,
+        "school": "evocation",
+        "tags": ("arcane",),
+        "class_access": (ClassAccess("Wizard", 1),),
+        "access_modes": (AccessMode.LEARNED,),
+        "action_category": "combat",
+        "handler_key": "spell_attack",
+        "targeting": Targeting(TargetingMode.HOSTILE),
+        "range": RangeCategory.ROOM,
+        "cost": ResourceCost("arcane_energy", 1),
+        "damage": Damage(DiceExpression(1, 8), "force"),
+        "player_help": PlayerHelp("arcane bolt", "A focused mote of force."),
+    }
+    values.update(changes)
+    return MagicDefinition(**values)
+
+
+def build(*definitions):
+    """Build with a deliberately small, explicit external reference graph."""
+    return build_magic_registry(
+        definitions,
+        class_keys=("Wizard", "Cleric"),
+        resource_keys=("arcane_energy",),
+        damage_types=("force", "radiant"),
+        effect_keys=("blessed",),
+        help_keys=("arcane bolt", "radiant ward"),
+    )
+
+
+class TestMagicRegistry(EvenniaTest):
+    """Definitions are immutable, deterministic, and fail closed."""
+
+    def test_alias_lookup_availability_and_generated_help(self):
+        registry = build(arcane_bolt())
+
+        self.assertEqual(registry.resolve(" ARCANE   bolt ").key, "wizard.arcane_bolt")
+        self.assertEqual(registry.resolve("bolt").display_name, "Arcane Bolt")
+        self.assertEqual(
+            [item.key for item in registry.available_for("Wizard", 1)],
+            ["wizard.arcane_bolt"],
+        )
+        help_entry = registry.player_help_entry("wizard.arcane_bolt")
+        self.assertIn("Target: hostile.", help_entry["text"])
+        self.assertIn("Cost: 1 arcane_energy.", help_entry["text"])
+        self.assertIsInstance(help_entry["aliases"], tuple)
+        with self.assertRaises(TypeError):
+            registry.definitions["new"] = arcane_bolt(key="new")
+        with self.assertRaises(TypeError):
+            registry.definitions["wizard.arcane_bolt"].messages["start"] = "No."
+
+    def test_cross_references_handler_schema_and_aliases_are_validated(self):
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(aliases=("same",)),
+                arcane_bolt(
+                    key="cleric.bolt",
+                    display_name="Other",
+                    aliases=("same",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                ),
+            )
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(cost=ResourceCost("unknown", 1)))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(handler_key="not_registered"))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(handler_key="healing"))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(player_help=PlayerHelp("missing", "No entry.")))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(spell_level=10))
+        with self.assertRaises(MagicRegistryError):
+            build(arcane_bolt(kind=MagicKind.ABILITY, spell_level=1))
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    concentration=True,
+                    maintenance="concentration",
+                    duration=3,
+                )
+            )
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    key="cleric.no_consequence",
+                    display_name="No Consequence",
+                    aliases=("none",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                    handler_key="saving_throw",
+                    targeting=Targeting(TargetingMode.CREATURE),
+                    damage=None,
+                    save=Save("Wisdom"),
+                    player_help=PlayerHelp("radiant ward", "An invalid save."),
+                )
+            )
+        with self.assertRaises(MagicRegistryError):
+            build(
+                arcane_bolt(
+                    key="cleric.partial_save",
+                    display_name="Partial Save",
+                    aliases=("partial",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                    handler_key="saving_throw",
+                    targeting=Targeting(TargetingMode.CREATURE),
+                    damage=None,
+                    save=Save("Wisdom", on_success="half"),
+                    effect_keys=("blessed",),
+                    player_help=PlayerHelp("radiant ward", "A partial test."),
+                )
+            )
+
+    def test_alpha_policy_and_targeting_boundaries_fail_closed(self):
+        """Selectable definitions cannot opt into unavailable policy surfaces."""
+        invalid = (
+            {"action_category": "delete_world"},
+            {"handler_key": "movement", "damage": None},
+            {"access_modes": (AccessMode.ITEM,)},
+            {"cast_time": 0},
+            {"cost": ResourceCost("arcane_energy", 0)},
+            {
+                "targeting": Targeting(TargetingMode.AREA),
+                "handler_key": "utility",
+                "damage": None,
+            },
+            {"targeting": Targeting(TargetingMode.OBJECT, filters=("living",))},
+            {"targeting": Targeting(TargetingMode.HOSTILE, filters=("item",))},
+        )
+        for changes in invalid:
+            with self.subTest(changes=changes), self.assertRaises(MagicRegistryError):
+                build(arcane_bolt(**changes))
+
+        future = arcane_bolt(
+            handler_key="utility",
+            targeting=Targeting(TargetingMode.GROUP),
+            damage=None,
+            enabled=False,
+        )
+        self.assertFalse(build(future).is_available(future.key))
+
+    def test_every_alpha_target_shape_and_filter_has_a_bounded_schema(self):
+        """The registry accepts each released single-target semantic explicitly."""
+        variants = (
+            {},
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.SELF, include_caster=True),
+                "range": RangeCategory.SELF,
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.CREATURE),
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.ALLY),
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.OBJECT, filters=("item",)),
+                "damage": None,
+            },
+        )
+        for changes in variants:
+            with self.subTest(changes=changes):
+                registry = build(arcane_bolt(**changes))
+                self.assertTrue(registry.is_available("wizard.arcane_bolt"))
+
+        for target_filter in ("character", "living", "undead", "construct", "willing"):
+            with self.subTest(target_filter=target_filter):
+                build(
+                    arcane_bolt(
+                        targeting=Targeting(
+                            TargetingMode.HOSTILE, filters=(target_filter,)
+                        )
+                    )
+                )
+        for target_filter in ("item", "worn", "unworn"):
+            with self.subTest(target_filter=target_filter):
+                build(
+                    arcane_bolt(
+                        handler_key="utility",
+                        targeting=Targeting(
+                            TargetingMode.OBJECT, filters=(target_filter,)
+                        ),
+                        damage=None,
+                    )
+                )
+
+    def test_formula_and_collection_bounds_fail_closed(self):
+        """Unbounded aliases, dice, scaling, saves, and classes are rejected."""
+        invalid = (
+            {"aliases": tuple(f"alias {number}" for number in range(13))},
+            {"damage": Damage(DiceExpression(33, 6), "force")},
+            {"scaling": Scaling((3, 2), dice_per_step=1)},
+            {"messages": {"success": "unsafe {target}"}},
+            {"save": Save("Luck")},
+            {"class_access": (ClassAccess("Sorcerer", 1),)},
+            {"class_access": (ClassAccess("Wizard", 4),)},
+            {"targeting": Targeting(TargetingMode.HOSTILE, filters=("unknown",))},
+        )
+        for changes in invalid:
+            with self.subTest(changes=changes), self.assertRaises(MagicRegistryError):
+                build(arcane_bolt(**changes))
+
+    def test_released_cross_references_and_published_help_are_complete(self):
+        """Every selectable definition resolves through reviewed alpha owners."""
+        player_help = {
+            entry["key"] for entry in HELP_ENTRY_DICTS if "locks" not in entry
+        }
+        for definition in MAGIC_REGISTRY.definitions.values():
+            self.assertIn(definition.handler_key, MAGIC_REGISTRY.handlers)
+            self.assertIn(definition.player_help.key, player_help)
+            self.assertEqual(
+                MAGIC_REGISTRY.player_help_entry(definition.key)["key"],
+                definition.player_help.key,
+            )
+            self.assertIn(
+                definition.targeting.mode,
+                {
+                    TargetingMode.SELF,
+                    TargetingMode.CREATURE,
+                    TargetingMode.ALLY,
+                    TargetingMode.HOSTILE,
+                    TargetingMode.OBJECT,
+                },
+            )
+            self.assertNotIn(AccessMode.ITEM, definition.access_modes)
+
+    def test_released_registry_requires_an_srd_reference(self):
+        """Production content cannot register without its SRD 5.2.1 citation."""
+        with self.assertRaises(MagicRegistryError):
+            build_magic_registry(
+                (arcane_bolt(),),
+                class_keys=("Wizard",),
+                resource_keys=("arcane_energy",),
+                damage_types=("force",),
+                help_keys=("arcane bolt",),
+                require_srd_references=True,
+            )
+        registry = build_magic_registry(
+            (arcane_bolt(srd_reference="SRD 5.2.1 p.107: Spell Descriptions"),),
+            class_keys=("Wizard",),
+            resource_keys=("arcane_energy",),
+            damage_types=("force",),
+            help_keys=("arcane bolt",),
+            require_srd_references=True,
+        )
+        self.assertTrue(registry.requires_srd_references)
+
+    def test_released_actions_are_complete_and_deterministic(self):
+        """The alpha catalog exposes only its ordered executable SRD actions."""
+        self.assertEqual(
+            tuple(MAGIC_REGISTRY.definitions),
+            (
+                "fighter.second_wind",
+                "fighter.action_surge",
+                "cleric.preserve_life",
+                "wizard.arcane_recovery",
+                "wizard.acid_splash",
+                "wizard.fire_bolt",
+                "wizard.poison_spray",
+                "cleric.sacred_flame",
+                "cleric.spare_the_dying",
+                "cleric.thaumaturgy",
+                "cleric.cure_wounds",
+                "cleric.healing_word",
+                "cleric.shield_of_faith",
+                "cleric.guiding_bolt",
+                "cleric.inflict_wounds",
+                "cleric.aid",
+                "wizard.magic_missile",
+                "wizard.thunderwave",
+                "wizard.detect_magic",
+                "wizard.burning_hands",
+                "wizard.longstrider",
+                "wizard.grease",
+                "wizard.acid_arrow",
+                "wizard.scorching_ray",
+                "wizard.shatter",
+                "wizard.blur",
+            ),
+        )
+        self.assertEqual(
+            tuple(
+                definition.key
+                for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
+                if definition.kind == MagicKind.SPELL and definition.spell_level == 0
+            ),
+            (
+                "wizard.acid_splash",
+                "wizard.fire_bolt",
+                "wizard.poison_spray",
+            ),
+        )
+        self.assertEqual(
+            MAGIC_REGISTRY.resolve("sacred flame").key,
+            "cleric.sacred_flame",
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 0
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 1)
+            ),
+            3,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level > 0
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 3)
+            ),
+            6,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 2
+                for definition in MAGIC_REGISTRY.available_for("Cleric", 3)
+            ),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 1
+                for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
+            ),
+            6,
+        )
+        self.assertEqual(
+            sum(
+                definition.spell_level == 2
+                for definition in MAGIC_REGISTRY.available_for("Wizard", 3)
+            ),
+            4,
+        )
+        cantrips = tuple(
+            definition
+            for definition in MAGIC_REGISTRY.definitions.values()
+            if definition.kind == MagicKind.SPELL and definition.spell_level == 0
+        )
+        for definition in cantrips:
+            self.assertEqual(definition.spell_level, 0)
+            self.assertEqual(definition.access_modes, (AccessMode.LEARNED,))
+            self.assertIn(definition.action_category, {"combat", "manipulate"})
+        for definition in MAGIC_REGISTRY.definitions.values():
+            self.assertTrue(definition.srd_reference.startswith("SRD 5.2.1 "))
+            self.assertIn(
+                definition.player_help.summary,
+                MAGIC_REGISTRY.player_help_entry(definition.key)["text"],
+            )
+
+    def test_save_effect_and_disabled_entries_are_safe(self):
+        definition = arcane_bolt(
+            key="cleric.radiant_ward",
+            display_name="Radiant Ward",
+            aliases=("ward",),
+            class_access=(ClassAccess("Cleric", 1),),
+            handler_key="saving_throw",
+            targeting=Targeting(TargetingMode.CREATURE),
+            damage=None,
+            save=Save("Wisdom"),
+            effect_keys=("blessed",),
+            player_help=PlayerHelp("radiant ward", "A ward of light."),
+            enabled=False,
+        )
+        registry = build(definition)
+
+        self.assertFalse(registry.is_available("cleric.radiant_ward"))
+        self.assertEqual(
+            registry.definition_for("cleric.radiant_ward").display_name, "Radiant Ward"
+        )
+        with self.assertRaises(MagicRegistryError):
+            registry.resolve("ward")
+        with self.assertRaises(MagicRegistryError):
+            build(
+                definition,
+                arcane_bolt(
+                    key="cleric.other",
+                    display_name="Other",
+                    aliases=("other",),
+                    class_access=(ClassAccess("Cleric", 1),),
+                    effect_keys=("missing",),
+                ),
+            )
+
+    def test_cast_snapshots_and_runtime_choices_contain_primitives_only(self):
+        snapshot = CastSnapshot(
+            "wizard.arcane_bolt",
+            1,
+            11,
+            (12,),
+            1,
+            13,
+            5,
+            3,
+            MappingProxyType({"arcane_energy": 1}),
+        )
+        restored = deserialize_cast_snapshot(snapshot.serialize())
+        self.assertEqual(restored.target_ids, (12,))
+        self.assertEqual(restored.spellcasting_modifier, 3)
+        legacy = snapshot.serialize()
+        legacy["registry_version"] = 1
+        legacy.pop("spellcasting_modifier")
+        self.assertEqual(deserialize_cast_snapshot(legacy).spellcasting_modifier, 0)
+        validate_persistent_magic_state({"known": ["wizard.arcane_bolt"], "choice": 1})
+        with self.assertRaises(MagicRegistryError):
+            validate_persistent_magic_state({"callback": lambda: None})
+        with self.assertRaises(MagicRegistryError):
+            deserialize_cast_snapshot({"source_key": "wizard.arcane_bolt"})

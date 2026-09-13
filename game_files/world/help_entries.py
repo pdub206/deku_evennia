@@ -26,6 +26,686 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "checks",
+        "aliases": ["ability checks", "skill checks", "advantage", "dc"],
+        "category": "Character",
+        "text": """
+            When an uncertain action matters, the game may call for an ability
+            check. Roll a d20 and add the relevant ability modifier. A skill or
+            tool you are proficient with adds your proficiency bonus once;
+            expertise doubles that proficiency contribution.
+
+            A Difficulty Class (DC) is the number the total must meet or beat.
+            Some actions oppose another character's check instead. Ties usually
+            preserve the current situation. Passive checks use 10 plus the same
+            bonuses, which lets a character notice things without rolling.
+
+            Advantage rolls two d20s and uses the higher result; disadvantage
+            uses the lower. If both apply, they cancel. A natural 1 or 20 on an
+            ability check is not an automatic failure or success.
+        """,
+    },
+    {
+        "key": "@check",
+        "aliases": ["check diagnostics", "adv-04 diagnostics"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |w@check <target> = <ability>[/<skill>] <dc>|n to run a
+            consequence-free diagnostic check for a visible character in your
+            room. Difficulty Classes must be whole numbers from 5 through 30.
+            Ability and skill names must be registered, and a skill must use its
+            normal ability unless a code-owned action explicitly permits an
+            alternate ability.
+
+            This command cannot apply action consequences, search remotely,
+            reveal hidden targets, bypass locks, or accept a DC from player text
+            on behalf of another command. It reports only the selected check's
+            public roll and total.
+        """,
+    },
+    {
+        "key": "magic",
+        "aliases": ["spells", "abilities", "casting"],
+        "category": "Magic",
+        "text": """
+            Spells and magical class abilities use a shared registry. Individual
+            ability help tells you its target, range, cost, cast time, attack
+            or saving throw, duration, scaling, and restrictions. You can only
+            use an action your class has gained through its listed access mode,
+            such as learned, prepared, innate, or item use.
+
+            Use |wspells|n and |wabilities|n to see only actions you currently
+            know or have prepared, along with your class resources. Cast with
+            |wcast <action> at <target>|n, or omit ``at <target>`` for a
+            self-only action. An action with a cast time longer than one action
+            is unavailable until its interruption-safe casting support arrives.
+
+            During combat, |wcast|n prepares the spell for your next ready
+            action instead of granting an extra action. The target, permission,
+            visibility, preparation, and resource cost are checked again when
+            that action occurs. Wearing armor your class is not trained to use
+            prevents spellcasting. Failed or interrupted casts do not spend
+            their reserved resource.
+
+            Spell slots and limited class abilities show their current and
+            maximum values in |wspells|n and |wabilities|n. Short-rest resources
+            recover after an uninterrupted Short Rest in a safe resting place;
+            spell slots and long-rest resources recover after a completed Long
+            Rest with sufficient sleep. Fighting, movement, damage, standing,
+            disconnection, or missed recovery pulses cannot become rest credit.
+            Concentration permits one maintained spell at a time. A replacement,
+            failed Constitution maintenance save after damage, incapacitation,
+            death, or removal of its linked effect ends it.
+
+            Class spell and ability content is unavailable until it can be
+            implemented from the SRD 5.2.1 rules with its required resources,
+            targeting, effects, and recovery. Individual action help will state
+            its actual target, cost, cast time, and limitations when released.
+        """,
+    },
+    {
+        "key": "second wind",
+        "aliases": ["secondwind"],
+        "category": "Magic",
+        "text": """
+            Fighters can |wcast second wind|n to recover 1d10 plus their Fighter
+            level in Hit Points, spending one Second Wind use. In combat this is
+            prepared for the next ordinary action; the alpha has no separate
+            Bonus Action lane. Uses return after an uninterrupted Short Rest.
+        """,
+    },
+    {
+        "key": "action surge",
+        "aliases": ["surge"],
+        "category": "Magic",
+        "text": """
+            A level-2 Fighter can |wcast action surge|n while fighting to shorten
+            the wait for the following action to one combat pulse. It spends one
+            Action Surge use, recovered after an uninterrupted Short Rest, and
+            never grants two resolutions in the same pulse.
+        """,
+    },
+    {
+        "key": "preserve life",
+        "aliases": ["preserve"],
+        "category": "Magic",
+        "text": """
+            A level-3 Life Domain Cleric can |wcast preserve life at <target>|n
+            to spend one Channel Divinity use. It heals one nearby living target
+            that is below half health by up to five times the Cleric's level,
+            without raising the target above half maximum Hit Points.
+        """,
+    },
+    {
+        "key": "arcane recovery",
+        "aliases": ["recover magic"],
+        "category": "Magic",
+        "text": """
+            A resting Wizard can |wcast arcane recovery|n to restore one expended
+            spell slot of the highest eligible level, no greater than half the
+            Wizard's level rounded up. The ability has one use and returns after
+            a completed Long Rest.
+        """,
+    },
+    {
+        "key": "evocation savant",
+        "aliases": ["evoker", "savant spells"],
+        "category": "Magic",
+        "text": """
+            At Wizard level 3, Evocation Savant creates a pending training
+            choice for two released level-1 or level-2 Evocation spells. A
+            qualified Wizard trainer adds both choices to your spellbook for
+            free. These are two bonus spellbook entries and do not reduce the
+            ten ordinary entries available at level 3. They are not prepared
+            automatically; prepare them after a completed Long Rest.
+        """,
+    },
+    {
+        "key": "magic registry",
+        "aliases": ["magic-01", "spell registry", "ability registry"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Magic content may select only a registered stable action key and
+            bounded primitive choices. Definitions are validated together with
+            class access, resources, damage types, effects, handler contracts,
+            aliases, and player-help keys before they become selectable.
+
+            Do not put Python, callbacks, command objects, formulas, imported
+            classes, or lock-bypassing behavior in prototypes or Attributes.
+            Content names a reviewed handler; the owning code implements and
+            revalidates targeting, range, visibility, access, safe-room, and
+            combat policy when MAGIC-02 executes it.
+        """,
+    },
+    {
+        "key": "acid splash",
+        "aliases": ["acid"],
+        "category": "Magic",
+        "text": """
+            Acid Splash is a Wizard evocation cantrip. Cast it at one detected
+            hostile creature in your room. The target makes a Dexterity saving
+            throw, taking 1d6 Acid damage on a failure and no damage on a
+            success. It costs no spell slot and takes one combat action.
+
+            Alpha adaptation: the SRD spell affects a small sphere; the alpha
+            narrows it to one creature because area targeting is not released.
+        """,
+    },
+    {
+        "key": "fire bolt",
+        "aliases": ["firebolt"],
+        "category": "Magic",
+        "text": """
+            Fire Bolt is a Wizard evocation cantrip. Make a spell attack against
+            one detected hostile creature in your room. On a hit, it deals 1d10
+            Fire damage. It costs no spell slot and takes one combat action.
+
+            The alpha targets creatures only. Igniting unattended objects is
+            deferred until object fire consequences exist.
+        """,
+    },
+    {
+        "key": "poison spray",
+        "aliases": ["poison"],
+        "category": "Magic",
+        "text": """
+            Poison Spray is a Wizard necromancy cantrip. Make a spell attack
+            against one detected hostile creature in your room. On a hit, it
+            deals 1d12 Poison damage. It costs no spell slot and takes one
+            combat action.
+        """,
+    },
+    {
+        "key": "sacred flame",
+        "aliases": ["sacred"],
+        "category": "Magic",
+        "text": """
+            Sacred Flame is a Cleric evocation cantrip. Cast it at one detected
+            hostile creature in your room. The target makes a Dexterity saving
+            throw, taking 1d8 Radiant damage on a failure and no damage on a
+            success. It costs no spell slot and takes one combat action. The
+            room-range model has no tabletop cover modifier.
+        """,
+    },
+    {
+        "key": "spare the dying",
+        "aliases": ["spare"],
+        "category": "Magic",
+        "text": """
+            Spare the Dying is a Cleric necromancy cantrip. Cast it at one
+            detected creature in your room that is dying at 0 Hit Points. The
+            creature becomes stable without a Medicine check but remains
+            unconscious. It cannot restore a dead creature. It costs no spell
+            slot and takes one combat action.
+        """,
+    },
+    {
+        "key": "thaumaturgy",
+        "aliases": ["phantom sound"],
+        "category": "Magic",
+        "text": """
+            Thaumaturgy is a Cleric transmutation cantrip. It costs no spell
+            slot and takes one action. Everyone in your room hears an ominous,
+            harmless phantom sound.
+
+            Alpha adaptation: casting always uses the SRD Phantom Sound option
+            and originates the sound at you. The other Thaumaturgy options are
+            not part of the alpha.
+        """,
+    },
+    {
+        "key": "cure wounds",
+        "aliases": ["cure"],
+        "category": "Magic",
+        "text": """
+            Cure Wounds is a level 1 Cleric abjuration spell. Touch a living
+            creature, including yourself, to restore 2d8 plus your Wisdom
+            modifier Hit Points. It can return a dying or stable creature to
+            consciousness but cannot restore the dead. Casting takes one combat
+            action and expends one level 1 Cleric spell slot.
+
+            The alpha casts this only with a level 1 slot; higher-slot casting
+            is not yet available.
+        """,
+    },
+    {
+        "key": "healing word",
+        "aliases": ["heal word"],
+        "category": "Magic",
+        "text": """
+            Healing Word is a level 1 Cleric abjuration spell. Choose one living
+            creature in your room, including yourself, to restore 2d4 plus your
+            Wisdom modifier Hit Points. It can return a dying or stable creature
+            to consciousness but cannot restore the dead. It expends one level
+            1 Cleric spell slot.
+
+            Alpha adaptation: Bonus Actions use one ordinary combat action.
+            Higher-slot casting is not yet available.
+        """,
+    },
+    {
+        "key": "shield of faith",
+        "aliases": ["faith shield"],
+        "category": "Magic",
+        "text": """
+            Shield of Faith is a level 1 Cleric abjuration spell. One living
+            creature in your room, including yourself, gains +2 Armor Class for
+            up to 100 six-second effect pulses while you concentrate. It expends
+            one level 1 Cleric spell slot.
+
+            Alpha adaptation: Bonus Actions use one ordinary combat action.
+            Only level 1 casting is currently available.
+        """,
+    },
+    {
+        "key": "guiding bolt",
+        "aliases": ["guiding"],
+        "category": "Magic",
+        "text": """
+            Guiding Bolt is a level 1 Cleric evocation spell. Make a spell
+            attack against one detected hostile creature in your room. A hit
+            deals 4d6 Radiant damage and outlines the target, giving Advantage
+            to the next weapon or spell attack against it. The light is consumed
+            by that attack. Casting takes one combat action and expends one
+            level 1 Cleric spell slot.
+
+            Alpha adaptation: the light expires after at most two six-second
+            effect pulses. Higher-slot casting is not available.
+        """,
+    },
+    {
+        "key": "inflict wounds",
+        "aliases": ["inflict"],
+        "category": "Magic",
+        "text": """
+            Inflict Wounds is a level 1 Cleric necromancy spell. Make a melee
+            spell attack against one hostile creature you can touch. A hit
+            deals 3d10 Necrotic damage. Casting takes one combat action and
+            expends one level 1 Cleric spell slot.
+
+            Higher-slot casting is not available in the alpha.
+        """,
+    },
+    {
+        "key": "aid",
+        "aliases": ["divine aid"],
+        "category": "Magic",
+        "text": """
+            Aid is a level 2 Cleric abjuration spell. One living creature in
+            your room, including you, gains 5 maximum Hit Points and 5 current
+            Hit Points for up to 4,800 six-second effect pulses. It can aid a
+            dying or stable creature but cannot restore the dead. Casting takes
+            one combat action and expends one level 2 Cleric spell slot.
+
+            Alpha adaptation: Aid affects one creature instead of three and is
+            available only at level 2.
+        """,
+    },
+    {
+        "key": "magic missile",
+        "aliases": ["missile"],
+        "category": "Magic",
+        "text": """
+            Magic Missile is a level 1 Wizard evocation spell. Three darts
+            automatically strike one detected hostile creature in your room,
+            dealing 3d4+3 Force damage. It takes one combat action and expends
+            one level 1 Wizard spell slot.
+
+            Alpha adaptation: all three darts must strike the same creature.
+            Higher-slot casting is not yet available.
+        """,
+    },
+    {
+        "key": "thunderwave",
+        "aliases": ["thunder wave"],
+        "category": "Magic",
+        "text": """
+            Thunderwave is a level 1 Wizard evocation spell. One detected
+            hostile creature in your room makes a Constitution saving throw,
+            taking 2d8 Thunder damage on a failure or half as much on a success.
+            It takes one combat action and expends one level 1 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a cube,
+            and does not push creatures or objects. Higher-slot casting is not
+            yet available.
+        """,
+    },
+    {
+        "key": "detect magic",
+        "aliases": ["detect"],
+        "category": "Magic",
+        "text": """
+            Detect Magic is a level 1 Wizard divination spell and a ritual. It
+            reveals visible creatures and objects in your room that currently
+            bear a registered magical effect or the builder-controlled magic
+            tag. Hidden and otherwise invisible candidates are never revealed.
+            The sense remains active for up to 100 six-second effect pulses and
+            requires concentration.
+
+            A prepared casting expends one level 1 Wizard spell slot. Ritual
+            Adept also lets a Wizard cast an unprepared Detect Magic held in
+            their spellbook without spending a slot. Alpha adaptation: the
+            ritual uses one ordinary action, immediately scans current auras,
+            and does not automatically report auras that appear later.
+        """,
+    },
+    {
+        "key": "burning hands",
+        "aliases": ["burning"],
+        "category": "Magic",
+        "text": """
+            Burning Hands is a level 1 Wizard evocation spell. One detected
+            hostile creature in your room makes a Dexterity saving throw,
+            taking 3d6 Fire damage on a failure or half as much on a success.
+            It takes one combat action and expends one level 1 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a cone
+            and does not ignite objects. Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "longstrider",
+        "aliases": ["long stride"],
+        "category": "Magic",
+        "text": """
+            Longstrider is a level 1 Wizard transmutation spell. Touch a living
+            creature, including yourself, to increase its Speed by 10 for 600
+            six-second effect pulses. It takes one action and expends one level
+            1 Wizard spell slot. It does not require concentration.
+
+            The alpha casts this only with a level 1 slot; multi-target
+            higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "grease",
+        "aliases": ["slick"],
+        "category": "Magic",
+        "text": """
+            Grease is a level 1 Wizard conjuration spell. One detected hostile
+            creature in your room makes a Dexterity saving throw. On a failure,
+            it becomes Prone and must spend its next combat action regaining its
+            footing. A successful save negates the effect. Casting expends one
+            level 1 Wizard spell slot.
+
+            Alpha adaptation: Grease does not create persistent terrain and
+            therefore causes no later entry or end-of-turn saving throws.
+            Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "acid arrow",
+        "aliases": ["arrow of acid"],
+        "category": "Magic",
+        "text": """
+            Acid Arrow is a level 2 Wizard evocation spell. Make a spell attack
+            against one detected hostile creature in your room. A hit deals
+            6d4 Acid damage; a miss still deals 2d4. Casting takes one combat
+            action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: the hit's delayed 2d4 damage is resolved
+            immediately. Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "scorching ray",
+        "aliases": ["scorching"],
+        "category": "Magic",
+        "text": """
+            Scorching Ray is a level 2 Wizard evocation spell. Make three
+            separate spell attacks against one detected hostile creature in
+            your room. Each hit deals 2d6 Fire damage. Casting takes one combat
+            action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: all three rays must target the same creature.
+            Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "shatter",
+        "aliases": ["shattering"],
+        "category": "Magic",
+        "text": """
+            Shatter is a level 2 Wizard evocation spell. One detected hostile
+            creature in your room makes a Constitution saving throw, taking
+            3d8 Thunder damage on a failure or half as much on a success. It
+            takes one combat action and expends one level 2 Wizard spell slot.
+
+            Alpha adaptation: the spell affects one creature rather than a
+            sphere. Object damage and the Construct save penalty are omitted.
+        """,
+    },
+    {
+        "key": "blur",
+        "aliases": ["blurred"],
+        "category": "Magic",
+        "text": """
+            Blur is a level 2 Wizard illusion spell. Weapon and spell attacks
+            against you have Disadvantage for up to 10 six-second effect pulses
+            while you concentrate. It takes one combat action and expends one
+            level 2 Wizard spell slot.
+
+            The alpha has no Blindsight or Truesight exception because those
+            senses are not released. Higher-slot casting is unavailable.
+        """,
+    },
+    {
+        "key": "check diagnostics",
+        "aliases": ["@check", "builder checks", "adv-04"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Builders can test a visible character's calculation with
+            |w@check <target> = <ability>[/<skill>] <dc>|n. DCs are bounded
+            from 5 to 30. This command rolls only a diagnostic check: it does
+            not carry out an action, reveal hidden targets, bypass a lock, or
+            apply any consequence.
+
+            Builder-authored action DC fields must use the same 5–30 range.
+            Do not store arbitrary player-entered DC text in prototypes.
+        """,
+    },
+    {
+        "key": "class progression",
+        "aliases": ["classes", "class features", "level features"],
+        "category": "Character",
+        "text": """
+            Your class determines your hit die, training, saving throws, and
+            the features, resources, spell access, and choices available as
+            you gain levels. Class progress is fixed when you create your
+            character: multiclassing is not available.
+
+            Class features and resources unlock automatically when their level
+            is earned. Some gains are choices; they remain pending until you
+            make the required selection through training. Use |wlevels|n for
+            the exact level 1–3 progression and |wpractice|n for your current
+            grants and choices. The alpha supports Cleric, Fighter, Rogue, and
+            Wizard through level 3 only. A later rules update never silently
+            changes benefits already recorded on your character.
+        """,
+    },
+    {
+        "key": "levels",
+        "aliases": ["level progression", "xp thresholds", "score xp"],
+        "category": "Character",
+        "text": """
+            Use |wlevels|n to see all currently released levels for your class.
+            Each level lists its XP threshold, automatic features, choices
+            resolved through training, and any resource or spell-access
+            changes. Spell access distinguishes known spells from prepared
+            spells, and dependent features list their prerequisites. Resource
+            values shown at your current and next levels are their maxima.
+            Automatic gains apply when you reach the threshold; choices remain
+            pending until you use a suitable trainer.
+
+            Use |wscore|n to see your total XP, effective level, and the XP
+            needed for your next level. The alpha cap is level 3 at 900 XP.
+            XP earned beyond 900 is retained but does not unlock level 4.
+            Use |wpractice|n for your current grants and training record, then
+            |whelp class progression|n, |whelp abilities|n, or |whelp spells|n
+            for more detail.
+        """,
+    },
+    {
+        "key": "weapon mastery",
+        "aliases": ["mastery", "sap", "vex"],
+        "category": "Character",
+        "text": """
+            Fighters choose three released weapon kinds and Rogues choose two
+            through a qualified class trainer. A mastery applies only while
+            you wield a weapon whose |wweapon_kind|n exactly matches one of
+            your selections.
+
+            |wSap|n — Hitting with a mastered longsword, mace, or spear gives
+            the target disadvantage on its next attack roll, then expires.
+
+            |wVex|n — Hitting with a mastered handaxe, rapier, shortbow, or
+            shortsword gives you advantage on your next attack against that
+            same target, whether that attack hits or misses.
+
+            The alpha releases only Sap and Vex because the other tabletop
+            mastery properties require movement or multi-weapon attack rules
+            that are not yet part of the game.
+        """,
+    },
+    {
+        "key": "fast hands",
+        "aliases": ["fastget", "fast"],
+        "category": "Character",
+        "text": """
+            A level-3 Thief can use |wfastget <item>|n during combat to pick up
+            one accessible item from the room. A successful pickup uses the
+            normal capacity, access, and item hooks, then advances the Rogue
+            toward their next combat action using the same bonus-action timing
+            as Cunning Action. Failed pickups do not grant faster timing.
+
+            Outside combat, use the ordinary |wget|n command. Container and
+            corpse retrieval are not part of Fast Hands in the alpha.
+        """,
+    },
+    {
+        "key": "second story work",
+        "aliases": ["climbing speed", "rogue jumping"],
+        "category": "Character",
+        "text": """
+            A level-3 Thief climbs at their full walking speed instead of half
+            speed. Their running long-jump distance uses Dexterity instead of
+            Strength, and their running high jump uses 3 plus their Dexterity
+            modifier, with a minimum of zero feet.
+
+            These calculations are available to the movement rules, but the
+            alpha world does not yet include measured climbing or jumping
+            routes. Standing jumps and difficult-terrain costs remain part of
+            the future movement implementation.
+        """,
+    },
+    {
+        "key": "remarkable athlete",
+        "aliases": ["champion athletics"],
+        "category": "Character",
+        "text": """
+            A level-3 Champion has advantage on Strength (Athletics) checks,
+            including the shared checks used for climbing and shield bashes.
+
+            This is the alpha adaptation of Remarkable Athlete. Initiative
+            benefits and movement after a critical hit require initiative and
+            measured tactical-movement systems that are not released in the
+            alpha, so this feature does not claim those benefits yet.
+        """,
+    },
+    {
+        "key": "class progression registry",
+        "aliases": ["adv-02", "class registry", "progression validation"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            The class progression registry is the sole source for selectable
+            class keys, level grants, training, resources, and spell access.
+            The alpha exposes only Cleric, Fighter, Rogue, and Wizard through
+            level 3. A class is selectable only when all three released levels and every
+            referenced feature, choice, resource, spell access entry, owner,
+            and help key validate together.
+
+            Registry definitions contain only stable primitive keys. Do not
+            store callbacks, imported classes, commands, or display prose in
+            prototypes or character Attributes. A registry fingerprint is
+            recorded at level one so a changed definition can be identified;
+            correcting an incompatible existing character is an ADV-06 task,
+            never a reload side effect.
+        """,
+    },
+    {
+        "key": "practice",
+        "aliases": ["training choices", "train", "class training"],
+        "category": "Character",
+        "text": """
+            Use |wpractice|n to review your known skill proficiencies,
+            automatic class features, class resources, spell access, actual
+            known and prepared spells, spellbook entries, known abilities, and
+            any choices still awaiting training. It is read-only and works
+            anywhere. |wtrain|n with no arguments gives a short list of your
+            pending choices.
+
+            XP raises your level, hit points, and automatic class benefits
+            immediately. A trainer never holds an earned level hostage.
+            Training is only for a listed class choice. To make one, use
+            |wtrain <choice> <option>|n, or name an NPC explicitly with
+            |wtrain <choice> <option> at <trainer>|n. The trainer must be
+            nearby, offer your class and that choice, and be willing to train
+            you. There is currently no option replacement, generic
+            practice-point pool, or training fee.
+
+            A listed magic choice is resolved through its class's declared
+            ownership rule: learning a cantrip or spell, gaining an innate
+            action, adding a Wizard spellbook entry, or preparing an eligible
+            spell. The choice must appear in |wpractice|n before a trainer can
+            resolve it; preparation and spellbook ownership remain distinct.
+            Preparing or changing a prepared spell requires a completed Long
+            Rest in a safe rest location.
+            Only released SRD content appears as an option. Pact-slot recovery
+            and persistent effects follow the separate rules documented by
+            their released actions.
+
+            In the alpha, the Cleric's Protector order grants Heavy armor and
+            Martial weapon training. The Fighter's Defense style grants +1
+            Armor Class while wearing Light, Medium, or Heavy armor.
+            Thaumaturge and other Fighting Styles remain unavailable until all
+            of their required spell or weapon-property mechanics are released.
+        """,
+    },
+    {
+        "key": "trainer profiles",
+        "aliases": ["adv-03", "npc trainers", "training service"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            A trainer is an NPC with a validated versioned trainer profile.
+            The profile names only registered class keys and ADV-02 choice
+            keys, plus inclusive minimum and maximum level bands and an
+            ordinary service-access lock. It contains no Python, callbacks,
+            player-selected import paths, implicit practice points, or
+            arbitrary costs.
+
+            A profile is opt-in: an NPC without one is not a trainer. Keep
+            training locks ordinary and player-facing; never expose private
+            lock expressions in room text or command feedback. The service
+            validates the profile, NPC location, class, level, pending
+            entitlement, and lock both before and inside its transaction.
+            While editing an NPC or NPC prototype, use |wset trainer_profile
+            <json>|n. The JSON object must contain exactly |wversion|n,
+            |wclasses|n, |wchoices|n, |wminimum_level|n, |wmaximum_level|n, and
+            |wservice_lock|n. For example:
+
+              |wset trainer_profile {"version":1,"classes":["Fighter"],
+              "choices":["fighter.skills"],"minimum_level":1,
+              "maximum_level":3,"service_lock":"all()"}|n
+
+            Spawned copies install the validated service lock automatically.
+        """,
+    },
+    {
         "key": "pets",
         "aliases": ["pet", "followers", "order", "charm"],
         "category": "Character",
@@ -159,8 +839,7 @@ HELP_ENTRY_DICTS = [
             Character creation follows five steps from the SRD 5.2.1:
 
             1. |yChoose a Class|n — Your class defines your vocation, talents, and
-               fighting style.  Available classes: Barbarian, Bard, Cleric, Druid,
-               Fighter, Monk, Paladin, Ranger, Rogue, Sorcerer, Warlock, Wizard.
+               fighting style. Alpha classes are Cleric, Fighter, Rogue, and Wizard.
 
             2. |yChoose Your Origin|n — Your origin has two parts:
                - Background: represents your pre-adventuring occupation and gives
@@ -246,6 +925,17 @@ HELP_ENTRY_DICTS = [
             amount. Fractions round down. You do not recover while incapacitated,
             dying, dead, at 0 HP, or while your character is offline or stowed.
 
+            Resting or sleeping also advances class-resource rest progress. At
+            the default one-minute recovery cadence, 10 uninterrupted pulses
+            finish a Short Rest. A Long Rest needs 80 uninterrupted pulses,
+            including 60 while sleeping. Class-resource rests require a safe
+            rest location. Damage, combat, movement, spellcasting, leaving a
+            resting or sleeping posture, or time while offline interrupts that
+            progress.
+            A completed Short Rest restores only resources that say they recover
+            on a Short Rest; a completed Long Rest restores both short- and
+            long-rest resources. Only released class resources use this system.
+
             ## Identity
 
               |wClass|n, |wBackground|n, |wSpecies|n, |wAlignment|n, |wLanguages|n
@@ -283,7 +973,15 @@ HELP_ENTRY_DICTS = [
     },
     {
         "key": "tactical combat",
-        "aliases": ["aim", "backstab", "bash", "kick", "tactical actions"],
+        "aliases": [
+            "aim",
+            "backstab",
+            "bash",
+            "hide",
+            "kick",
+            "steady",
+            "tactical actions",
+        ],
         "category": "Combat",
         "text": """
             Tactical actions are prepared now and resolve on your next ready
@@ -303,11 +1001,30 @@ HELP_ENTRY_DICTS = [
             of you in a solo fight or is focused on someone else in a larger
             fight. A miss does not use that round's successful Sneak Attack.
 
+            |whide|n uses one combat action to make a Dexterity (Stealth) check
+            against your current target's passive Wisdom (Perception). Success
+            hides you only from that target and enables one solo-fight backstab
+            attempt. The hidden state is consumed by that attempt or cleared
+            when you leave combat. Failure does not reveal the target's score.
+            A Rogue with Cunning Action becomes ready again on the next combat
+            pulse after this attempt. Dash and Disengage require the later
+            movement-action surface and are not part of this alpha adaptation.
+
+            A level-3 Rogue may use |wsteady [target]|n. The alpha spends one
+            ordinary combat action to hold position and prepare advantage for
+            the following weapon attack; that advantage is consumed on the
+            attack whether it hits or misses, or cleared when combat ends. The
+            Rogue becomes ready again on the next pulse rather than resolving a
+            second action in the same pulse.
+
             |wbash [target]|n requires a shield. Your Strength (Athletics) is
             contested by the target's better Athletics or Acrobatics. A creature
             more than one size larger cannot be knocked down. A successful bash
             deals no damage, makes the target prone, and costs its next combat
             action as it regains its footing. Prone does not stack or refresh.
+            A level-2 Fighter may use |wbash/mind|n to apply Tactical Mind after
+            a failed bash check. One Second Wind use is spent only when the
+            added 1d10 changes that failure into a success.
 
             |wkick [target]|n is available to everyone and needs no free hand.
             It attacks with Strength for 1d4 + Strength bludgeoning damage at the
@@ -439,6 +1156,38 @@ HELP_ENTRY_DICTS = [
             no XP. This is separate from the NPC's own |wxp|n statistic. NPC
             carried equipment and inventory are the only loot: changing a
             template does not replenish an existing NPC's lost items.
+        """,
+    },
+    {
+        "key": "advancement",
+        "aliases": ["experience", "xp", "leveling", "level up"],
+        "category": "Character",
+        "text": """
+            Experience Points (XP) are cumulative. Reaching a level's XP
+            threshold raises your level automatically; no trainer is needed
+            for your level, hit points, or other automatic benefits. Some class
+            benefits are choices. Those remain pending until you train them
+            instead of being selected for you.
+
+            The alpha level cap is 3 at 900 XP. You may still earn and retain
+            XP after that point, but it grants no fourth level or additional
+            level-based benefits. Characters have one class; multiclassing is
+            not available. Use |wscore|n for your current XP calculation,
+            |wlevels|n for all released class gains, and |wpractice|n for
+            choices and benefits already on your character.
+        """,
+    },
+    {
+        "key": "advancement diagnostics",
+        "aliases": ["@advancement", "@adv", "adv-05"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Builders may use |w@advancement <character or #dbref>|n to inspect
+            advancement schema, registry identity, award provenance, automatic
+            grants, and pending or resolved choices. Inspection is read-only.
+            Invalid or drifted records receive a bounded diagnostic; repair is
+            intentionally deferred and must not be attempted by viewing them.
         """,
     },
     {

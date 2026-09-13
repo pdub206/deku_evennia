@@ -197,7 +197,15 @@ def can_detect_remotely(observer: Any, candidate: Any) -> PolicyDecision:
     if not set(requirements).issubset(senses):
         return PolicyDecision(False, "detection_denied")
     try:
-        passive = observer.stats.passive_perception
+        from systems.checks import passive_check
+
+        passive = passive_check(
+            observer,
+            ability="Wisdom",
+            skill="Perception",
+            action_key="passive_perception",
+            override=observer.attributes.get("passive_perception_override"),
+        ).total
     except (AttributeError, TypeError):
         return PolicyDecision(False, "invalid_detection_data")
     if (

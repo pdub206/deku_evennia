@@ -9,11 +9,25 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
-                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
-                               CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdMobile, CmdNpcs, CmdRooms,
-                               CmdSpawn, _enter_build_mode, _exit_build_mode)
+from commands.building import (
+    _BUILD_PROMPT,
+    CmdAreas,
+    CmdBuild,
+    CmdBuildArea,
+    CmdBuildDel,
+    CmdBuildDig,
+    CmdBuildDone,
+    CmdBuildFields,
+    CmdBuildSet,
+    CmdItems,
+    CmdLoadArea,
+    CmdMobile,
+    CmdNpcs,
+    CmdRooms,
+    CmdSpawn,
+    _enter_build_mode,
+    _exit_build_mode,
+)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -746,6 +760,7 @@ class TestEditNewNpc(EvenniaCommandTest):
                 "behavior",
                 "specials",
                 "combat_profile",
+                "trainer_profile",
                 "sentinel",
                 "scavenger",
                 "aggressive",
@@ -792,6 +807,10 @@ class TestEditNewNpc(EvenniaCommandTest):
             CmdBuildSet(),
             'combat_profile {"version": 1, "target_policy": "lowest_id", "tactics": [], "wimpy": 35}',
         )
+        self.call(
+            CmdBuildSet(),
+            'trainer_profile {"version": 1, "classes": ["Wizard"], "choices": ["wizard.skills"], "minimum_level": 1, "maximum_level": 3, "service_lock": "all()"}',
+        )
         self.call(CmdBuildSet(), "corpse_decay_minutes 12.5")
 
         saved = _proto("city_guard")
@@ -809,6 +828,7 @@ class TestEditNewNpc(EvenniaCommandTest):
         self.assertEqual(saved["mobile_behavior_profile"], "idle")
         self.assertEqual(saved["mob_combat_profile"]["target_policy"], "lowest_id")
         self.assertEqual(saved["mob_combat_profile"]["wimpy"], 35)
+        self.assertEqual(saved["trainer_profile"]["classes"], ["Wizard"])
         self.assertTrue(saved["mobile_policy"]["aggressive"])
         self.assertEqual(
             saved["mobile_specials"],
@@ -827,8 +847,28 @@ class TestEditNewNpc(EvenniaCommandTest):
             "combat_profile not-json",
             "Invalid value for 'combat_profile'",
         )
+        self.call(
+            CmdBuildSet(),
+            "trainer_profile not-json",
+            "Invalid value for 'trainer_profile'",
+        )
         self.assertEqual(self.char1.ndb._build_target["char_class"], "Fighter")
         self.assertEqual(self.char1.ndb._build_target["strength"], 8)
+
+    def test_spawned_trainer_profile_installs_its_service_lock(self):
+        """Validated prototype data becomes an enforceable live trainer service."""
+        self.call(CmdBuild(), "new npc Arcanist")
+        self.call(
+            CmdBuildSet(),
+            'trainer_profile {"version": 1, "classes": ["Wizard"], "choices": ["wizard.skills"], "minimum_level": 1, "maximum_level": 3, "service_lock": "all()"}',
+        )
+        self.call(CmdBuildDone(), "")
+        self.call(CmdSpawn(), "arcanist")
+        trainers = [obj for obj in self.room1.contents if obj.key == "Arcanist"]
+        spawned = max(trainers, key=lambda obj: obj.id)
+
+        self.assertEqual(spawned.db.trainer_profile["classes"], ["Wizard"])
+        self.assertTrue(spawned.access(self.char1, "training", default=False))
 
     def test_derived_stat_fields_store_explicit_overrides(self):
         self.call(CmdBuild(), "new npc City Guard")

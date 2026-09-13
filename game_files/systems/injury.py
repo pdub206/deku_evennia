@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from evennia.utils import logger
 from systems.action_policy import Position
+from systems.checks import CheckRequest, CheckResult, resolve_check
 from systems.combat_outcomes import InjuryState, predict_damage_transition
 from systems.dice import roll
 from systems.pulses import PulseEvent, PulseLane
@@ -53,6 +54,7 @@ class InjuryResult:
     reason: str = ""
     combat_cleanup_required: bool = False
     death_id: str | None = None
+    check: CheckResult | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,14 @@ def apply_damage(
     reason = prediction.reason
 
     _write(owner, next_record, source=source)
+    try:
+        from systems.magic_rest import interrupt_magic_rest
+
+        interrupt_magic_rest(owner)
+    except Exception:
+        logger.log_trace(
+            f"Could not interrupt magic rest for #{getattr(owner, 'id', '?')}."
+        )
     # Combat is a distinct event from injury/death, so encounter specials can
     # observe a legal hit without taking ownership of the damage transaction.
     try:
@@ -218,6 +228,28 @@ def apply_damage(
     result = _result(
         True, previous_hp, final_hp, next_record, reason, cleanup, previous=record
     )
+    if result.state in {
+        InjuryState.DYING,
+        InjuryState.INCAPACITATED,
+        InjuryState.DEAD,
+    }:
+        try:
+            from systems.magic_actions import end_concentration
+
+            end_concentration(owner)
+        except Exception:
+            logger.log_trace(
+                f"Could not end concentration for #{getattr(owner, 'id', '?')}."
+            )
+    else:
+        try:
+            from systems.magic_actions import maintain_concentration
+
+            maintain_concentration(owner, amount)
+        except Exception:
+            logger.log_trace(
+                f"Could not maintain concentration for #{getattr(owner, 'id', '?')}."
+            )
     if emit_messages and result.state is not record.state:
         _announce(owner, result)
     _refresh_combat_controls(owner, previous_hp, final_hp)
@@ -282,15 +314,17 @@ def attempt_stabilization(
         return _result(
             False, previous_hp, previous_hp, record, "invalid_target", previous=record
         )
-    die_roll = die_roller(20)
-    if (
-        isinstance(die_roll, bool)
-        or not isinstance(die_roll, int)
-        or not 1 <= die_roll <= 20
-    ):
-        raise InjuryError("Medicine roller returned an invalid d20 result.")
-    total = die_roll + healer.stats.skill_bonus("Medicine")
-    if total >= 10:
+    check = resolve_check(
+        CheckRequest(
+            healer,
+            "Wisdom",
+            10,
+            skill="Medicine",
+            action_key="stabilize",
+        ),
+        roller=die_roller,
+    )
+    if check.success:
         next_record = InjuryRecord(
             InjuryState.INCAPACITATED, last_recovery=record.last_recovery
         )
@@ -307,17 +341,44 @@ def attempt_stabilization(
         next_record.state,
         next_record.successes,
         next_record.failures,
-        die_roll,
-        total,
+        check.die_result,
+        check.total,
         reason,
         next_record.state is InjuryState.DEAD,
         next_record.death_id,
+        check,
     )
     if emit_messages:
         healer.msg(
-            f"Medicine check: d20 {die_roll} + {healer.stats.skill_bonus('Medicine')} = {total}."
+            f"Medicine check: d20 {check.die_result} + "
+            f"{check.total - check.die_result} = {check.total}."
         )
         _announce(target, result)
+    return result
+
+
+def apply_stabilization(owner: Any, *, emit_messages: bool = True) -> InjuryResult:
+    """Make one living creature at 0 HP stable without an ability check.
+
+    This is the narrow transition used by effects such as Spare the Dying. It
+    retains COMBAT-04 ownership of injury storage without granting callers the
+    broader repair authority intended for staff.
+    """
+    if not hasattr(owner, "stats"):
+        raise InjuryError("Stabilization requires a character target.")
+    record = injury_record(owner)
+    previous_hp = owner.stats.hp_current
+    if record.state is not InjuryState.DYING or previous_hp != 0:
+        return _result(
+            False, previous_hp, previous_hp, record, "invalid_target", previous=record
+        )
+    stable = InjuryRecord(InjuryState.INCAPACITATED, last_recovery=record.last_recovery)
+    _write(owner, stable)
+    result = _result(
+        True, previous_hp, previous_hp, stable, "stabilized", previous=record
+    )
+    if emit_messages:
+        _announce(owner, result)
     return result
 
 

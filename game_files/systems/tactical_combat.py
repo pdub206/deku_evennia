@@ -15,14 +15,17 @@ from typing import Any
 from systems.attacks import (AttackOutcome, AttackResult, can_attack,
                              resolve_basic_attack)
 from systems.character_stats import AttackProfile
+from systems.checks import (CheckRequest, CheckResult, resolve_opposed_check,
+                            stealth_against_passive)
 from systems.combat import CombatActionResult, get_encounter_id, get_target
-from systems.dice import RollResult, roll_check
-from systems.effects import (EFFECT_REGISTRY, ApplyOutcome, EffectDefinition,
-                             RemovalReason, StackingPolicy)
+from systems.dice import RollResult
+from systems.effects import ApplyOutcome, RemovalReason
 from systems.equipment import HIT_LOCATIONS
 from systems.pulses import PulseEvent
 
 PRONE_EFFECT_KEY = "combat.prone"
+HIDDEN_EFFECT_KEY = "combat.hidden"
+STEADY_AIM_EFFECT_KEY = "combat.steady_aim"
 KICK_LOCATIONS = ("body", "left leg", "right leg")
 KICK_LOCATION_WEIGHTS = MappingProxyType({"body": 6, "left leg": 1, "right leg": 1})
 _SIZE_ORDER = {
@@ -46,8 +49,8 @@ class TacticalActionResult(CombatActionResult):
     actor_id: int | None = None
     target_id: int | None = None
     attack: AttackResult | None = None
-    attacker_roll: RollResult | None = None
-    defender_roll: RollResult | None = None
+    attacker_roll: RollResult | CheckResult | None = None
+    defender_roll: RollResult | CheckResult | None = None
     effect_applied: str | None = None
     retargeted: bool = False
 
@@ -74,6 +77,10 @@ class TacticalActionRegistry:
 
     def get(self, key: str) -> TacticalHandler | None:
         return self._handlers.get(key)
+
+    def keys(self) -> tuple[str, ...]:
+        """Return registered action keys in deterministic declaration order."""
+        return tuple(self._handlers)
 
 
 TACTICAL_ACTIONS = TacticalActionRegistry()
@@ -103,6 +110,10 @@ def validate_tactical_intent(
         if location not in HIT_LOCATIONS:
             return None
         intent["location"] = location
+    elif action == "bash" and arguments:
+        if arguments != {"tactical_mind": True}:
+            return None
+        intent["tactical_mind"] = True
     elif arguments:
         return None
     return intent
@@ -155,7 +166,7 @@ def execute_tactical_intent(
 def clear_combat_conditions(character: Any) -> None:
     """Clear encounter-only effects whenever their owner leaves combat."""
     for effect in character.effects.all():
-        if effect.key == PRONE_EFFECT_KEY:
+        if effect.key in {PRONE_EFFECT_KEY, HIDDEN_EFFECT_KEY, STEADY_AIM_EFFECT_KEY}:
             character.effects.remove(
                 effect.instance_id, reason=RemovalReason.ADMIN, quiet=True
             )
@@ -212,6 +223,7 @@ def _backstab(
     attack = resolve_basic_attack(
         actor, target, event, extra_damage_dice=dice, attack_name="backstab"
     )
+    _remove_hidden_from(actor, target)
     # A miss is an attempt but not a successfully applied Sneak Attack.
     if attack.outcome is not AttackOutcome.MISS:
         actor.db.combat_sneak_attack_round = event.sequence
@@ -241,6 +253,74 @@ def _backstab_reason(actor: Any, target: Any, event: PulseEvent) -> str:
     elif get_target(target) is actor:
         return "target_focused_on_you"
     return ""
+
+
+def _hide(
+    actor: Any, target: Any, event: PulseEvent, intent: Mapping[str, Any]
+) -> TacticalActionResult:
+    """Contest Stealth against the current target's passive Perception."""
+    contest = stealth_against_passive(actor, target)
+    common = {
+        "acted": True,
+        "action": "hide",
+        "pulse": event.sequence,
+        "actor_id": actor.id,
+        "target_id": target.id,
+        "attacker_roll": contest.actor,
+        "defender_roll": contest.opponent,
+    }
+    if not contest.actor_wins:
+        _remove_hidden_from(actor, target)
+        _accelerate_rogue_bonus_action(actor, "rogue.cunning_action")
+        actor.msg(f"You fail to hide from {target.get_display_name(actor)}.")
+        return TacticalActionResult(reason="detected", **common)
+    application = actor.effects.add(
+        HIDDEN_EFFECT_KEY,
+        source=target,
+        source_key="rogue.hide",
+        quiet=True,
+    )
+    applied = application.outcome in {ApplyOutcome.APPLIED, ApplyOutcome.REPLACED}
+    if applied:
+        _accelerate_rogue_bonus_action(actor, "rogue.cunning_action")
+        actor.msg(f"You hide from {target.get_display_name(actor)}.")
+    return TacticalActionResult(
+        accepted=applied,
+        effect_applied=HIDDEN_EFFECT_KEY if applied else None,
+        **common,
+    )
+
+
+def _steady_aim(
+    actor: Any, target: Any, event: PulseEvent, _intent: Mapping[str, Any]
+) -> TacticalActionResult:
+    """Trade one queued action for advantage on the Rogue's following attack."""
+    from systems.class_features import has_granted_feature
+
+    common = {
+        "acted": True,
+        "action": "steady_aim",
+        "pulse": event.sequence,
+        "actor_id": actor.id,
+        "target_id": target.id,
+    }
+    if not has_granted_feature(actor, "rogue.steady_aim"):
+        return TacticalActionResult(reason="feature_required", **common)
+    application = actor.effects.add(
+        STEADY_AIM_EFFECT_KEY,
+        source=actor,
+        source_key="rogue.steady_aim",
+        quiet=True,
+    )
+    applied = application.outcome is not ApplyOutcome.REJECTED
+    if applied:
+        _accelerate_rogue_bonus_action(actor, "rogue.steady_aim")
+    return TacticalActionResult(
+        accepted=applied,
+        reason="aim_already_steady" if not applied else "",
+        effect_applied=STEADY_AIM_EFFECT_KEY if applied else None,
+        **common,
+    )
 
 
 def _kick(
@@ -294,12 +374,37 @@ def _bash(
         return TacticalActionResult(reason="shield_required", **common)
     if _size_rank(target) > _size_rank(actor) + 1:
         return TacticalActionResult(reason="target_too_large", **common)
-    attacker_roll = roll_check(actor.stats.skill_bonus("Athletics"), 0)
-    defender_bonus = max(
-        target.stats.skill_bonus("Athletics"), target.stats.skill_bonus("Acrobatics")
+    defense_skill = (
+        "Athletics"
+        if target.stats.skill_bonus("Athletics")
+        >= target.stats.skill_bonus("Acrobatics")
+        else "Acrobatics"
     )
-    defender_roll = roll_check(defender_bonus, 0)
-    if attacker_roll.total < defender_roll.total:
+    contest = resolve_opposed_check(
+        CheckRequest(actor, "Strength", 5, skill="Athletics", action_key="bash"),
+        CheckRequest(
+            target,
+            "Strength" if defense_skill == "Athletics" else "Dexterity",
+            5,
+            skill=defense_skill,
+            action_key="bash_defense",
+        ),
+    )
+    attacker_roll, defender_roll = contest.actor, contest.opponent
+    actor_wins = contest.actor_wins
+    if not actor_wins and intent.get("tactical_mind"):
+        from systems.class_features import has_granted_feature
+        from systems.dice import roll
+        from systems.magic_resources import MagicResourceError, spend_resource
+
+        if has_granted_feature(actor, "fighter.tactical_mind"):
+            actor_wins = attacker_roll.total + roll(10) > defender_roll.total
+            if actor_wins:
+                try:
+                    spend_resource(actor, "fighter.second_wind", 1)
+                except MagicResourceError:
+                    actor_wins = False
+    if not actor_wins:
         return TacticalActionResult(
             reason="contest_failed",
             attacker_roll=attacker_roll,
@@ -343,8 +448,27 @@ def _is_finesse_weapon(weapon: Any) -> bool:
 
 
 def _hidden_from(actor: Any, target: Any) -> bool:
-    """Consume ADV-04's canonical hidden condition without duplicating stealth."""
-    return actor.effects.has_condition("hidden")
+    """Return whether an ADV-04 result hid the actor from this exact target."""
+    return any(
+        effect.key == HIDDEN_EFFECT_KEY
+        and getattr(effect.source, "id", None) == target.id
+        for effect in actor.effects.all()
+    )
+
+
+def _remove_hidden_from(actor: Any, target: Any) -> None:
+    """Consume an observer-specific hidden result after detection or attack."""
+    instance = next(
+        (
+            effect
+            for effect in actor.effects.all()
+            if effect.key == HIDDEN_EFFECT_KEY
+            and getattr(effect.source, "id", None) == target.id
+        ),
+        None,
+    )
+    if instance is not None:
+        actor.effects.remove(instance.instance_id, quiet=True)
 
 
 def _participant_count(actor: Any) -> int:
@@ -359,6 +483,15 @@ def _participant_count(actor: Any) -> int:
     )
 
 
+def _accelerate_rogue_bonus_action(actor: Any, feature_key: str) -> None:
+    """Represent a released Bonus Action as next-pulse readiness, never replay."""
+    from systems.class_features import has_granted_feature
+    from systems.combat import accelerate_next_action
+
+    if has_granted_feature(actor, feature_key):
+        accelerate_next_action(actor)
+
+
 def _size_rank(character: Any) -> int:
     """Map supported builder size labels to a conservative Medium default."""
     return _SIZE_ORDER.get(
@@ -368,20 +501,13 @@ def _size_rank(character: Any) -> int:
 
 def _register_defaults() -> None:
     """Register reload-safe built-in tactical definitions once per process."""
-    if EFFECT_REGISTRY.get(PRONE_EFFECT_KEY) is None:
-        EFFECT_REGISTRY.register(
-            EffectDefinition(
-                key=PRONE_EFFECT_KEY,
-                name="Prone",
-                stacking=StackingPolicy.REJECT,
-                conditions=frozenset({"prone"}),
-            )
-        )
     for key, handler in {
         "aim": _aim,
         "backstab": _backstab,
         "bash": _bash,
+        "hide": _hide,
         "kick": _kick,
+        "steady_aim": _steady_aim,
     }.items():
         if TACTICAL_ACTIONS.get(key) is None:
             TACTICAL_ACTIONS.register(key, handler)

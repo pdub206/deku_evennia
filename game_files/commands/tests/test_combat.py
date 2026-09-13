@@ -1,6 +1,6 @@
 """Command-level coverage for COMBAT-02 target enrollment."""
 
-from commands.combat import CmdAim, CmdAttack
+from commands.combat import CmdAim, CmdAttack, CmdHide
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.combat import get_target, is_fighting
 
@@ -43,3 +43,12 @@ class TestCmdAttack(EvenniaCommandTest):
         self.call(CmdAim(), "body", "You prepare to aim Char2 on your next action.")
 
         self.assertEqual(self.char2.stats.hp_current, before)
+
+    def test_hide_requires_combat_and_queues_without_rolling(self):
+        """Hide consumes the next combat action rather than resolving immediately."""
+        self.assertIn("must be fighting", self.call(CmdHide(), ""))
+        self.call(CmdAttack(), "Char2", "You begin fighting Char2.")
+
+        output = self.call(CmdHide(), "")
+
+        self.assertIn("prepare to hide", output)

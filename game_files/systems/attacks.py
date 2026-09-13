@@ -146,6 +146,14 @@ def resolve_basic_attack(
         )
 
     profile = profile or attacker.stats.attack_profile()
+    guiding_bolt = target.effects.has_condition("guiding_bolt_marked")
+    steady_aim = attacker.effects.has_condition("steady_aim")
+    vex = _effect_from(target, "combat.mastery_vex", attacker)
+    sap = _first_effect(attacker, "combat.mastery_sap")
+    has_advantage = has_advantage or guiding_bolt or steady_aim or vex is not None
+    has_disadvantage = (
+        has_disadvantage or target.effects.has_condition("blurred") or sap is not None
+    )
     target_injury = injury_record(target)
     target_unconscious = target_injury.state in {
         InjuryState.DYING,
@@ -162,7 +170,36 @@ def resolve_basic_attack(
         roller=die_roller,
         select_location=lambda: location_selector(attacker, target),
         mitigate=target.stats.mitigate_damage,
+        critical_threshold=(
+            19 if _has_granted_feature(attacker, "fighter.improved_critical") else 20
+        ),
     )
+    if guiding_bolt:
+        instance = next(
+            (
+                effect
+                for effect in target.effects.all()
+                if "guiding_bolt_marked" in effect.conditions
+            ),
+            None,
+        )
+        if instance is not None:
+            target.effects.remove(instance.instance_id, quiet=True)
+    if steady_aim:
+        instance = next(
+            (
+                effect
+                for effect in attacker.effects.all()
+                if "steady_aim" in effect.conditions
+            ),
+            None,
+        )
+        if instance is not None:
+            attacker.effects.remove(instance.instance_id, quiet=True)
+    if vex is not None:
+        target.effects.remove(vex.instance_id, quiet=True)
+    if sap is not None:
+        attacker.effects.remove(sap.instance_id, quiet=True)
     if (
         calculation.hit_location is not None
         and calculation.hit_location not in HIT_LOCATIONS
@@ -189,6 +226,24 @@ def resolve_basic_attack(
             render_attack_result(attacker, target, result)
         return result
 
+    from systems.class_features import weapon_mastery_for_attack
+
+    mastery = weapon_mastery_for_attack(attacker, attacker.equipment.wielded_weapon)
+    if mastery == "vex":
+        target.effects.add(
+            "combat.mastery_vex",
+            source=attacker,
+            source_key="weapon_mastery.vex",
+            quiet=True,
+        )
+    elif mastery == "sap":
+        target.effects.add(
+            "combat.mastery_sap",
+            source=attacker,
+            source_key="weapon_mastery.sap",
+            quiet=True,
+        )
+
     injury = apply_damage(
         target,
         calculation.final_damage,
@@ -211,6 +266,33 @@ def resolve_basic_attack(
         render_attack_result(attacker, target, result)
         announce_transition(target, injury)
     return result
+
+
+def _has_granted_feature(character: Any, feature_key: str) -> bool:
+    """Keep attack rules dependent on the class-feature ownership adapter."""
+    from systems.class_features import has_granted_feature
+
+    return has_granted_feature(character, feature_key)
+
+
+def _first_effect(character: Any, key: str) -> Any | None:
+    """Find one active effect by stable key for one-use attack consumption."""
+    return next(
+        (effect for effect in character.effects.all() if effect.key == key), None
+    )
+
+
+def _effect_from(character: Any, key: str, source: Any) -> Any | None:
+    """Find an attacker-specific mark without exposing another source's Vex."""
+    source_id = getattr(source, "id", None)
+    return next(
+        (
+            effect
+            for effect in character.effects.all()
+            if effect.key == key and getattr(effect.source, "id", None) == source_id
+        ),
+        None,
+    )
 
 
 def render_attack_result(attacker: Any, target: Any, result: AttackResult) -> None:

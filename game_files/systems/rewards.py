@@ -8,7 +8,7 @@ systems (groups, pets, and environmental damage) share one attribution result.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from django.db import transaction
@@ -126,7 +126,21 @@ def resolve_death(
 
         result, recipient = _resolve(victim, death_id, source)
         if recipient is not None and result.final_xp:
-            recipient.stats.set_xp(result.resulting_xp or 0)
+            from systems.advancement import award_xp
+
+            advancement = award_xp(
+                recipient,
+                result.final_xp,
+                source_kind="combat_death",
+                source_id=death_id,
+            )
+            if not advancement.applied:
+                raise RewardError("A new death identity has an existing XP award.")
+            result = replace(
+                result,
+                previous_xp=advancement.old_xp,
+                resulting_xp=advancement.new_xp,
+            )
         stored["results"][death_id] = _result_payload(result)
         _write_result_store(stored)
         if _is_npc(victim):

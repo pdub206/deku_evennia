@@ -6,6 +6,7 @@ from systems.injury import (
     InjuryState,
     apply_damage,
     apply_healing,
+    apply_stabilization,
     attempt_stabilization,
     injury_record,
     process_recovery_pulse,
@@ -63,6 +64,18 @@ class TestInjuryState(EvenniaTest):
         )
         self.assertTrue(result.accepted)
         self.assertEqual(result.state, InjuryState.INCAPACITATED)
+
+    def test_effect_stabilization_has_no_check_and_rejects_invalid_targets(self):
+        """Magic can request only the narrow dying-to-stable transition."""
+        rejected = apply_stabilization(self.char2, emit_messages=False)
+        self.assertFalse(rejected.accepted)
+
+        apply_damage(self.char2, 10, emit_messages=False)
+        result = apply_stabilization(self.char2, emit_messages=False)
+        self.assertTrue(result.accepted)
+        self.assertEqual(result.reason, "stabilized")
+        self.assertEqual(result.state, InjuryState.INCAPACITATED)
+        self.assertEqual(self.char2.stats.hp_current, 0)
 
     def test_npc_default_is_immediately_dead_and_massive_damage_bypasses_saves(self):
         self.char2.db.is_player_character = False

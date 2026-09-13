@@ -85,6 +85,26 @@ class TestBasicAttacks(EvenniaTest):
         self.assertEqual(result.damage_rolls, (3, 4))
         self.assertEqual(result.damage_total, 9)  # dice plus Strength once
 
+    def test_guiding_bolt_mark_grants_one_weapon_attack_advantage(self):
+        """The next basic attack consumes Guiding Bolt's shared effect mark."""
+        self.char2.effects.add(
+            "magic.guiding_bolt",
+            source=self.char1,
+            source_key="cleric.guiding_bolt",
+        )
+        values = iter((5, 15, 3))
+
+        result = resolve_basic_attack(
+            self.char1,
+            self.char2,
+            die_roller=lambda _: next(values),
+            location_selector=lambda *_: "body",
+            emit_messages=False,
+        )
+
+        self.assertEqual(result.attack_rolls, (5, 15))
+        self.assertFalse(self.char2.effects.has("magic.guiding_bolt"))
+
     def test_mitigation_and_negative_damage_do_not_heal(self):
         self.char1.stats.set_ability_score("Strength", 3)
         before = self.char2.stats.hp_current

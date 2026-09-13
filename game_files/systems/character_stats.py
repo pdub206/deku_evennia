@@ -12,11 +12,11 @@ from numbers import Real
 from typing import Any, Mapping
 
 from systems.equipment import DamageMitigation
+from systems.progression import CLASSES
 from world.chargen_data import (
     ABILITY_NAMES,
     ABILITY_SHORT,
     CARRY_CAPACITY_MULTIPLIER,
-    CLASSES,
     SKILLS,
     SPECIES,
     ability_modifier,
@@ -131,15 +131,17 @@ class CharacterStats:
 
     @property
     def level(self) -> int:
-        """Return character level, constrained to the supported 1-20 range."""
+        """Return a valid SRD level; PC advancement applies the release cap."""
         return max(1, min(20, int(self._attribute("level", 1))))
 
     def set_level(self, level: int) -> None:
         """Persist a level without awarding level-up benefits."""
+        if self._attribute("is_player_character") is True:
+            raise ValueError(
+                "Player levels must change through the advancement service."
+            )
         if not 1 <= level <= 20:
             raise ValueError("Level must be between 1 and 20.")
-        # TODO(ADV-01): The level-up transaction must add each earned level's
-        # class HP contribution to hp_base before calling this mutator.
         self.owner.db.level = level
         self._clamp_current_hp()
 
@@ -150,6 +152,8 @@ class CharacterStats:
 
     def set_xp(self, xp: int) -> None:
         """Persist experience without applying advancement thresholds."""
+        if self._attribute("is_player_character") is True:
+            raise ValueError("Player XP must change through the advancement service.")
         if xp < 0:
             raise ValueError("XP cannot be negative.")
         self.owner.db.xp = xp
@@ -287,13 +291,17 @@ class CharacterStats:
 
     @property
     def passive_perception(self) -> int:
-        """Return passive Perception, including skill proficiency."""
+        """Return ADV-04's canonical passive Perception score."""
         override = self._attribute("passive_perception_override")
-        if override is not None:
-            base = int(override)
-        else:
-            base = 10 + self.skill_bonus("Perception")
-        return base + self._modifier_total("passive_perception")
+        from systems.checks import passive_check
+
+        return passive_check(
+            self.owner,
+            ability="Wisdom",
+            skill="Perception",
+            action_key="passive_perception",
+            override=int(override) if override is not None else None,
+        ).total
 
     def skill_bonus(self, skill: str) -> int:
         """Return the effective bonus for a named skill."""
@@ -307,6 +315,8 @@ class CharacterStats:
         proficiencies = self._attribute("skill_proficiencies", [])
         if canonical in proficiencies:
             bonus += self.proficiency_bonus
+            if canonical in self._attribute("skill_expertise", []):
+                bonus += self.proficiency_bonus
         return bonus + self._modifier_total("skill_bonus", f"skill:{canonical.lower()}")
 
     def saving_throw_bonus(self, ability: str) -> int:

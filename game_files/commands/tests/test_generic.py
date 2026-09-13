@@ -6,9 +6,10 @@ Run from the game/ directory:
 """
 
 from typing import Any
+from unittest.mock import patch
 
-from commands.generic import (CmdGet, CmdInventory, CmdJunk, CmdLook,
-                              CmdRemove, CmdWear)
+from commands.generic import (CmdFastHands, CmdGet, CmdInventory, CmdJunk,
+                              CmdLook, CmdRemove, CmdWear)
 from evennia import create_object
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import save_prototype, search_prototype
@@ -39,12 +40,46 @@ class TestInventory(EvenniaCommandTest):
         self.call(CmdInventory(), "", "You are asleep")
 
 
+class TestFastHands(EvenniaCommandTest):
+    """The Thief's combat pickup reuses ordinary safe item handling."""
+
+    def test_successful_fast_pickup_accelerates_the_next_combat_action(self):
+        """Only a moved item earns the released bonus-action cadence."""
+        item = create_object(
+            "typeclasses.objects.Item", key="a potion", location=self.room1
+        )
+        self.char1.db.class_progression = {"grants": ["rogue.fast_hands"]}
+
+        with (
+            patch("systems.combat.is_fighting", return_value=True),
+            patch("systems.combat.accelerate_next_action") as accelerate,
+        ):
+            self.call(CmdFastHands(), "potion")
+
+        self.assertIs(item.location, self.char1)
+        accelerate.assert_called_once_with(self.char1)
+
+    def test_failed_pickup_does_not_accelerate(self):
+        """An invalid item name cannot consume or manufacture bonus timing."""
+        self.char1.db.class_progression = {"grants": ["rogue.fast_hands"]}
+
+        with (
+            patch("systems.combat.is_fighting", return_value=True),
+            patch("systems.combat.accelerate_next_action") as accelerate,
+        ):
+            self.call(CmdFastHands(), "missing")
+
+        accelerate.assert_not_called()
+
+
 class TestCorpseCommands(EvenniaCommandTest):
     """Corpse inspection and retrieval reuse the ordinary command seam."""
 
     def test_look_in_and_get_from_an_npc_corpse(self):
         """Visible contents can be inspected, then withdrawn by a player."""
-        gem = create_object("typeclasses.objects.Item", key="a gem", location=self.char2)
+        gem = create_object(
+            "typeclasses.objects.Item", key="a gem", location=self.char2
+        )
         self.char2.db.is_player_character = False
         corpse = create_corpse(self.char2, "command-npc-death")
 

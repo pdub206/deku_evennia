@@ -62,6 +62,38 @@ class CmdAttack(Command):
         self.caller.msg(f"You begin fighting {target.get_display_name(self.caller)}.")
 
 
+class CmdHide(Command):
+    """Queue a Stealth attempt against your current combat target.
+
+    Usage:
+      hide
+
+    The attempt uses one normal combat action. Success enables one subsequent
+    backstab attempt against that exact target.
+    """
+
+    key = "hide"
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Queue an observer-specific hide attempt without rolling immediately."""
+        if self.args.strip():
+            self.caller.msg("Usage: hide")
+            return
+        target = get_target(self.caller)
+        if target is None:
+            self.caller.msg("You must be fighting someone before you can hide.")
+            return
+        result = schedule_tactical_action(self.caller, "hide", target)
+        if not result.accepted:
+            self.caller.msg("You cannot prepare to hide right now.")
+            return
+        self.caller.msg(
+            f"You prepare to hide from {target.get_display_name(self.caller)}."
+        )
+
+
 class CmdConsider(Command):
     """Assess a visible character without beginning a fight.
 
@@ -291,19 +323,20 @@ class CmdBackstab(_QueuedTacticalCommand):
         self._queue(target)
 
 
-class CmdBash(_QueuedTacticalCommand):
-    """Queue a shield bash against one combat target.
+class CmdSteadyAim(_QueuedTacticalCommand):
+    """Prepare Steady Aim for advantage on the following attack.
 
     Usage:
-      bash [target]
+      steady [target]
     """
 
-    key = "bash"
-    action_key = "bash"
+    key = "steady"
+    aliases = ("steadyaim",)
+    action_key = "steady_aim"
     help_category = "Combat"
 
     def func(self) -> None:
-        """Use the current target when no explicit target was supplied."""
+        """Use the current target unless another encounter target is named."""
         target = (
             get_target(self.caller)
             if not self.args.strip()
@@ -313,6 +346,33 @@ class CmdBash(_QueuedTacticalCommand):
             self.caller.msg("Specify a combat target.")
             return
         self._queue(target)
+
+
+class CmdBash(_QueuedTacticalCommand):
+    """Queue a shield bash against one combat target.
+
+    Usage:
+      bash[/mind] [target]
+    """
+
+    key = "bash"
+    action_key = "bash"
+    help_category = "Combat"
+
+    def func(self) -> None:
+        """Use the current target when no explicit target was supplied."""
+        if any(switch != "mind" for switch in self.switches):
+            self.caller.msg("Usage: bash[/mind] [target]")
+            return
+        target = (
+            get_target(self.caller)
+            if not self.args.strip()
+            else self._find_target(self.args.strip())
+        )
+        if target is None:
+            self.caller.msg("Specify a combat target.")
+            return
+        self._queue(target, **({"tactical_mind": True} if self.switches else {}))
 
 
 class CmdKick(_QueuedTacticalCommand):

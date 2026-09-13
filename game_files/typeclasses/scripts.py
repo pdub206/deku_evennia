@@ -22,6 +22,7 @@ from systems.combat import (
     set_combat_action_hook,
 )
 from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
+from systems.magic_rest import process_magic_rest_pulse
 from systems.mob_combat import resolve_mob_combat_action
 from systems.pulses import (
     PulseEvent,
@@ -188,8 +189,9 @@ class GamePulseScript(Script):
         process_combat_pulse(event)
 
     def at_recovery_pulse(self, event: PulseEvent) -> None:
-        """Run normal recovery and COMBAT-04 death saves on one durable token."""
+        """Run recovery, rest completion, and death saves on one durable token."""
         process_resource_recovery_pulse(event)
+        process_magic_rest_pulse(event)
         process_injury_recovery_pulse(event)
         from systems.respawn import process_linkdead_pulse
 
