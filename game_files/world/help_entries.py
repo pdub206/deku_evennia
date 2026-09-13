@@ -549,6 +549,59 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "weapon mastery",
+        "aliases": ["mastery", "sap", "vex"],
+        "category": "Character",
+        "text": """
+            Fighters choose three released weapon kinds and Rogues choose two
+            through a qualified class trainer. A mastery applies only while
+            you wield a weapon whose |wweapon_kind|n exactly matches one of
+            your selections.
+
+            |wSap|n — Hitting with a mastered longsword, mace, or spear gives
+            the target disadvantage on its next attack roll, then expires.
+
+            |wVex|n — Hitting with a mastered handaxe, rapier, shortbow, or
+            shortsword gives you advantage on your next attack against that
+            same target, whether that attack hits or misses.
+
+            The alpha releases only Sap and Vex because the other tabletop
+            mastery properties require movement or multi-weapon attack rules
+            that are not yet part of the game.
+        """,
+    },
+    {
+        "key": "fast hands",
+        "aliases": ["fastget", "fast"],
+        "category": "Character",
+        "text": """
+            A level-3 Thief can use |wfastget <item>|n during combat to pick up
+            one accessible item from the room. A successful pickup uses the
+            normal capacity, access, and item hooks, then advances the Rogue
+            toward their next combat action using the same bonus-action timing
+            as Cunning Action. Failed pickups do not grant faster timing.
+
+            Outside combat, use the ordinary |wget|n command. Container and
+            corpse retrieval are not part of Fast Hands in the alpha.
+        """,
+    },
+    {
+        "key": "second story work",
+        "aliases": ["climbing speed", "rogue jumping"],
+        "category": "Character",
+        "text": """
+            A level-3 Thief climbs at their full walking speed instead of half
+            speed. Their running long-jump distance uses Dexterity instead of
+            Strength, and their running high jump uses 3 plus their Dexterity
+            modifier, with a minimum of zero feet.
+
+            These calculations are available to the movement rules, but the
+            alpha world does not yet include measured climbing or jumping
+            routes. Standing jumps and difficult-terrain costs remain part of
+            the future movement implementation.
+        """,
+    },
+    {
         "key": "class progression registry",
         "aliases": ["adv-02", "class registry", "progression validation"],
         "category": "Building",

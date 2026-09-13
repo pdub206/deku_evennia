@@ -8,34 +8,17 @@ from unittest.mock import patch
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.advancement import initialize_level_one
-from systems.magic import (
-    AccessMode,
-    ClassAccess,
-    MagicDefinition,
-    MagicKind,
-    PlayerHelp,
-    RangeCategory,
-    Targeting,
-    TargetingMode,
-    build_magic_registry,
-)
-from systems.magic_actions import (
-    available_actions,
-    has_action_entitlement,
-    has_spellbook_entry,
-    mark_preparation_window,
-)
+from systems.magic import (AccessMode, ClassAccess, MagicDefinition, MagicKind,
+                           PlayerHelp, RangeCategory, Targeting, TargetingMode,
+                           build_magic_registry)
+from systems.magic_actions import (available_actions, has_action_entitlement,
+                                   has_spellbook_entry,
+                                   mark_preparation_window)
 from systems.progression import CLASS_PROGRESSION, ChoiceSet
-from systems.training import (
-    CHOICE_STATE_ATTRIBUTE,
-    TrainingError,
-    default_trainer_profile,
-    find_trainer,
-    initialize_choice_entitlements,
-    practice_view,
-    resolve_training,
-    set_trainer_profile,
-)
+from systems.training import (CHOICE_STATE_ATTRIBUTE, TrainingError,
+                              default_trainer_profile, find_trainer,
+                              initialize_choice_entitlements, practice_view,
+                              resolve_training, set_trainer_profile)
 from typeclasses.characters import Character
 
 
@@ -193,7 +176,11 @@ class TestTrainingService(EvenniaTest):
 
         self.assertEqual(
             [item["choice_key"] for item in view.pending_choices],
-            ["fighter.skills", "fighter.fighting_style"],
+            [
+                "fighter.skills",
+                "fighter.fighting_style",
+                "fighter.weapon_mastery",
+            ],
         )
         self.assertEqual(before, self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
 
@@ -212,7 +199,7 @@ class TestTrainingService(EvenniaTest):
         self.assertEqual(self.char1.db.skill_proficiencies, ["Acrobatics", "Athletics"])
         self.assertEqual(
             [item["choice_key"] for item in state["pending"]],
-            ["fighter.fighting_style"],
+            ["fighter.fighting_style", "fighter.weapon_mastery"],
         )
         self.assertEqual(state["resolved"][0]["selected"], ["Athletics", "Acrobatics"])
         self.assertEqual(state["resolved"][0]["origin"], "trainer")
@@ -226,7 +213,7 @@ class TestTrainingService(EvenniaTest):
 
         with self.assertRaises(TrainingError):
             resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 3)
 
         profile["classes"] = ["Fighter"]
         profile["choices"] = ["fighter.skills"]
@@ -234,14 +221,14 @@ class TestTrainingService(EvenniaTest):
         self.char1.db.skill_proficiencies = ["Athletics"]
         with self.assertRaises(TrainingError):
             resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 3)
 
     def test_entitlement_creation_is_idempotent(self):
         """A replayed level grant cannot create another copy of the choice."""
         initialize_choice_entitlements(self.char1, "Fighter", 1)
         initialize_choice_entitlements(self.char1, "Fighter", 1)
 
-        self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
+        self.assertEqual(len(practice_view(self.char1).pending_choices), 3)
 
     def test_primitive_choice_state_reconstructs_from_a_fresh_orm_instance(self):
         """A reconnect-style object reload cannot replay or lose entitlements."""
@@ -251,7 +238,11 @@ class TestTrainingService(EvenniaTest):
 
         self.assertEqual(
             tuple(item["choice_key"] for item in view.pending_choices),
-            ("fighter.skills", "fighter.fighting_style"),
+            (
+                "fighter.skills",
+                "fighter.fighting_style",
+                "fighter.weapon_mastery",
+            ),
         )
         self.assertEqual(fresh.attributes.get(CHOICE_STATE_ATTRIBUTE), before)
 

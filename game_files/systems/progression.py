@@ -308,6 +308,7 @@ def build_registry(
                 "magic_innate",
                 "magic_spellbook",
                 "magic_spellbook_bonus",
+                "weapon_mastery",
             }
         ):
             raise RegistryValidationError(f"Choice '{choice.key}' has invalid policy.")
@@ -531,6 +532,16 @@ def _default_registry() -> ProgressionRegistry:
             "SRD 5.2.1 p.46: Fighting Style",
         ),
         ChoiceSet(
+            "fighter.weapon_mastery",
+            3,
+            ("handaxe", "longsword", "mace", "spear"),
+            "none",
+            (),
+            "resolution",
+            "weapon_mastery",
+            "SRD 5.2.1 p.47: Weapon Mastery",
+        ),
+        ChoiceSet(
             "rogue.expertise",
             2,
             skills["Rogue"][1],
@@ -539,6 +550,16 @@ def _default_registry() -> ProgressionRegistry:
             "resolution",
             "expertise",
             "SRD 5.2.1 p.61: Expertise",
+        ),
+        ChoiceSet(
+            "rogue.weapon_mastery",
+            2,
+            ("rapier", "shortbow", "shortsword"),
+            "none",
+            (),
+            "resolution",
+            "weapon_mastery",
+            "SRD 5.2.1 p.62: Weapon Mastery",
         ),
         ChoiceSet(
             "wizard.scholar",
@@ -713,7 +734,11 @@ def _default_registry() -> ProgressionRegistry:
                 1,
                 ("fighter.second_wind", "fighter.weapon_mastery"),
                 ("fighter.second_wind",),
-                choice_keys=("fighter.skills", "fighter.fighting_style"),
+                choice_keys=(
+                    "fighter.skills",
+                    "fighter.fighting_style",
+                    "fighter.weapon_mastery",
+                ),
             ),
             LevelGrants(
                 2,
@@ -739,7 +764,11 @@ def _default_registry() -> ProgressionRegistry:
                     "rogue.thieves_cant",
                     "rogue.weapon_mastery",
                 ),
-                choice_keys=("rogue.skills", "rogue.expertise"),
+                choice_keys=(
+                    "rogue.skills",
+                    "rogue.expertise",
+                    "rogue.weapon_mastery",
+                ),
             ),
             LevelGrants(2, ("rogue.cunning_action",)),
             LevelGrants(

@@ -87,6 +87,15 @@ _CLASS_TACTICAL_ACTIONS = MappingProxyType(
     }
 )
 
+_CLASS_EFFECTS = MappingProxyType(
+    {
+        "Cleric": (),
+        "Fighter": ("combat.mastery_sap", "combat.mastery_vex"),
+        "Rogue": ("combat.mastery_vex",),
+        "Wizard": (),
+    }
+)
+
 
 def build_alpha_manifest(
     progression: Any = CLASS_PROGRESSION,
@@ -131,7 +140,14 @@ def build_alpha_manifest(
         tactical_action_keys = _CLASS_TACTICAL_ACTIONS[class_key]
         _validate_tactical_actions(class_key, tactical_action_keys)
         actions = tuple(magic.definitions[key] for key in action_keys)
-        effect_keys = _unique(key for action in actions for key in action.effect_keys)
+        effect_keys = _unique(
+            (
+                *(key for action in actions for key in action.effect_keys),
+                *_CLASS_EFFECTS[class_key],
+            )
+        )
+        if any(EFFECT_REGISTRY.get(key) is None for key in effect_keys):
+            raise ReleaseManifestError(f"{class_key} has an unknown released effect.")
         handler_keys = _unique(action.handler_key for action in actions)
         adaptation_action_keys = tuple(
             action.key

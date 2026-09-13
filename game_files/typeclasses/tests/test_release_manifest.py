@@ -65,6 +65,12 @@ class TestAlphaReleaseManifest(EvenniaTest):
             "Rogue": ("aim", "backstab", "hide", "steady_aim"),
             "Wizard": (),
         }
+        expected_class_effects = {
+            "Cleric": set(),
+            "Fighter": {"combat.mastery_sap", "combat.mastery_vex"},
+            "Rogue": {"combat.mastery_vex"},
+            "Wizard": set(),
+        }
         for class_key, released in ALPHA_RELEASE_MANIFEST.classes.items():
             actions = tuple(
                 MAGIC_REGISTRY.definitions[key] for key in released.magic_action_keys
@@ -82,7 +88,8 @@ class TestAlphaReleaseManifest(EvenniaTest):
             self.assertEqual(released.tactical_action_keys, expected_tactics[class_key])
             self.assertEqual(
                 set(released.effect_keys),
-                {key for action in actions for key in action.effect_keys},
+                {key for action in actions for key in action.effect_keys}
+                | expected_class_effects[class_key],
             )
             self.assertEqual(
                 set(released.handler_keys), {action.handler_key for action in actions}

@@ -328,7 +328,16 @@ def _validate_option(
             raise TrainingError("Expertise requires proficiency in that skill.")
         if option in (character.attributes.get("skill_expertise") or []):
             raise TrainingError("You already know that option.")
-    if choice.option_adapter not in {"skill", "expertise", "feature"}:
+    if choice.option_adapter == "weapon_mastery" and option in (
+        character.attributes.get("weapon_masteries") or []
+    ):
+        raise TrainingError("You already know that option.")
+    if choice.option_adapter not in {
+        "skill",
+        "expertise",
+        "feature",
+        "weapon_mastery",
+    }:
         _validate_unowned_magic_option(character, choice, option)
     if any(
         option in group and any(item in group for item in selected)
@@ -349,6 +358,10 @@ def _grant_options(character: Any, choice: ChoiceSet, options: list[str]) -> Non
     if choice.option_adapter == "expertise":
         known = list(character.attributes.get("skill_expertise") or [])
         character.db.skill_expertise = sorted(set(known + options))
+        return
+    if choice.option_adapter == "weapon_mastery":
+        known = list(character.attributes.get("weapon_masteries") or [])
+        character.db.weapon_masteries = sorted(set(known + options))
         return
     try:
         from systems.magic_actions import (MagicActionError, grant_action,

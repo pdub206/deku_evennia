@@ -10,6 +10,15 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 IMPLEMENTED_FEATURE_OPTIONS = frozenset({"Protector", "Defense"})
+WEAPON_MASTERY_PROPERTIES = {
+    "handaxe": "vex",
+    "longsword": "sap",
+    "mace": "sap",
+    "rapier": "vex",
+    "shortbow": "vex",
+    "shortsword": "vex",
+    "spear": "sap",
+}
 
 
 def validate_feature_option(option: str) -> None:
@@ -35,6 +44,43 @@ def has_granted_feature(character: Any, feature_key: str) -> bool:
         and not isinstance(grants, (str, bytes))
         and feature_key in grants
     )
+
+
+def weapon_mastery_for_attack(character: Any, weapon: Any) -> str | None:
+    """Return the selected Sap or Vex property for the wielded weapon kind."""
+    if weapon is None or not any(
+        has_granted_feature(character, key)
+        for key in ("fighter.weapon_mastery", "rogue.weapon_mastery")
+    ):
+        return None
+    from systems.equipment import _identifier
+
+    weapon_kind = _identifier(weapon.attributes.get("weapon_kind"))
+    selected = character.attributes.get("weapon_masteries") or ()
+    if weapon_kind not in selected:
+        return None
+    return WEAPON_MASTERY_PROPERTIES.get(weapon_kind)
+
+
+def climbing_speed(character: Any) -> int:
+    """Return the character's released climbing speed in feet per move."""
+    speed = character.stats.speed
+    if has_granted_feature(character, "rogue.second_story_work"):
+        return speed
+    return speed // 2
+
+
+def jump_distance(character: Any, *, high_jump: bool = False) -> int:
+    """Return running jump distance using the feature's Dexterity adaptation."""
+    ability = (
+        "Dexterity"
+        if has_granted_feature(character, "rogue.second_story_work")
+        else "Strength"
+    )
+    score = character.stats.ability_score(ability)
+    if high_jump:
+        return max(0, 3 + character.stats.ability_modifier(ability))
+    return max(0, score)
 
 
 def spell_healing_bonus(character: Any, spell_level: int) -> int:

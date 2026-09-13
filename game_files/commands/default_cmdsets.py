@@ -27,9 +27,10 @@ from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
 from commands.effects import CmdEffects
-from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
-                              CmdHome, CmdInventory, CmdJunk, CmdLook, CmdNick,
-                              CmdPose, CmdRemove, CmdSetDesc, CmdWear)
+from commands.generic import (CmdAccess, CmdDrop, CmdFastHands, CmdGet,
+                              CmdGive, CmdHelp, CmdHome, CmdInventory, CmdJunk,
+                              CmdLook, CmdNick, CmdPose, CmdRemove, CmdSetDesc,
+                              CmdWear)
 from commands.injury import CmdInjury, CmdStabilize
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
@@ -65,6 +66,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPose)
         self.add(CmdInventory)
         self.add(CmdGet)
+        self.add(CmdFastHands)
         self.add(CmdDrop)
         self.add(CmdGive)
         self.add(CmdWhisper)

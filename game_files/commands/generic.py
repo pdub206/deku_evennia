@@ -281,6 +281,40 @@ class CmdGet(_BaseGet):
             self.msg("That corpse is empty.")
 
 
+class CmdFastHands(CmdGet):
+    """Use Fast Hands to pick up one nearby item during combat.
+
+    Usage:
+      fastget <item>
+      fast <item>
+    """
+
+    key = "fastget"
+    aliases = ["fast"]
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Reuse ordinary pickup validation and accelerate only a successful use."""
+        from systems.class_features import has_granted_feature
+        from systems.combat import accelerate_next_action, is_fighting
+
+        if not has_granted_feature(self.caller, "rogue.fast_hands"):
+            self.msg("You have not learned Fast Hands.")
+            return
+        if not is_fighting(self.caller):
+            self.msg("Use get outside combat.")
+            return
+        if " from " in self.args.casefold() or (self.number or 0) > 1:
+            self.msg("Fast Hands can pick up one nearby item at a time.")
+            return
+        before = {item.id for item in self.caller.contents}
+        super().func()
+        after = {item.id for item in self.caller.contents}
+        if after - before:
+            accelerate_next_action(self.caller)
+
+
 class CmdDrop(_BaseDrop):
     """Drop a carried item when the shared action policy allows manipulation.
 

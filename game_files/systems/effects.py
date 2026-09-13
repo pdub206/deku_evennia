@@ -1133,6 +1133,26 @@ EFFECT_REGISTRY.register(
 )
 EFFECT_REGISTRY.register(
     EffectDefinition(
+        key="combat.mastery_vex",
+        name="Vexed",
+        clears_on_death=True,
+        stacking=StackingPolicy.INDEPENDENT,
+        conditions=frozenset({"mastery_vexed"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
+        key="combat.mastery_sap",
+        name="Sapped",
+        clears_on_death=True,
+        stacking=StackingPolicy.REPLACE,
+        conditions=frozenset({"mastery_sapped"}),
+        removal_categories=frozenset({"physical"}),
+    )
+)
+EFFECT_REGISTRY.register(
+    EffectDefinition(
         key="magic.blur",
         name="Blur",
         duration=10,
