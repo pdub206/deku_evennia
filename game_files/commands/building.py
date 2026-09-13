@@ -24,25 +24,42 @@ from django.conf import settings
 from evennia import CmdSet, create_object
 from evennia.commands.default.building import CmdSpawn as EvenniaCmdSpawn
 from evennia.objects.models import ObjectDB
-from evennia.prototypes.prototypes import (PROTOTYPE_TAG_CATEGORY,
-                                           delete_prototype, save_prototype,
-                                           search_prototype)
+from evennia.prototypes.prototypes import (
+    PROTOTYPE_TAG_CATEGORY,
+    delete_prototype,
+    save_prototype,
+    search_prototype,
+)
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
-from systems.areas import (area_index, area_of, assign_area, export_area,
-                           load_area, room_key_of, rooms_in_area)
+from systems.areas import (
+    area_index,
+    area_of,
+    assign_area,
+    export_area,
+    load_area,
+    room_key_of,
+    rooms_in_area,
+)
 from systems.mob_spawning import spawn_mobile
-from systems.mobile_diagnostics import (MobileDiagnosticError,
-                                        clear_mobile_failure,
-                                        mobile_compact_summary,
-                                        mobile_diagnostic_snapshot,
-                                        mobile_population_snapshot,
-                                        mobile_template_snapshot)
-from world.build_schema import (ITEM_TYPES, TYPE_FIELDS, as_slug, schema_for,
-                                schema_for_prototype)
+from systems.mobile_diagnostics import (
+    MobileDiagnosticError,
+    clear_mobile_failure,
+    mobile_compact_summary,
+    mobile_diagnostic_snapshot,
+    mobile_population_snapshot,
+    mobile_template_snapshot,
+)
+from world.build_schema import (
+    ITEM_TYPES,
+    TYPE_FIELDS,
+    as_slug,
+    schema_for,
+    schema_for_prototype,
+)
 
 # Standard directions -> (reverse direction, short aliases).  Used to keep dug
 # exits two-way and to alias n/s/e/w/u/d like Evennia's own tunnel command.
@@ -197,7 +214,7 @@ def _field_value(target, name: str, field) -> str:
         return target.key
     if field.kind == "type":
         return target.db.type or "|x(generic item)|n"
-    if field.kind == "attr":
+    if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
     if field.kind == "policy":
@@ -290,9 +307,11 @@ def _apply_field(target, name: str, field, value) -> None:
         elif field.kind == "type":
             _set_prototype_type(target, value)
         elif field.kind == "policy":
-            from systems.mobile_policy import (MOBILE_POLICY_ATTRIBUTE,
-                                               default_mobile_policy,
-                                               validate_mobile_policy)
+            from systems.mobile_policy import (
+                MOBILE_POLICY_ATTRIBUTE,
+                default_mobile_policy,
+                validate_mobile_policy,
+            )
 
             profile = validate_mobile_policy(
                 target.get(MOBILE_POLICY_ATTRIBUTE, default_mobile_policy())
@@ -303,7 +322,7 @@ def _apply_field(target, name: str, field, value) -> None:
                 else value
             )
             target[MOBILE_POLICY_ATTRIBUTE] = validate_mobile_policy(profile)
-        else:  # attr
+        else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
         return
@@ -313,6 +332,10 @@ def _apply_field(target, name: str, field, value) -> None:
         _set_item_type(target, value)
     elif field.kind == "attr":
         target.attributes.add(field.target or name, value)
+    elif field.kind == "trainer":
+        from systems.training import set_trainer_profile
+
+        set_trainer_profile(target, value)
     elif field.kind == "policy":
         from systems.mobile_policy import set_mobile_policy_value
 

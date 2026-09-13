@@ -75,6 +75,16 @@ class ConcentrationResult:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class MagicEntitlementView:
+    """Read-only display names grouped by durable ownership semantics."""
+
+    known_spells: tuple[str, ...]
+    prepared_spells: tuple[str, ...]
+    known_abilities: tuple[str, ...]
+    spellbook_spells: tuple[str, ...]
+
+
 def grant_action(actor: Any, action_key: str, mode: str) -> None:
     """Grant a validated learned, prepared, or innate action to an actor.
 
@@ -171,6 +181,55 @@ def has_spellbook_entry(actor: Any, action_key: str) -> bool:
     if not isinstance(action_key, str):
         raise MagicActionError("Magic action key is invalid.")
     return action_key in _action_state(actor)[_SPELLBOOK_KEY]
+
+
+def magic_entitlement_view(actor: Any) -> MagicEntitlementView:
+    """Project validated magic ownership into safe player-facing names."""
+    state = _action_state(actor)
+    registry = _registry()
+
+    def definitions(keys: Sequence[str]) -> tuple[MagicDefinition, ...]:
+        values = tuple(
+            registry.definition_for(key, include_disabled=False) for key in keys
+        )
+        if any(not _has_class_access(actor, definition) for definition in values):
+            raise MagicActionError("Your magic training record needs staff repair.")
+        return values
+
+    learned = definitions(state[AccessMode.LEARNED])
+    prepared = definitions(state[AccessMode.PREPARED])
+    innate = definitions(state[AccessMode.INNATE])
+    spellbook = definitions(state[_SPELLBOOK_KEY])
+    return MagicEntitlementView(
+        tuple(
+            sorted(
+                definition.display_name
+                for definition in (*learned, *innate)
+                if definition.kind == MagicKind.SPELL
+            )
+        ),
+        tuple(
+            sorted(
+                definition.display_name
+                for definition in prepared
+                if definition.kind == MagicKind.SPELL
+            )
+        ),
+        tuple(
+            sorted(
+                definition.display_name
+                for definition in (*learned, *prepared, *innate)
+                if definition.kind == MagicKind.ABILITY
+            )
+        ),
+        tuple(
+            sorted(
+                definition.display_name
+                for definition in spellbook
+                if definition.kind == MagicKind.SPELL
+            )
+        ),
+    )
 
 
 def mark_preparation_window(actor: Any, recovery_sequence: int) -> None:

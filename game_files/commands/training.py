@@ -81,6 +81,22 @@ class CmdPractice(Command):
                 else "None"
             )
         )
+        lines.append(
+            "Known spells: "
+            + (", ".join(view.known_spells) if view.known_spells else "None")
+        )
+        lines.append(
+            "Prepared spells: "
+            + (", ".join(view.prepared_spells) if view.prepared_spells else "None")
+        )
+        lines.append(
+            "Known abilities: "
+            + (", ".join(view.known_abilities) if view.known_abilities else "None")
+        )
+        lines.append(
+            "Spellbook: "
+            + (", ".join(view.spellbook_spells) if view.spellbook_spells else "None")
+        )
         if view.pending_choices:
             lines.append("Pending choices:")
             for item in view.pending_choices:

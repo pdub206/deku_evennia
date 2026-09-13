@@ -476,8 +476,9 @@ HELP_ENTRY_DICTS = [
         "category": "Character",
         "text": """
             Use |wpractice|n to review your known skill proficiencies,
-            automatic class features, class resources, spell access, and any
-            choices still awaiting training. It is read-only and works
+            automatic class features, class resources, spell access, actual
+            known and prepared spells, spellbook entries, known abilities, and
+            any choices still awaiting training. It is read-only and works
             anywhere. |wtrain|n with no arguments gives a short list of your
             pending choices.
 
@@ -526,8 +527,16 @@ HELP_ENTRY_DICTS = [
             lock expressions in room text or command feedback. The service
             validates the profile, NPC location, class, level, pending
             entitlement, and lock both before and inside its transaction.
-            Current builder UI support is intentionally deferred with MOB-06;
-            configure profiles through reviewed content tooling only.
+            While editing an NPC or NPC prototype, use |wset trainer_profile
+            <json>|n. The JSON object must contain exactly |wversion|n,
+            |wclasses|n, |wchoices|n, |wminimum_level|n, |wmaximum_level|n, and
+            |wservice_lock|n. For example:
+
+              |wset trainer_profile {"version":1,"classes":["Fighter"],
+              "choices":["fighter.skills"],"minimum_level":1,
+              "maximum_level":3,"service_lock":"all()"}|n
+
+            Spawned copies install the validated service lock automatically.
         """,
     },
     {

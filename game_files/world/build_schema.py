@@ -21,14 +21,26 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, NamedTuple
 
 from evennia.utils.utils import inherits_from
-from systems.equipment import (ARMOR_CATEGORIES, ATTACK_ABILITIES,
-                               DAMAGE_TYPES, MAX_MITIGATION_PERCENT,
-                               PHYSICAL_DAMAGE_TYPES, WEAPON_CATEGORIES,
-                               WEAR_LOCATIONS)
+from systems.equipment import (
+    ARMOR_CATEGORIES,
+    ATTACK_ABILITIES,
+    DAMAGE_TYPES,
+    MAX_MITIGATION_PERCENT,
+    PHYSICAL_DAMAGE_TYPES,
+    WEAPON_CATEGORIES,
+    WEAR_LOCATIONS,
+)
 from systems.progression import CLASSES
-from world.chargen_data import (ABILITY_NAMES, ALIGNMENTS, BACKGROUNDS,
-                                MAX_AGE, MIN_AGE, SKILLS, SPECIES,
-                                STANDARD_LANGUAGES)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    MAX_AGE,
+    MIN_AGE,
+    SKILLS,
+    SPECIES,
+    STANDARD_LANGUAGES,
+)
 
 
 class Field(NamedTuple):
@@ -213,6 +225,20 @@ def as_mob_combat_profile(raw: str) -> dict[str, Any]:
 
     try:
         return validate_combat_profile(value)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def as_trainer_profile(raw: str) -> dict[str, Any]:
+    """Validate a JSON-only ADV-03 trainer service profile."""
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("expected a JSON trainer profile.") from exc
+    from systems.training import validate_trainer_profile
+
+    try:
+        return validate_trainer_profile(value)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
 
@@ -466,6 +492,12 @@ NPC_FIELDS: dict[str, Field] = {
         as_mob_combat_profile,
         "JSON combat profile: target policy, tactical weights/cooldowns, and NPC wimpy",
         "mob_combat_profile",
+    ),
+    "trainer_profile": Field(
+        "trainer",
+        as_trainer_profile,
+        "JSON trainer profile: classes, choices, level band, and service lock",
+        "trainer_profile",
     ),
     "sentinel": Field(
         "policy", as_choice("on", "off"), "on prevents ordinary autonomous wandering"

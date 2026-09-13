@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
+from systems.action_policy import ActionCategory
 from systems.progression import (
     CLASS_PROGRESSION,
     MAX_CLASS_LEVEL,
@@ -45,6 +46,10 @@ class PracticeView:
     automatic_features: tuple[str, ...]
     resources: tuple[tuple[str, int], ...]
     spell_access: tuple[tuple[str, int, int, int], ...]
+    known_spells: tuple[str, ...]
+    prepared_spells: tuple[str, ...]
+    known_abilities: tuple[str, ...]
+    spellbook_spells: tuple[str, ...]
     pending_choices: tuple[Mapping[str, Any], ...]
     replaceable_choices: tuple[Mapping[str, Any], ...]
 
@@ -129,12 +134,22 @@ def practice_view(character: Any) -> PracticeView:
         )
         for key in spell_keys
     )
+    try:
+        from systems.magic_actions import magic_entitlement_view
+
+        magic = magic_entitlement_view(character)
+    except ValueError as err:
+        raise TrainingError("Your magic training record needs staff repair.") from err
     return PracticeView(
         tuple(sorted(set(character.attributes.get("skill_proficiencies") or []))),
         tuple(sorted(set(character.attributes.get("skill_expertise") or []))),
         tuple(dict.fromkeys(features)),
         resources,
         spells,
+        magic.known_spells,
+        magic.prepared_spells,
+        magic.known_abilities,
+        magic.spellbook_spells,
         pending,
         replaceable,
     )
@@ -191,6 +206,8 @@ def validate_trainer_profile(profile: Any) -> dict[str, Any]:
         or not 1 <= low <= high <= MAX_CLASS_LEVEL
         or not isinstance(profile["service_lock"], str)
         or not profile["service_lock"].strip()
+        or len(profile["service_lock"]) > 256
+        or any(character in profile["service_lock"] for character in "\r\n")
     ):
         raise TrainingError("Trainer profile has invalid service access.")
     return {
@@ -391,6 +408,10 @@ def _validate_trainer(character: Any, trainer: Any, choice_key: str) -> None:
     profile = validate_trainer_profile(
         trainer.attributes.get(TRAINER_PROFILE_ATTRIBUTE)
     )
+    if getattr(trainer.db, "is_player_character", None) is not False:
+        raise TrainingError("That trainer cannot help you with this choice.")
+    if not character.actions.check(ActionCategory.MANIPULATE).allowed:
+        raise TrainingError("You cannot train right now.")
     definition = _class_definition(_character_class(character))
     level = _character_level(character)
     if (

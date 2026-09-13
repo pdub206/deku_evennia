@@ -33,9 +33,11 @@ class TestTrainingCommands(EvenniaCommandTest):
     def test_train_uses_explicit_grammar_and_nearby_trainer(self):
         """A valid selection reaches the transactional service through the command."""
         output = self.call(CmdTrain(), "fighter.skills Athletics at Armsmaster")
+        completed = self.call(CmdTrain(), "fighter.skills Acrobatics at Armsmaster")
 
         self.assertIn("Athletics", output)
-        self.assertFalse(self.char1.db.skill_proficiencies or [])
+        self.assertIn("Acrobatics", completed)
+        self.assertEqual(self.char1.db.skill_proficiencies, ["Acrobatics", "Athletics"])
 
     def test_post_alpha_replacement_grammar_is_unavailable(self):
         """The alpha command cannot replace an already selected option."""

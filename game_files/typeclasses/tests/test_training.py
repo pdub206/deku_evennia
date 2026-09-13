@@ -36,17 +36,23 @@ from systems.training import (
     resolve_training,
     set_trainer_profile,
 )
+from typeclasses.characters import Character
 
 
 def _magic_definition(
-    key: str, name: str, modes: tuple[str, ...], *, spell_level: int = 0
+    key: str,
+    name: str,
+    modes: tuple[str, ...],
+    *,
+    spell_level: int = 0,
+    kind: str = MagicKind.SPELL,
 ) -> MagicDefinition:
     """Build a test-only Wizard option with no executable game consequence."""
     return MagicDefinition(
         key=key,
         display_name=name,
         aliases=(name.casefold(),),
-        kind=MagicKind.SPELL,
+        kind=kind,
         school="abjuration",
         tags=("test",),
         class_access=(ClassAccess("Wizard", 1),),
@@ -72,6 +78,7 @@ def _magic_registry():
             "wizard.training_innate",
             "Training Innate",
             (AccessMode.INNATE,),
+            kind=MagicKind.ABILITY,
         ),
         _magic_definition(
             "wizard.training_book_spell",
@@ -236,6 +243,18 @@ class TestTrainingService(EvenniaTest):
 
         self.assertEqual(len(practice_view(self.char1).pending_choices), 2)
 
+    def test_primitive_choice_state_reconstructs_from_a_fresh_orm_instance(self):
+        """A reconnect-style object reload cannot replay or lose entitlements."""
+        before = deepcopy(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
+        fresh = Character.objects.get(id=self.char1.id)
+        view = practice_view(fresh)
+
+        self.assertEqual(
+            tuple(item["choice_key"] for item in view.pending_choices),
+            ("fighter.skills", "fighter.fighting_style"),
+        )
+        self.assertEqual(fresh.attributes.get(CHOICE_STATE_ATTRIBUTE), before)
+
     def test_malformed_or_stale_entitlement_fails_closed(self):
         """Choice provenance cannot drift from its exact registry grant."""
         original = self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE)
@@ -338,6 +357,16 @@ class TestTrainingService(EvenniaTest):
             self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE),
             original,
         )
+
+    def test_service_revalidates_character_action_state_inside_transaction(self):
+        """Calling the service directly cannot bypass WORLD-02 restrictions."""
+        original = deepcopy(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE))
+        self.char1.db.position = "sleeping"
+
+        with self.assertRaisesRegex(TrainingError, "cannot train"):
+            resolve_training(self.char1, "fighter.skills", "Athletics", self.trainer)
+
+        self.assertEqual(self.char1.attributes.get(CHOICE_STATE_ATTRIBUTE), original)
 
     def test_unknown_and_duplicate_submission_do_not_consume_capacity(self):
         """Invalid retries leave both selected options and capacity unchanged."""
@@ -454,6 +483,11 @@ class TestTrainingService(EvenniaTest):
             self.assertTrue(
                 has_spellbook_entry(self.char2, "wizard.training_book_spell")
             )
+            view = practice_view(self.char2)
+            self.assertEqual(view.known_spells, ("Training Cantrip",))
+            self.assertEqual(view.prepared_spells, ("Training Book Spell",))
+            self.assertEqual(view.known_abilities, ("Training Innate",))
+            self.assertEqual(view.spellbook_spells, ("Training Book Spell",))
             self.assertTrue(
                 has_action_entitlement(
                     self.char2, "wizard.training_book_spell", AccessMode.PREPARED
@@ -467,6 +501,12 @@ class TestTrainingService(EvenniaTest):
                 {
                     "wizard.training_book_spell",
                     "wizard.training_cantrip",
-                    "wizard.training_innate",
                 },
+            )
+            self.assertEqual(
+                {
+                    action.key
+                    for action in available_actions(self.char2, MagicKind.ABILITY)
+                },
+                {"wizard.training_innate"},
             )
