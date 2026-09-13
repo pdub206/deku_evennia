@@ -3,26 +3,14 @@
 from types import MappingProxyType
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic import (
-    MAGIC_REGISTRY,
-    AccessMode,
-    CastSnapshot,
-    ClassAccess,
-    Damage,
-    DiceExpression,
-    MagicDefinition,
-    MagicKind,
-    MagicRegistryError,
-    PlayerHelp,
-    RangeCategory,
-    ResourceCost,
-    Save,
-    Targeting,
-    TargetingMode,
-    build_magic_registry,
-    deserialize_cast_snapshot,
-    validate_persistent_magic_state,
-)
+from systems.magic import (MAGIC_REGISTRY, AccessMode, CastSnapshot,
+                           ClassAccess, Damage, DiceExpression,
+                           MagicDefinition, MagicKind, MagicRegistryError,
+                           PlayerHelp, RangeCategory, ResourceCost, Save,
+                           Scaling, Targeting, TargetingMode,
+                           build_magic_registry, deserialize_cast_snapshot,
+                           validate_persistent_magic_state)
+from world.help_entries import HELP_ENTRY_DICTS
 
 
 def arcane_bolt(**changes):
@@ -75,6 +63,7 @@ class TestMagicRegistry(EvenniaTest):
         help_entry = registry.player_help_entry("wizard.arcane_bolt")
         self.assertIn("Target: hostile.", help_entry["text"])
         self.assertIn("Cost: 1 arcane_energy.", help_entry["text"])
+        self.assertIsInstance(help_entry["aliases"], tuple)
         with self.assertRaises(TypeError):
             registry.definitions["new"] = arcane_bolt(key="new")
         with self.assertRaises(TypeError):
@@ -140,6 +129,126 @@ class TestMagicRegistry(EvenniaTest):
                     player_help=PlayerHelp("radiant ward", "A partial test."),
                 )
             )
+
+    def test_alpha_policy_and_targeting_boundaries_fail_closed(self):
+        """Selectable definitions cannot opt into unavailable policy surfaces."""
+        invalid = (
+            {"action_category": "delete_world"},
+            {"handler_key": "movement", "damage": None},
+            {"access_modes": (AccessMode.ITEM,)},
+            {"cast_time": 0},
+            {"cost": ResourceCost("arcane_energy", 0)},
+            {
+                "targeting": Targeting(TargetingMode.AREA),
+                "handler_key": "utility",
+                "damage": None,
+            },
+            {"targeting": Targeting(TargetingMode.OBJECT, filters=("living",))},
+            {"targeting": Targeting(TargetingMode.HOSTILE, filters=("item",))},
+        )
+        for changes in invalid:
+            with self.subTest(changes=changes), self.assertRaises(MagicRegistryError):
+                build(arcane_bolt(**changes))
+
+        future = arcane_bolt(
+            handler_key="utility",
+            targeting=Targeting(TargetingMode.GROUP),
+            damage=None,
+            enabled=False,
+        )
+        self.assertFalse(build(future).is_available(future.key))
+
+    def test_every_alpha_target_shape_and_filter_has_a_bounded_schema(self):
+        """The registry accepts each released single-target semantic explicitly."""
+        variants = (
+            {},
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.SELF, include_caster=True),
+                "range": RangeCategory.SELF,
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.CREATURE),
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.ALLY),
+                "damage": None,
+            },
+            {
+                "handler_key": "utility",
+                "targeting": Targeting(TargetingMode.OBJECT, filters=("item",)),
+                "damage": None,
+            },
+        )
+        for changes in variants:
+            with self.subTest(changes=changes):
+                registry = build(arcane_bolt(**changes))
+                self.assertTrue(registry.is_available("wizard.arcane_bolt"))
+
+        for target_filter in ("character", "living", "undead", "construct", "willing"):
+            with self.subTest(target_filter=target_filter):
+                build(
+                    arcane_bolt(
+                        targeting=Targeting(
+                            TargetingMode.HOSTILE, filters=(target_filter,)
+                        )
+                    )
+                )
+        for target_filter in ("item", "worn", "unworn"):
+            with self.subTest(target_filter=target_filter):
+                build(
+                    arcane_bolt(
+                        handler_key="utility",
+                        targeting=Targeting(
+                            TargetingMode.OBJECT, filters=(target_filter,)
+                        ),
+                        damage=None,
+                    )
+                )
+
+    def test_formula_and_collection_bounds_fail_closed(self):
+        """Unbounded aliases, dice, scaling, saves, and classes are rejected."""
+        invalid = (
+            {"aliases": tuple(f"alias {number}" for number in range(13))},
+            {"damage": Damage(DiceExpression(33, 6), "force")},
+            {"scaling": Scaling((3, 2), dice_per_step=1)},
+            {"messages": {"success": "unsafe {target}"}},
+            {"save": Save("Luck")},
+            {"class_access": (ClassAccess("Sorcerer", 1),)},
+            {"class_access": (ClassAccess("Wizard", 4),)},
+            {"targeting": Targeting(TargetingMode.HOSTILE, filters=("unknown",))},
+        )
+        for changes in invalid:
+            with self.subTest(changes=changes), self.assertRaises(MagicRegistryError):
+                build(arcane_bolt(**changes))
+
+    def test_released_cross_references_and_published_help_are_complete(self):
+        """Every selectable definition resolves through reviewed alpha owners."""
+        player_help = {
+            entry["key"] for entry in HELP_ENTRY_DICTS if "locks" not in entry
+        }
+        for definition in MAGIC_REGISTRY.definitions.values():
+            self.assertIn(definition.handler_key, MAGIC_REGISTRY.handlers)
+            self.assertIn(definition.player_help.key, player_help)
+            self.assertEqual(
+                MAGIC_REGISTRY.player_help_entry(definition.key)["key"],
+                definition.player_help.key,
+            )
+            self.assertIn(
+                definition.targeting.mode,
+                {
+                    TargetingMode.SELF,
+                    TargetingMode.CREATURE,
+                    TargetingMode.ALLY,
+                    TargetingMode.HOSTILE,
+                    TargetingMode.OBJECT,
+                },
+            )
+            self.assertNotIn(AccessMode.ITEM, definition.access_modes)
 
     def test_released_registry_requires_an_srd_reference(self):
         """Production content cannot register without its SRD 5.2.1 citation."""

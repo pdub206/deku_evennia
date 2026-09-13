@@ -15,25 +15,14 @@ from typing import Any
 
 from django.db import transaction
 from systems.action_policy import ActionCategory
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    apply_damage,
-    apply_healing,
-    apply_stabilization,
-    injury_record,
-)
-from systems.magic import (
-    AccessMode,
-    CastSnapshot,
-    MagicDefinition,
-    MagicKind,
-    MagicRegistry,
-    MagicRegistryError,
-    RangeCategory,
-    TargetingMode,
-)
-from systems.magic_resources import MagicResourceError, resource_current, spend_resource
+from systems.injury import (InjuryError, InjuryState, apply_damage,
+                            apply_healing, apply_stabilization, injury_record)
+from systems.magic import (AccessMode, CastSnapshot, MagicDefinition,
+                           MagicKind, MagicRegistry, MagicRegistryError,
+                           RangeCategory, TargetingMode,
+                           deserialize_cast_snapshot)
+from systems.magic_resources import (MagicResourceError, resource_current,
+                                     spend_resource)
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
 MAGIC_ACTION_STATE_VERSION = 2
@@ -411,8 +400,21 @@ def cast_action(
     INTERACT-06's cancellation and exact-once guarantees.
     """
     active_registry = registry or _registry()
+    definition, target, snapshot = _prepare_cast(
+        caster, action_name, target_name, active_registry
+    )
+    return _resolve_cast(caster, definition, target, snapshot)
+
+
+def _prepare_cast(
+    caster: Any,
+    action_name: str,
+    target_name: str | None,
+    registry: MagicRegistry,
+) -> tuple[MagicDefinition, Any, CastSnapshot]:
+    """Validate acceptance and snapshot potency before execution or queuing."""
     try:
-        definition = active_registry.resolve(action_name)
+        definition = registry.resolve(action_name)
     except MagicRegistryError as err:
         raise MagicActionError("You do not know that spell or ability.") from err
     state = _action_state(caster)
@@ -426,8 +428,20 @@ def cast_action(
     decision = caster.actions.check(category)
     if not decision.allowed:
         raise MagicActionError(decision.message)
+    if definition.kind == MagicKind.SPELL and caster.stats.has_untrained_armor:
+        raise MagicActionError("You cannot cast spells while wearing untrained armor.")
     target = _resolve_target(caster, definition, target_name)
-    snapshot = _snapshot(caster, definition, target, active_registry)
+    snapshot = _snapshot(caster, definition, target, registry)
+    return definition, target, snapshot
+
+
+def _resolve_cast(
+    caster: Any,
+    definition: MagicDefinition,
+    target: Any,
+    snapshot: CastSnapshot,
+) -> MagicActionResult:
+    """Resolve and pay for one accepted snapshot in a single transaction."""
 
     try:
         with transaction.atomic():
@@ -441,10 +455,13 @@ def cast_action(
             for resource_key, amount in snapshot.resource_reservation.items():
                 spend_resource(caster, resource_key, amount)
     except MagicResourceError as err:
+        _discard_cached_state(caster, target)
         raise MagicActionError("You do not have enough magical resources.") from err
     except MagicActionError:
+        _discard_cached_state(caster, target)
         raise
     except Exception as err:
+        _discard_cached_state(caster, target)
         raise MagicActionError("Your magic fails to take hold.") from err
     if definition.kind == MagicKind.SPELL:
         try:
@@ -455,6 +472,67 @@ def cast_action(
             # A malformed rest record cannot undo an otherwise committed spell.
             pass
     return result
+
+
+def request_cast_action(
+    caster: Any,
+    action_name: str,
+    *,
+    target_name: str | None = None,
+    registry: MagicRegistry | None = None,
+) -> MagicActionResult:
+    """Resolve outside combat or queue exactly one next-action combat cast."""
+    active_registry = registry or _registry()
+    definition, target, snapshot = _prepare_cast(
+        caster, action_name, target_name, active_registry
+    )
+    from systems.combat import get_encounter_id, schedule_magic_action
+
+    if get_encounter_id(caster) is None:
+        return _resolve_cast(caster, definition, target, snapshot)
+    scheduled = schedule_magic_action(caster, snapshot.serialize())
+    if not scheduled.accepted:
+        raise MagicActionError("That spell cannot be prepared for your next action.")
+    return MagicActionResult(True, "queued", definition, target, snapshot)
+
+
+def validate_magic_intent(snapshot: Any) -> dict[str, Any] | None:
+    """Normalize one primitive snapshot for COMBAT-01 persistence."""
+    try:
+        normalized = deserialize_cast_snapshot(snapshot).serialize()
+    except (MagicRegistryError, TypeError, ValueError):
+        return None
+    return {"kind": "magic", "snapshot": normalized}
+
+
+def valid_magic_intent(intent: Any) -> bool:
+    """Validate a persisted magic intent without resolving game objects."""
+    if not isinstance(intent, Mapping) or set(intent) != {"kind", "snapshot"}:
+        return False
+    if intent.get("kind") != "magic":
+        return False
+    normalized = validate_magic_intent(intent.get("snapshot"))
+    return normalized == dict(intent)
+
+
+def execute_magic_intent(caster: Any, intent: Mapping[str, Any]) -> MagicActionResult:
+    """Consume one combat-owned cast snapshot after complete revalidation."""
+    if not valid_magic_intent(intent):
+        raise MagicActionError("That prepared spell is invalid.")
+    snapshot = deserialize_cast_snapshot(intent["snapshot"])
+    registry = _registry()
+    if snapshot.registry_version != registry.version or snapshot.caster_id != caster.id:
+        raise MagicActionError("That prepared spell is no longer available.")
+    definition = registry.definition_for(snapshot.source_key, include_disabled=False)
+    state = _action_state(caster)
+    if not _has_access(caster, definition, state):
+        raise MagicActionError("You no longer know or have that action prepared.")
+    from evennia.objects.models import ObjectDB
+
+    target = ObjectDB.objects.filter(id=snapshot.target_ids[0]).first()
+    if target is None:
+        raise MagicActionError("That prepared target is no longer available.")
+    return _resolve_cast(caster, definition, target, snapshot)
 
 
 def _registry() -> MagicRegistry:
@@ -729,7 +807,8 @@ def _on_concentration_effect_removed(effect: Any, _reason: Any) -> None:
 
 def _register_concentration_removal_listener() -> None:
     """Register this reload-safe effect adapter exactly once per process."""
-    from systems.effects import register_removal_listener, removal_listener_registered
+    from systems.effects import (register_removal_listener,
+                                 removal_listener_registered)
 
     listener_key = "magic.concentration"
     if not removal_listener_registered(listener_key):
@@ -749,7 +828,12 @@ def _spell_access(actor: Any, *, required: bool = True):
         if required:
             raise MagicActionError("Your magic training record needs staff repair.")
         return None, 0
-    from systems.progression import CLASS_PROGRESSION
+    from systems.progression import CLASS_PROGRESSION, MAX_CLASS_LEVEL
+
+    if level > MAX_CLASS_LEVEL:
+        if required:
+            raise MagicActionError("Your magic training record needs staff repair.")
+        return None, 0
 
     access = CLASS_PROGRESSION.spell_access.get(f"{class_key.casefold()}.spell_access")
     if access is None and required:
@@ -814,6 +898,11 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
         raise MagicActionError("That action has no usable range.")
     if target is not caster and target.location is not caster.location:
         raise MagicActionError("That target is out of range.")
+    if target is not caster and not targeting.allow_hidden:
+        location = getattr(caster, "location", None)
+        visible = () if location is None else location.filter_visible((target,), caster)
+        if target not in visible:
+            raise MagicActionError("There is no valid target here.")
     if not target.access(caster, "magic", default=True):
         raise MagicActionError("You cannot affect that target.")
 
@@ -826,6 +915,8 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
     }
     if needs_character and not isinstance(target, Character):
         raise MagicActionError("That action needs a creature target.")
+    if targeting.mode == TargetingMode.OBJECT and isinstance(target, Character):
+        raise MagicActionError("That action needs an object target.")
     if isinstance(target, Character):
         if (
             not targeting.allow_npcs
@@ -842,6 +933,21 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
             InjuryState.DEAD,
         }:
             raise MagicActionError("That target cannot be affected right now.")
+        if "living" in targeting.filters and state is InjuryState.DEAD:
+            raise MagicActionError("That target cannot be affected right now.")
+        creature_types = {"undead", "construct"} & set(targeting.filters)
+        if creature_types and not any(
+            target.tags.has(value, category="creature_type") for value in creature_types
+        ):
+            raise MagicActionError("That action cannot affect this creature type.")
+    if "item" in targeting.filters and isinstance(target, Character):
+        raise MagicActionError("That action needs an item target.")
+    if "worn" in targeting.filters and not target.attributes.get("worn_location"):
+        raise MagicActionError("That action needs a worn item target.")
+    if "unworn" in targeting.filters and target.attributes.get("worn_location"):
+        raise MagicActionError("That action needs an unworn item target.")
+    if "willing" in targeting.filters and target is not caster:
+        raise MagicActionError("That creature has not consented to this action.")
     if targeting.mode == TargetingMode.HOSTILE:
         from systems.attacks import can_attack
 
@@ -903,6 +1009,8 @@ def _revalidate(
     decision = caster.actions.check(_action_category(definition))
     if not decision.allowed:
         raise MagicActionError(decision.message)
+    if definition.kind == MagicKind.SPELL and caster.stats.has_untrained_armor:
+        raise MagicActionError("You cannot cast spells while wearing untrained armor.")
     if target is not caster:
         _validate_target(caster, definition, target)
     for resource_key, amount in snapshot.resource_reservation.items():
@@ -1267,6 +1375,18 @@ def _lock(obj: Any) -> None:
     ):
         raise MagicActionError("Magic requires a saved character.")
     obj.__class__.objects.select_for_update().get(pk=identifier)
+    obj.attributes.reset_cache()
+
+
+def _discard_cached_state(*objects: Any) -> None:
+    """Forget Attribute values written inside a transaction that rolled back."""
+    seen: set[int] = set()
+    for obj in objects:
+        identifier = getattr(obj, "id", None)
+        if identifier in seen or getattr(obj, "attributes", None) is None:
+            continue
+        seen.add(identifier)
+        obj.attributes.reset_cache()
 
 
 _register_concentration_removal_listener()

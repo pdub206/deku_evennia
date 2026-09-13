@@ -81,6 +81,23 @@ HELP_ENTRY_DICTS = [
             self-only action. An action with a cast time longer than one action
             is unavailable until its interruption-safe casting support arrives.
 
+            During combat, |wcast|n prepares the spell for your next ready
+            action instead of granting an extra action. The target, permission,
+            visibility, preparation, and resource cost are checked again when
+            that action occurs. Wearing armor your class is not trained to use
+            prevents spellcasting. Failed or interrupted casts do not spend
+            their reserved resource.
+
+            Spell slots and limited class abilities show their current and
+            maximum values in |wspells|n and |wabilities|n. Short-rest resources
+            recover after an uninterrupted Short Rest in a safe resting place;
+            spell slots and long-rest resources recover after a completed Long
+            Rest with sufficient sleep. Fighting, movement, damage, standing,
+            disconnection, or missed recovery pulses cannot become rest credit.
+            Concentration permits one maintained spell at a time. A replacement,
+            failed Constitution maintenance save after damage, incapacitation,
+            death, or removal of its linked effect ends it.
+
             Class spell and ability content is unavailable until it can be
             implemented from the SRD 5.2.1 rules with its required resources,
             targeting, effects, and recovery. Individual action help will state

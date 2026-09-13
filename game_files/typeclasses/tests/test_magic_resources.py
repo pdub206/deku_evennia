@@ -1,14 +1,9 @@
 """SRD spell-slot and Pact Magic resource coverage."""
 
 from evennia.utils.test_resources import EvenniaTest
-from systems.magic_resources import (
-    MagicResourceError,
-    recover_profile,
-    resource_current,
-    resource_maximum,
-    resource_view,
-    spend_resource,
-)
+from systems.magic_resources import (MagicResourceError, recover_profile,
+                                     resource_current, resource_maximum,
+                                     resource_view, spend_resource)
 
 
 class TestMagicResources(EvenniaTest):
@@ -50,3 +45,19 @@ class TestMagicResources(EvenniaTest):
         restored = recover_profile(self.char1, "short_rest")
         self.assertIn(("fighter.second_wind", 2), restored)
         self.assertEqual(resource_current(self.char1, "fighter.second_wind"), 2)
+
+    def test_exact_spend_succeeds_and_insufficient_spend_is_unchanged(self):
+        """The exact boundary reaches zero and a later overspend is atomic."""
+        spend_resource(self.char1, "wizard.spell_slot.2", 2)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 0)
+        with self.assertRaises(MagicResourceError):
+            spend_resource(self.char1, "wizard.spell_slot.2", 1)
+        self.assertEqual(resource_current(self.char1, "wizard.spell_slot.2"), 0)
+
+    def test_out_of_alpha_level_fails_closed(self):
+        """Malformed future-level state never indexes beyond alpha tables."""
+        self.char1.db.level = 4
+        with self.assertRaises(MagicResourceError):
+            resource_maximum(self.char1, "wizard.spell_slot.1")
+        with self.assertRaises(MagicResourceError):
+            resource_view(self.char1)

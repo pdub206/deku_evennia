@@ -5,7 +5,8 @@ from __future__ import annotations
 from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.magic import MagicKind
-from systems.magic_actions import MagicActionError, available_actions, cast_action
+from systems.magic_actions import (MagicActionError, available_actions,
+                                   request_cast_action)
 from systems.magic_resources import MagicResourceError, resource_view
 
 
@@ -29,12 +30,18 @@ class CmdCast(Command):
             return
         action, target = parsed
         try:
-            result = cast_action(self.caller, action, target_name=target)
+            result = request_cast_action(self.caller, action, target_name=target)
         except (MagicActionError, MagicResourceError) as err:
             self.caller.msg(str(err))
             return
         if result.accepted:
-            self.caller.msg(f"You cast |w{result.definition.display_name}|n.")
+            if result.reason == "queued":
+                self.caller.msg(
+                    f"You prepare to cast |w{result.definition.display_name}|n "
+                    "on your next combat action."
+                )
+            else:
+                self.caller.msg(f"You cast |w{result.definition.display_name}|n.")
 
 
 class _MagicListCommand(Command):
@@ -53,7 +60,7 @@ class _MagicListCommand(Command):
         try:
             actions = available_actions(self.caller, self.kind)
             resources = resource_view(self.caller)
-        except MagicActionError as err:
+        except (MagicActionError, MagicResourceError) as err:
             self.caller.msg(str(err))
             return
         lines = [f"|w{self.title}|n"]

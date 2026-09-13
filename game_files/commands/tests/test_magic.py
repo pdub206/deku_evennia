@@ -7,41 +7,20 @@ from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.advancement import initialize_level_one
-from systems.combat import is_fighting
+from systems.combat import is_fighting, process_combat_pulse, start_fight
 from systems.dice import RollResult
 from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.injury import InjuryState, apply_damage, injury_record
-from systems.magic import (
-    MAGIC_REGISTRY,
-    AccessMode,
-    ClassAccess,
-    Damage,
-    DiceExpression,
-    MagicDefinition,
-    MagicKind,
-    PlayerHelp,
-    RangeCategory,
-    ResourceCost,
-    Save,
-    Targeting,
-    TargetingMode,
-    build_magic_registry,
-)
-from systems.magic_actions import (
-    cast_action,
-    end_concentration,
-    grant_action,
-    grant_spellbook_entry,
-    mark_preparation_window,
-    prepare_action,
-)
+from systems.magic import (MAGIC_REGISTRY, AccessMode, ClassAccess, Damage,
+                           DiceExpression, MagicDefinition, MagicKind,
+                           PlayerHelp, RangeCategory, ResourceCost, Save,
+                           Targeting, TargetingMode, build_magic_registry)
+from systems.magic_actions import (cast_action, end_concentration,
+                                   grant_action, grant_spellbook_entry,
+                                   mark_preparation_window, prepare_action)
 from systems.magic_resources import resource_current, restore_resource
-from systems.magic_rest import (
-    MAGIC_REST_ATTRIBUTE,
-    SAFE_REST_TAG,
-    SAFE_REST_TAG_CATEGORY,
-    advance_magic_rest,
-)
+from systems.magic_rest import (MAGIC_REST_ATTRIBUTE, SAFE_REST_TAG,
+                                SAFE_REST_TAG_CATEGORY, advance_magic_rest)
 from systems.pulses import PulseEvent, PulseLane
 from systems.tactical_combat import consume_prone_action
 
@@ -66,7 +45,7 @@ if EFFECT_REGISTRY.get(_SAVE_EFFECT.key) is None:
     EFFECT_REGISTRY.register(_SAVE_EFFECT)
 
 
-def _registry():
+def _registry(*, action_category="manipulate"):
     """Build one released-shaped, safe utility action for command tests."""
     action = MagicDefinition(
         key="wizard.spark",
@@ -77,7 +56,7 @@ def _registry():
         tags=("arcane",),
         class_access=(ClassAccess("Wizard", 1),),
         access_modes=(AccessMode.LEARNED,),
-        action_category="manipulate",
+        action_category=action_category,
         handler_key="utility",
         targeting=Targeting(TargetingMode.SELF, include_caster=True),
         range=RangeCategory.SELF,
@@ -228,6 +207,85 @@ class TestMagicCommands(EvenniaCommandTest):
             grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
             self.assertIn("only target you", self.call(CmdCast(), "spark at Char2"))
             self.assertIn("None.", self.call(CmdAbilities(), ""))
+
+    def test_untrained_armor_blocks_spellcasting_without_spending(self):
+        """Equipment restrictions are checked before accepting a spell."""
+        armor = create_object(
+            "typeclasses.objects.Item",
+            key="plate armor",
+            location=self.char1,
+            attributes=(
+                ("type", "armor"),
+                ("subtype", "heavy"),
+                ("base_ac", 18),
+                ("wear_locations", ["body"]),
+                ("worn_location", "body"),
+            ),
+        )
+        self.assertTrue(self.char1.stats.has_untrained_armor)
+        with patch("systems.magic.MAGIC_REGISTRY", self.registry):
+            grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
+            output = self.call(CmdCast(), "spark")
+
+        self.assertIn("untrained armor", output)
+        self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 1)
+        self.assertIsNotNone(armor)
+
+    def test_in_combat_cast_uses_one_replay_safe_pending_action(self):
+        """Repeated cast commands replace one intent consumed by one combat pulse."""
+        registry = _registry(action_category="combat")
+        with (
+            patch("systems.magic.MAGIC_REGISTRY", registry),
+            patch("systems.attacks.can_attack") as can_attack,
+        ):
+            can_attack.return_value.allowed = True
+            grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
+            start_fight(self.char1, self.char2)
+            first = self.call(CmdCast(), "spark")
+            second = self.call(CmdCast(), "spark")
+            self.assertIn("next combat action", first)
+            self.assertIn("next combat action", second)
+            self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 1)
+
+            event = PulseEvent(6, PulseLane.COMBAT, 1)
+            process_combat_pulse(event)
+            process_combat_pulse(event)
+
+        self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 0)
+
+    def test_combat_cast_revalidates_and_refunds_on_execution_failure(self):
+        """A mutable restriction can cancel a queued cast without a resource spend."""
+        registry = _registry(action_category="combat")
+        with (
+            patch("systems.magic.MAGIC_REGISTRY", registry),
+            patch("systems.attacks.can_attack") as can_attack,
+        ):
+            can_attack.return_value.allowed = True
+            grant_action(self.char1, "wizard.spark", AccessMode.LEARNED)
+            start_fight(self.char1, self.char2)
+            self.assertIn("next combat action", self.call(CmdCast(), "spark"))
+            create_object(
+                "typeclasses.objects.Item",
+                key="plate armor",
+                location=self.char1,
+                attributes=(
+                    ("type", "armor"),
+                    ("subtype", "heavy"),
+                    ("base_ac", 18),
+                    ("wear_locations", ["body"]),
+                    ("worn_location", "body"),
+                ),
+            )
+            with patch.object(self.char1, "msg") as message:
+                process_combat_pulse(PulseEvent(6, PulseLane.COMBAT, 1))
+
+        self.assertEqual(resource_current(self.char1, "wizard.arcane_recovery"), 1)
+        self.assertTrue(
+            any(
+                "untrained armor" in str(call.args[0])
+                for call in message.call_args_list
+            )
+        )
 
     def test_effect_actions_use_rules03_storage_and_reject_without_spending(self):
         """Effect actions retain source, duration, and RULES-03 stacking policy."""

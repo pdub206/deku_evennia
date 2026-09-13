@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from systems.progression import CLASS_PROGRESSION
+from django.db import transaction
+from systems.progression import CLASS_PROGRESSION, MAX_CLASS_LEVEL
 
 MAGIC_RESOURCE_ATTRIBUTE = "magic_resources"
 MAGIC_RESOURCE_VERSION = 1
@@ -33,7 +34,7 @@ def resource_maximum(actor: Any, resource_key: str) -> int:
         not isinstance(class_key, str)
         or not isinstance(level, int)
         or isinstance(level, bool)
-        or not 1 <= level <= 20
+        or not 1 <= level <= MAX_CLASS_LEVEL
     ):
         raise MagicResourceError("Magic resource is unavailable.")
     slot_maximum = _slot_maximum(class_key, level, resource_key)
@@ -65,30 +66,34 @@ def spend_resource(actor: Any, resource_key: str, amount: int) -> int:
     """Atomically spend a bounded amount and return the remaining resource."""
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
         raise MagicResourceError("Magic resource cost is invalid.")
-    current = resource_current(actor, resource_key)
-    if amount > current:
-        raise MagicResourceError("Magic resource is insufficient.")
-    if resource_key == "hp":
-        actor.stats.take_damage(amount)
-        return actor.stats.hp_current
-    state = _state(actor)
-    state[resource_key] = current - amount
-    _write_state(actor, state)
-    return state[resource_key]
+    with transaction.atomic():
+        _lock_actor(actor)
+        current = resource_current(actor, resource_key)
+        if amount > current:
+            raise MagicResourceError("Magic resource is insufficient.")
+        if resource_key == "hp":
+            actor.stats.take_damage(amount)
+            return actor.stats.hp_current
+        state = _state(actor)
+        state[resource_key] = current - amount
+        _write_state(actor, state)
+        return state[resource_key]
 
 
 def restore_resource(actor: Any, resource_key: str, amount: int) -> int:
     """Restore up to the derived maximum for recovery adapters and refunds."""
     if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
         raise MagicResourceError("Magic resource recovery is invalid.")
-    maximum = resource_maximum(actor, resource_key)
-    current = resource_current(actor, resource_key)
-    if resource_key == "hp":
-        return actor.stats.heal(amount)
-    state = _state(actor)
-    state[resource_key] = min(maximum, current + amount)
-    _write_state(actor, state)
-    return state[resource_key]
+    with transaction.atomic():
+        _lock_actor(actor)
+        maximum = resource_maximum(actor, resource_key)
+        current = resource_current(actor, resource_key)
+        if resource_key == "hp":
+            return actor.stats.heal(amount)
+        state = _state(actor)
+        state[resource_key] = min(maximum, current + amount)
+        _write_state(actor, state)
+        return state[resource_key]
 
 
 def resource_view(actor: Any) -> tuple[tuple[str, int, int], ...]:
@@ -123,7 +128,7 @@ def recover_profile(actor: Any, profile: str) -> tuple[tuple[str, int], ...]:
         not isinstance(class_key, str)
         or isinstance(level, bool)
         or not isinstance(level, int)
-        or not 1 <= level <= 20
+        or not 1 <= level <= MAX_CLASS_LEVEL
     ):
         raise MagicResourceError("Magic resource is unavailable.")
     allowed_profiles = {profile}
@@ -220,7 +225,11 @@ def _slot_maximum(class_key: str, level: int, resource_key: str) -> int | None:
 
 def _slot_resource_keys(class_key: str, level: Any) -> tuple[str, ...]:
     """Return only slot keys whose current class table grants nonzero capacity."""
-    if isinstance(level, bool) or not isinstance(level, int) or not 1 <= level <= 20:
+    if (
+        isinstance(level, bool)
+        or not isinstance(level, int)
+        or not 1 <= level <= MAX_CLASS_LEVEL
+    ):
         return ()
     access = _spell_access(class_key)
     if access is None:
@@ -242,7 +251,20 @@ def _known_resource_key(key: str) -> bool:
     if key in CLASS_PROGRESSION.resources:
         return True
     for class_key in CLASS_PROGRESSION.definitions:
-        for level in range(1, 21):
+        for level in range(1, MAX_CLASS_LEVEL + 1):
             if _slot_maximum(class_key, level, key) is not None:
                 return True
     return False
+
+
+def _lock_actor(actor: Any) -> None:
+    """Serialize a resource mutation and discard stale Attribute cache values."""
+    identifier = getattr(actor, "pk", None)
+    if (
+        not isinstance(identifier, int)
+        or isinstance(identifier, bool)
+        or identifier <= 0
+    ):
+        raise MagicResourceError("Magic resources require a saved character.")
+    actor.__class__.objects.select_for_update().get(pk=identifier)
+    actor.attributes.reset_cache()

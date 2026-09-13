@@ -17,7 +17,9 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Any
 
+from systems.action_policy import ActionCategory
 from systems.equipment import DAMAGE_TYPES
+from systems.progression import MAX_CLASS_LEVEL
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
 MAGIC_REGISTRY_VERSION = 2
@@ -83,6 +85,16 @@ _TARGETING_MODES = frozenset(
         TargetingMode.GROUP,
     }
 )
+_ALPHA_TARGETING_MODES = frozenset(
+    {
+        TargetingMode.SELF,
+        TargetingMode.CREATURE,
+        TargetingMode.ALLY,
+        TargetingMode.HOSTILE,
+        TargetingMode.OBJECT,
+    }
+)
+_ALPHA_UNAVAILABLE_HANDLERS = frozenset({"movement"})
 TARGET_FILTERS = frozenset(
     {
         "character",
@@ -384,7 +396,7 @@ class MagicRegistry:
         return MappingProxyType(
             {
                 "key": definition.player_help.key,
-                "aliases": list(definition.aliases),
+                "aliases": definition.aliases,
                 "category": "Magic",
                 "text": _render_player_help(definition),
             }
@@ -608,11 +620,17 @@ def _validate_definition(
         raise MagicRegistryError("Only spells may have a spell level.")
     _validate_key(definition.school, "school")
     _validate_key(definition.action_category, "action category")
+    if definition.action_category not in {
+        category.value for category in ActionCategory
+    }:
+        raise MagicRegistryError("A magic action has an unknown action category.")
     _validate_key(definition.handler_key, "handler")
     if definition.handler_key not in handlers:
         raise MagicRegistryError(
             f"Magic action '{definition.key}' has an unknown handler."
         )
+    if definition.enabled and definition.handler_key in _ALPHA_UNAVAILABLE_HANDLERS:
+        raise MagicRegistryError("That handler is not executable in the alpha.")
     _validate_strings(definition.aliases, "aliases", MAX_ALIASES, normalize_alias)
     _validate_strings(
         definition.tags, "tags", MAX_TAGS, lambda item: _key_result(item, "tag")
@@ -624,6 +642,8 @@ def _validate_definition(
         if not isinstance(access, ClassAccess) or access.class_key not in classes:
             raise MagicRegistryError("A magic action references an unknown class.")
         _validate_level(access.minimum_level)
+        if definition.enabled and access.minimum_level > MAX_CLASS_LEVEL:
+            raise MagicRegistryError("Class access exceeds the released level cap.")
         if access.class_key in seen_classes:
             raise MagicRegistryError("A magic action has duplicate class access.")
         seen_classes.add(access.class_key)
@@ -637,6 +657,10 @@ def _validate_definition(
     if len(set(definition.access_modes)) != len(definition.access_modes):
         raise MagicRegistryError("A magic action has duplicate access modes.")
     _validate_targeting(definition.targeting)
+    if definition.enabled and definition.targeting.mode not in _ALPHA_TARGETING_MODES:
+        raise MagicRegistryError("That targeting mode is not released for the alpha.")
+    if definition.enabled and AccessMode.ITEM in definition.access_modes:
+        raise MagicRegistryError("Item-supplied magic is not released for the alpha.")
     if definition.range not in {
         RangeCategory.SELF,
         RangeCategory.TOUCH,
@@ -660,10 +684,8 @@ def _validate_definition(
             or definition.cost.resource_key not in resources
         ):
             raise MagicRegistryError("A magic action references an unknown resource.")
-        _validate_nonnegative_int(
-            definition.cost.amount, "resource cost", maximum=100000
-        )
-    _validate_nonnegative_int(definition.cast_time, "cast time", maximum=MAX_CAST_TIME)
+        _validate_positive_int(definition.cost.amount, "resource cost", maximum=100000)
+    _validate_positive_int(definition.cast_time, "cast time", maximum=MAX_CAST_TIME)
     if not isinstance(definition.concentration, bool) or definition.maintenance not in {
         "none",
         "concentration",
@@ -794,6 +816,17 @@ def _validate_targeting(targeting: Targeting) -> None:
     )
     if len(set(targeting.filters)) != len(targeting.filters):
         raise MagicRegistryError("A magic action has duplicate target filters.")
+    object_filters = {"item", "worn", "unworn"}
+    if (
+        targeting.mode == TargetingMode.OBJECT
+        and set(targeting.filters) - object_filters
+    ) or (
+        targeting.mode != TargetingMode.OBJECT
+        and set(targeting.filters) & object_filters
+    ):
+        raise MagicRegistryError("A magic action has incompatible target filters.")
+    if "worn" in targeting.filters and "unworn" in targeting.filters:
+        raise MagicRegistryError("A magic action has contradictory target filters.")
     if not all(
         isinstance(value, bool)
         for value in (
@@ -992,6 +1025,18 @@ def _default_effect_keys() -> tuple[str, ...]:
     from systems.effects import EFFECT_REGISTRY
 
     return EFFECT_REGISTRY.keys()
+
+
+def _published_help_keys() -> tuple[str, ...]:
+    """Read actual file-help keys so production validation cannot use a shadow list."""
+    from world.help_entries import HELP_ENTRY_DICTS
+
+    return tuple(
+        key
+        for entry in HELP_ENTRY_DICTS
+        if isinstance((key := entry.get("key")), str)
+        and _HELP_KEY_RE.fullmatch(" ".join(key.casefold().split()))
+    )
 
 
 def _canonical_ability(value: Any) -> str:
@@ -1619,29 +1664,6 @@ _RELEASED_MAGIC = (
 # Only content with a complete execution path belongs in this selectable graph.
 MAGIC_REGISTRY = build_magic_registry(
     _RELEASED_MAGIC,
-    help_keys=(
-        "acid splash",
-        "fire bolt",
-        "poison spray",
-        "sacred flame",
-        "spare the dying",
-        "thaumaturgy",
-        "cure wounds",
-        "healing word",
-        "shield of faith",
-        "guiding bolt",
-        "inflict wounds",
-        "aid",
-        "magic missile",
-        "thunderwave",
-        "detect magic",
-        "burning hands",
-        "longstrider",
-        "grease",
-        "acid arrow",
-        "scorching ray",
-        "shatter",
-        "blur",
-    ),
+    help_keys=_published_help_keys(),
     require_srd_references=True,
 )
