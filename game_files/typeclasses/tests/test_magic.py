@@ -271,11 +271,15 @@ class TestMagicRegistry(EvenniaTest):
         )
         self.assertTrue(registry.requires_srd_references)
 
-    def test_released_cantrips_are_complete_and_deterministic(self):
-        """The first alpha catalog exposes only executable SRD cantrips."""
+    def test_released_actions_are_complete_and_deterministic(self):
+        """The alpha catalog exposes only its ordered executable SRD actions."""
         self.assertEqual(
             tuple(MAGIC_REGISTRY.definitions),
             (
+                "fighter.second_wind",
+                "fighter.action_surge",
+                "cleric.preserve_life",
+                "wizard.arcane_recovery",
                 "wizard.acid_splash",
                 "wizard.fire_bolt",
                 "wizard.poison_spray",
@@ -304,7 +308,7 @@ class TestMagicRegistry(EvenniaTest):
             tuple(
                 definition.key
                 for definition in MAGIC_REGISTRY.available_for("Wizard", 1)
-                if definition.spell_level == 0
+                if definition.kind == MagicKind.SPELL and definition.spell_level == 0
             ),
             (
                 "wizard.acid_splash",
@@ -354,7 +358,7 @@ class TestMagicRegistry(EvenniaTest):
         cantrips = tuple(
             definition
             for definition in MAGIC_REGISTRY.definitions.values()
-            if definition.spell_level == 0
+            if definition.kind == MagicKind.SPELL and definition.spell_level == 0
         )
         for definition in cantrips:
             self.assertEqual(definition.spell_level, 0)

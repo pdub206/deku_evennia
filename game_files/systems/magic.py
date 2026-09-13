@@ -248,6 +248,12 @@ STANDARD_HANDLERS: Mapping[str, HandlerContract] = MappingProxyType(
             frozenset({"effects"}),
             frozenset({TargetingMode.CREATURE}),
         ),
+        "action_surge": HandlerContract(
+            "action_surge", frozenset(), frozenset({TargetingMode.SELF})
+        ),
+        "arcane_recovery": HandlerContract(
+            "arcane_recovery", frozenset(), frozenset({TargetingMode.SELF})
+        ),
         "detect_magic": HandlerContract(
             "detect_magic", frozenset({"effects"}), frozenset({TargetingMode.SELF})
         ),
@@ -293,6 +299,12 @@ STANDARD_HANDLERS: Mapping[str, HandlerContract] = MappingProxyType(
         ),
         "stabilize": HandlerContract(
             "stabilize", frozenset(), frozenset({TargetingMode.CREATURE})
+        ),
+        "preserve_life": HandlerContract(
+            "preserve_life", frozenset(), frozenset({TargetingMode.CREATURE})
+        ),
+        "second_wind": HandlerContract(
+            "second_wind", frozenset({"healing"}), frozenset({TargetingMode.SELF})
         ),
         "thaumaturgy": HandlerContract(
             "thaumaturgy", frozenset(), frozenset({TargetingMode.SELF})
@@ -1121,6 +1133,95 @@ def _render_player_help(definition: MagicDefinition) -> str:
 
 
 _RELEASED_MAGIC = (
+    MagicDefinition(
+        key="fighter.second_wind",
+        display_name="Second Wind",
+        aliases=("secondwind",),
+        kind=MagicKind.ABILITY,
+        school="class_feature",
+        tags=("healing", "alpha_action_adaptation"),
+        class_access=(ClassAccess("Fighter", 1),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="combat",
+        handler_key="second_wind",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        cost=ResourceCost("fighter.second_wind", 1),
+        healing=DiceExpression(1, 10),
+        player_help=PlayerHelp(
+            "second wind",
+            "Recover 1d10 plus your Fighter level Hit Points.",
+            "Alpha adaptation: Bonus Actions consume your next ordinary combat action.",
+        ),
+        srd_reference="SRD 5.2.1 p.47: Second Wind",
+    ),
+    MagicDefinition(
+        key="fighter.action_surge",
+        display_name="Action Surge",
+        aliases=("surge",),
+        kind=MagicKind.ABILITY,
+        school="class_feature",
+        tags=("utility", "alpha_cadence_adaptation"),
+        class_access=(ClassAccess("Fighter", 2),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="combat",
+        handler_key="action_surge",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        cost=ResourceCost("fighter.action_surge", 1),
+        player_help=PlayerHelp(
+            "action surge",
+            "Regain readiness so your next combat action arrives on the next pulse.",
+            "Alpha adaptation: persistent cadence never resolves two actions in one pulse.",
+        ),
+        srd_reference="SRD 5.2.1 p.47: Action Surge",
+    ),
+    MagicDefinition(
+        key="cleric.preserve_life",
+        display_name="Preserve Life",
+        aliases=("preserve",),
+        kind=MagicKind.ABILITY,
+        school="class_feature",
+        tags=("healing", "alpha_single_target"),
+        class_access=(ClassAccess("Cleric", 3),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="combat",
+        handler_key="preserve_life",
+        targeting=Targeting(
+            TargetingMode.CREATURE,
+            filters=("character", "living"),
+            include_caster=True,
+        ),
+        range=RangeCategory.ROOM,
+        cost=ResourceCost("cleric.channel_divinity", 1),
+        player_help=PlayerHelp(
+            "preserve life",
+            "Heal one nearby living creature below half health, up to half its maximum.",
+            "Alpha adaptation: restore at most five times your Cleric level to one target.",
+        ),
+        srd_reference="SRD 5.2.1 p.40: Preserve Life",
+    ),
+    MagicDefinition(
+        key="wizard.arcane_recovery",
+        display_name="Arcane Recovery",
+        aliases=("recover magic",),
+        kind=MagicKind.ABILITY,
+        school="class_feature",
+        tags=("recovery", "alpha_recovery_adaptation"),
+        class_access=(ClassAccess("Wizard", 1),),
+        access_modes=(AccessMode.INNATE,),
+        action_category="manipulate",
+        handler_key="arcane_recovery",
+        targeting=Targeting(TargetingMode.SELF, include_caster=True),
+        range=RangeCategory.SELF,
+        cost=ResourceCost("wizard.arcane_recovery", 1),
+        player_help=PlayerHelp(
+            "arcane recovery",
+            "While resting, recover one eligible expended Wizard spell slot.",
+            "Alpha adaptation: restore the highest slot no greater than half your level, rounded up.",
+        ),
+        srd_reference="SRD 5.2.1 p.78: Arcane Recovery",
+    ),
     MagicDefinition(
         key="wizard.acid_splash",
         display_name="Acid Splash",

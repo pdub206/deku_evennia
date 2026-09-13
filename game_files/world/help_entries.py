@@ -105,6 +105,50 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "second wind",
+        "aliases": ["secondwind"],
+        "category": "Magic",
+        "text": """
+            Fighters can |wcast second wind|n to recover 1d10 plus their Fighter
+            level in Hit Points, spending one Second Wind use. In combat this is
+            prepared for the next ordinary action; the alpha has no separate
+            Bonus Action lane. Uses return after an uninterrupted Short Rest.
+        """,
+    },
+    {
+        "key": "action surge",
+        "aliases": ["surge"],
+        "category": "Magic",
+        "text": """
+            A level-2 Fighter can |wcast action surge|n while fighting to shorten
+            the wait for the following action to one combat pulse. It spends one
+            Action Surge use, recovered after an uninterrupted Short Rest, and
+            never grants two resolutions in the same pulse.
+        """,
+    },
+    {
+        "key": "preserve life",
+        "aliases": ["preserve"],
+        "category": "Magic",
+        "text": """
+            A level-3 Life Domain Cleric can |wcast preserve life at <target>|n
+            to spend one Channel Divinity use. It heals one nearby living target
+            that is below half health by up to five times the Cleric's level,
+            without raising the target above half maximum Hit Points.
+        """,
+    },
+    {
+        "key": "arcane recovery",
+        "aliases": ["recover magic"],
+        "category": "Magic",
+        "text": """
+            A resting Wizard can |wcast arcane recovery|n to restore one expended
+            spell slot of the highest eligible level, no greater than half the
+            Wizard's level rounded up. The ability has one use and returns after
+            a completed Long Rest.
+        """,
+    },
+    {
         "key": "magic registry",
         "aliases": ["magic-01", "spell registry", "ability registry"],
         "category": "Building",

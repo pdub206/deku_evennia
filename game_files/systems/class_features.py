@@ -6,7 +6,7 @@ current alpha rules and equipment model can represent faithfully.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 IMPLEMENTED_FEATURE_OPTIONS = frozenset({"Protector", "Defense"})
@@ -23,6 +23,25 @@ def validate_feature_option(option: str) -> None:
 def has_feature_option(character: Any, option: str) -> bool:
     """Return whether a character has durably selected an implemented option."""
     return option in (character.attributes.get("class_feature_choices") or ())
+
+
+def has_granted_feature(character: Any, feature_key: str) -> bool:
+    """Read one automatic ADV-01 feature grant without inferring from level."""
+    raw = character.attributes.get("class_progression")
+    grants = raw.get("grants") if isinstance(raw, Mapping) else None
+    return (
+        isinstance(feature_key, str)
+        and isinstance(grants, Sequence)
+        and not isinstance(grants, (str, bytes))
+        and feature_key in grants
+    )
+
+
+def spell_healing_bonus(character: Any, spell_level: int) -> int:
+    """Return Life Domain's bounded Disciple of Life bonus for a slot spell."""
+    if spell_level > 0 and has_granted_feature(character, "cleric.disciple_of_life"):
+        return 2 + spell_level
+    return 0
 
 
 def equipment_training(character: Any) -> tuple[frozenset[str], frozenset[str]]:

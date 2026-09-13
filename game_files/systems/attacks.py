@@ -15,16 +15,12 @@ from typing import Any
 from systems.action_policy import ActionCategory
 from systems.character_stats import AttackProfile
 from systems.combat import CombatActionResult
-from systems.combat_math import HIT_LOCATION_WEIGHTS, resolve_attack_calculation
+from systems.combat_math import (HIT_LOCATION_WEIGHTS,
+                                 resolve_attack_calculation)
 from systems.dice import roll
 from systems.equipment import HIT_LOCATIONS, DamageMitigation
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    announce_transition,
-    apply_damage,
-    injury_record,
-)
+from systems.injury import (InjuryError, InjuryState, announce_transition,
+                            apply_damage, injury_record)
 from systems.pulses import PulseEvent
 
 
@@ -169,6 +165,9 @@ def resolve_basic_attack(
         roller=die_roller,
         select_location=lambda: location_selector(attacker, target),
         mitigate=target.stats.mitigate_damage,
+        critical_threshold=(
+            19 if _has_granted_feature(attacker, "fighter.improved_critical") else 20
+        ),
     )
     if guiding_bolt:
         instance = next(
@@ -229,6 +228,13 @@ def resolve_basic_attack(
         render_attack_result(attacker, target, result)
         announce_transition(target, injury)
     return result
+
+
+def _has_granted_feature(character: Any, feature_key: str) -> bool:
+    """Keep attack rules dependent on the class-feature ownership adapter."""
+    from systems.class_features import has_granted_feature
+
+    return has_granted_feature(character, feature_key)
 
 
 def render_attack_result(attacker: Any, target: Any, result: AttackResult) -> None:

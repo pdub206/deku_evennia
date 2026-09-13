@@ -22,6 +22,7 @@ from systems.magic import (AccessMode, CastSnapshot, MagicDefinition,
                            RangeCategory, TargetingMode,
                            deserialize_cast_snapshot)
 from systems.magic_resources import (MagicResourceError, resource_current,
+                                     resource_maximum, restore_resource,
                                      spend_resource)
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
@@ -600,7 +601,27 @@ def _has_access(
         mode in definition.access_modes and definition.key in state[mode]
         for mode in _ENTITLEMENT_MODES
     )
-    return entitled or _uses_ritual_access(actor, definition, state)
+    return (
+        entitled
+        or _automatic_feature_access(actor, definition)
+        or _uses_ritual_access(actor, definition, state)
+    )
+
+
+def _automatic_feature_access(actor: Any, definition: MagicDefinition) -> bool:
+    """Expose an innate action only when ADV-01 durably granted its feature key."""
+    if (
+        definition.kind != MagicKind.ABILITY
+        or AccessMode.INNATE not in definition.access_modes
+    ):
+        return False
+    raw = actor.attributes.get("class_progression")
+    return (
+        isinstance(raw, Mapping)
+        and isinstance(raw.get("grants"), Sequence)
+        and not isinstance(raw.get("grants"), (str, bytes))
+        and definition.key in raw["grants"]
+    )
 
 
 def _uses_ritual_access(
@@ -1029,6 +1050,9 @@ def _execute(
             definition.healing,
             spellcasting_modifier=snapshot.spellcasting_modifier,
         )
+        from systems.class_features import spell_healing_bonus
+
+        amount += spell_healing_bonus(caster, definition.spell_level)
         result = apply_healing(target, amount, emit_messages=False)
         if not result.accepted:
             raise MagicActionError("That target cannot be healed.")
@@ -1067,6 +1091,56 @@ def _execute(
         return MagicActionResult(
             True, "effect_applied", definition, target, snapshot, 5
         )
+    if definition.handler_key == "second_wind":
+        amount = _roll_dice(definition.healing) + int(caster.attributes.get("level", 1))
+        healing = apply_healing(caster, amount, emit_messages=False)
+        if not healing.accepted or healing.resulting_hp == healing.previous_hp:
+            raise MagicActionError("You do not need your Second Wind right now.")
+        _message(caster, caster, definition, "You recover with")
+        return MagicActionResult(
+            True,
+            "healed",
+            definition,
+            caster,
+            snapshot,
+            healing.resulting_hp - healing.previous_hp,
+        )
+    if definition.handler_key == "action_surge":
+        from systems.combat import accelerate_next_action
+
+        if not accelerate_next_action(caster):
+            raise MagicActionError("You can only use Action Surge while fighting.")
+        return MagicActionResult(True, "surged", definition, caster, snapshot)
+    if definition.handler_key == "preserve_life":
+        maximum = target.stats.hp_max
+        current = target.stats.hp_current
+        ceiling = maximum // 2
+        amount = min(5 * int(caster.attributes.get("level", 1)), ceiling - current)
+        if amount <= 0:
+            raise MagicActionError("Preserve Life requires a target below half health.")
+        healing = apply_healing(target, amount, emit_messages=False)
+        if not healing.accepted:
+            raise MagicActionError("That target cannot be preserved.")
+        _message(caster, target, definition, "You preserve life with")
+        return MagicActionResult(True, "healed", definition, target, snapshot, amount)
+    if definition.handler_key == "arcane_recovery":
+        if str(caster.attributes.get("position", "standing")).casefold() != "resting":
+            raise MagicActionError("You must be resting to use Arcane Recovery.")
+        level = int(caster.attributes.get("level", 1))
+        maximum_level = (level + 1) // 2
+        for slot_level in range(maximum_level, 0, -1):
+            key = f"wizard.spell_slot.{slot_level}"
+            try:
+                current = resource_current(caster, key)
+                maximum = resource_maximum(caster, key)
+            except MagicResourceError:
+                continue
+            if current < maximum:
+                restore_resource(caster, key, 1)
+                return MagicActionResult(
+                    True, "recovered", definition, caster, snapshot, 1
+                )
+        raise MagicActionError("You have no eligible expended spell slot.")
     if definition.handler_key == "saving_throw":
         if definition.damage is not None:
             return _saving_throw_damage(caster, definition, target, snapshot)
@@ -1199,8 +1273,27 @@ def _spell_attack(
 ) -> MagicActionResult:
     """Resolve a snapshotted spell attack through canonical injury handling."""
     if not _spell_attack_hits(target, snapshot):
+        from systems.class_features import has_granted_feature
+
+        amount = 0
+        if definition.spell_level == 0 and has_granted_feature(
+            caster, "wizard.potent_cantrip"
+        ):
+            amount = _roll_dice(definition.damage.dice) // 2
+            injury = apply_damage(
+                target,
+                amount,
+                emit_messages=False,
+                source=caster,
+                source_kind="magic",
+            )
+            if not injury.accepted:
+                raise MagicActionError("That target cannot be affected right now.")
+            from systems.combat import start_fight
+
+            start_fight(caster, target)
         _message(caster, target, definition, "You miss")
-        return MagicActionResult(True, "miss", definition, target, snapshot)
+        return MagicActionResult(True, "miss", definition, target, snapshot, amount)
     amount = _roll_dice(definition.damage.dice)
     injury = apply_damage(
         target, amount, emit_messages=False, source=caster, source_kind="magic"
@@ -1322,7 +1415,14 @@ def _saving_throw_damage(
     )
     rolled_damage = _roll_dice(definition.damage.dice)
     if save.success and definition.save.on_success == "negate":
-        amount = 0
+        from systems.class_features import has_granted_feature
+
+        amount = (
+            rolled_damage // 2
+            if definition.spell_level == 0
+            and has_granted_feature(caster, "wizard.potent_cantrip")
+            else 0
+        )
     elif save.success and definition.save.on_success == "half":
         amount = rolled_damage // 2
     else:

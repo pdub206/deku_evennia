@@ -368,6 +368,23 @@ def schedule_magic_action(
     return CombatOperationResult(True, changed, encounter_id)
 
 
+def accelerate_next_action(actor: Any) -> bool:
+    """Move one participant's next readiness to the next pulse without replaying now."""
+    actor_id = _object_id(actor)
+    if actor_id is None:
+        return False
+    state = _read_state()
+    _repair_state(state)
+    encounter_id = _participant_encounter(state, actor_id)
+    if encounter_id is None:
+        return False
+    record = state["encounters"][str(encounter_id)]["participants"][str(actor_id)]
+    record["ready_at"] = state["last_pulse"] + 1
+    _write_state(state)
+    _refresh_prompts(actor)
+    return True
+
+
 @dataclass(frozen=True)
 class CombatRetargetResult:
     """The low-level, atomic result of a future rescue attempt."""

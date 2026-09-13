@@ -12,19 +12,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from systems.attacks import (
-    AttackOutcome,
-    AttackResult,
-    can_attack,
-    resolve_basic_attack,
-)
+from systems.attacks import (AttackOutcome, AttackResult, can_attack,
+                             resolve_basic_attack)
 from systems.character_stats import AttackProfile
-from systems.checks import (
-    CheckRequest,
-    CheckResult,
-    resolve_opposed_check,
-    stealth_against_passive,
-)
+from systems.checks import (CheckRequest, CheckResult, resolve_opposed_check,
+                            stealth_against_passive)
 from systems.combat import CombatActionResult, get_encounter_id, get_target
 from systems.dice import RollResult
 from systems.effects import ApplyOutcome, RemovalReason
@@ -84,6 +76,10 @@ class TacticalActionRegistry:
 
     def get(self, key: str) -> TacticalHandler | None:
         return self._handlers.get(key)
+
+    def keys(self) -> tuple[str, ...]:
+        """Return registered action keys in deterministic declaration order."""
+        return tuple(self._handlers)
 
 
 TACTICAL_ACTIONS = TacticalActionRegistry()

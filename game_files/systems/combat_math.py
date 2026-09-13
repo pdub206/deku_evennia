@@ -70,6 +70,7 @@ def resolve_attack_calculation(
     roller: Callable[[int], int],
     select_location: Callable[[], str],
     mitigate: Callable[[int, str, str], Any],
+    critical_threshold: int = 20,
 ) -> CalculatedAttack:
     """Resolve rolls, classification, location, dice, and mitigation only."""
     has_advantage = has_advantage or target_unconscious
@@ -86,7 +87,7 @@ def resolve_attack_calculation(
     total = die_roll + profile.attack_bonus
     if die_roll == 1:
         outcome = AttackClassification.MISS
-    elif die_roll == 20 or target_unconscious:
+    elif die_roll >= critical_threshold or target_unconscious:
         outcome = AttackClassification.CRITICAL
     elif total >= armor_class:
         outcome = AttackClassification.HIT

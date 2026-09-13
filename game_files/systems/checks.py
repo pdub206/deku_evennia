@@ -237,6 +237,11 @@ def _check_parts(
     if ability in {"Strength", "Dexterity"} and request.actor.stats.has_untrained_armor:
         disadvantage = tuple(sorted({*disadvantage, "untrained_armor"}))
     advantage = _source_names(request.advantage_sources, "Advantage")
+    if ability == "Strength" and skill == "Athletics":
+        from systems.class_features import has_granted_feature
+
+        if has_granted_feature(request.actor, "fighter.remarkable_athlete"):
+            advantage = tuple(sorted({*advantage, "remarkable_athlete"}))
     return (
         ability,
         skill,
