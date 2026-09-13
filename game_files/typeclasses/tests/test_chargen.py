@@ -139,10 +139,10 @@ class TestClassData(EvenniaTest):
                 self.assertIn(key, data, f"Class '{cls_name}' missing key '{key}'")
 
     def test_weapon_training_is_machine_readable(self):
-        self.assertEqual(CLASSES["Fighter"]["weapon_categories"], ["simple", "martial"])
+        self.assertEqual(CLASSES["Fighter"]["weapon_categories"], ("simple", "martial"))
         self.assertEqual(tuple(CLASSES), ("Cleric", "Fighter", "Rogue", "Wizard"))
         self.assertIn("rapier", CLASSES["Rogue"]["weapon_proficiencies"])
-        self.assertEqual(CLASSES["Wizard"]["weapon_categories"], ["simple"])
+        self.assertEqual(CLASSES["Wizard"]["weapon_categories"], ("simple",))
 
 
 class TestBackgroundData(EvenniaTest):

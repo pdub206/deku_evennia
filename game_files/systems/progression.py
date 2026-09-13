@@ -137,18 +137,18 @@ class ProgressionRegistry:
                 "primary_ability": (
                     definition.primary_abilities[0]
                     if len(definition.primary_abilities) == 1
-                    else list(definition.primary_abilities)
+                    else definition.primary_abilities
                 ),
                 "hit_die": definition.hit_die,
                 "hp_base": definition.hit_die,
                 "complexity": definition.complexity,
-                "saving_throws": list(definition.saving_throws),
+                "saving_throws": definition.saving_throws,
                 "skill_choices": choice.count,
-                "skills_available": list(choice.legal_options),
-                "armor_training": list(definition.armor_training),
+                "skills_available": choice.legal_options,
+                "armor_training": definition.armor_training,
                 "weapon_profs": definition.weapon_profs,
-                "weapon_categories": list(definition.weapon_categories),
-                "weapon_proficiencies": list(definition.weapon_proficiencies),
+                "weapon_categories": definition.weapon_categories,
+                "weapon_proficiencies": definition.weapon_proficiencies,
             }
         )
 
@@ -200,6 +200,8 @@ def build_registry(
     required_help_keys: Iterable[str] = ("class progression",),
 ) -> ProgressionRegistry:
     """Validate and freeze the complete alpha dependency graph."""
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise RegistryValidationError("Registry version must be a positive integer.")
     classes = _index(definitions, "class")
     feature_map = _index(features, "feature")
     resource_map = _index(resources, "resource")
@@ -275,11 +277,23 @@ def build_registry(
             _curve(slots, f"Spell access '{access.key}' slots")
         _reference(access.srd_reference, f"Spell access '{access.key}'")
     for choice in choice_map.values():
-        if not 1 <= choice.count <= len(choice.legal_options) or len(
-            set(choice.legal_options)
-        ) != len(choice.legal_options):
+        options = choice.legal_options
+        if (
+            not 1 <= choice.count <= len(options)
+            or any(not isinstance(option, str) or not option for option in options)
+            or len(set(options)) != len(options)
+        ):
             raise RegistryValidationError(
                 f"Choice '{choice.key}' has invalid options or count."
+            )
+        if any(
+            len(group) < 2
+            or len(set(group)) != len(group)
+            or any(option not in options for option in group)
+            for group in choice.mutual_exclusions
+        ):
+            raise RegistryValidationError(
+                f"Choice '{choice.key}' has invalid mutual exclusions."
             )
         if (
             choice.replacement_policy != "none"
@@ -288,6 +302,10 @@ def build_registry(
         ):
             raise RegistryValidationError(f"Choice '{choice.key}' has invalid policy.")
         _reference(choice.srd_reference, f"Choice '{choice.key}'")
+    referenced_features: set[str] = set()
+    referenced_resources: set[str] = set()
+    referenced_spells: set[str] = set()
+    referenced_choices: set[str] = set()
     for definition in classes.values():
         _reference(definition.srd_reference, f"Class '{definition.key}'")
         if (
@@ -310,6 +328,7 @@ def build_registry(
             raise RegistryValidationError(
                 f"Class '{definition.key}' must declare levels 1 through 3."
             )
+        earned_features: set[str] = set()
         for level in definition.levels:
             for key, registry in (
                 *((key, feature_map) for key in level.automatic_feature_keys),
@@ -321,6 +340,36 @@ def build_registry(
                     raise RegistryValidationError(
                         f"Class '{definition.key}' references unknown key '{key}'."
                     )
+            if len(set(level.automatic_feature_keys)) != len(
+                level.automatic_feature_keys
+            ) or any(
+                key in earned_features and feature_map[key].repeat_mode == "once"
+                for key in level.automatic_feature_keys
+            ):
+                raise RegistryValidationError(
+                    f"Class '{definition.key}' repeats an automatic feature."
+                )
+            for key in level.automatic_feature_keys:
+                missing = set(feature_map[key].prerequisites) - earned_features
+                if missing:
+                    raise RegistryValidationError(
+                        f"Feature '{key}' is granted before its prerequisite."
+                    )
+                earned_features.add(key)
+            referenced_features.update(level.automatic_feature_keys)
+            referenced_resources.update(level.resource_keys)
+            referenced_spells.update(level.spell_access_keys)
+            referenced_choices.update(level.choice_keys)
+    for label, referenced, registered in (
+        ("feature", referenced_features, set(feature_map)),
+        ("resource", referenced_resources, set(resource_map)),
+        ("spell access", referenced_spells, set(spell_map)),
+        ("choice", referenced_choices, set(choice_map)),
+    ):
+        if referenced != registered:
+            raise RegistryValidationError(
+                f"The {label} registry has unreferenced definitions."
+            )
     payload = {
         "version": version,
         "classes": [asdict(v) for v in classes.values()],

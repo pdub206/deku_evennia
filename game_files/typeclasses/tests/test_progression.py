@@ -70,6 +70,9 @@ class TestClassProgressionRegistry(EvenniaTest):
         summaries = CLASS_PROGRESSION.chargen_summaries()
         with self.assertRaises(TypeError):
             summaries["Fighter"] = {}  # type: ignore[index]
+        with self.assertRaises(TypeError):
+            summaries["Fighter"]["armor_training"] = ()  # type: ignore[index]
+        self.assertIsInstance(summaries["Fighter"]["armor_training"], tuple)
         self.assertEqual(
             CLASS_PROGRESSION.fingerprint,
             CLASS_PROGRESSION.fingerprint,
@@ -113,4 +116,86 @@ class TestClassProgressionRegistry(EvenniaTest):
                 CLASS_PROGRESSION.resources.values(),
                 CLASS_PROGRESSION.spell_access.values(),
                 CLASS_PROGRESSION.choices.values(),
+            )
+
+    def test_version_repeated_grant_and_prerequisite_order_fail_closed(self):
+        """Identity and grant provenance cannot be ambiguous or out of order."""
+        with self.assertRaisesRegex(RegistryValidationError, "version"):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+                version=0,
+            )
+
+        fighter = CLASS_PROGRESSION.class_for("Fighter")
+        duplicate = replace(
+            fighter.grants_at(2),
+            automatic_feature_keys=("fighter.second_wind",),
+        )
+        definitions = list(CLASS_PROGRESSION.definitions.values())
+        definitions[definitions.index(fighter)] = replace(
+            fighter, levels=(fighter.levels[0], duplicate, fighter.levels[2])
+        )
+        with self.assertRaisesRegex(RegistryValidationError, "repeats"):
+            build_registry(
+                definitions,
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+            )
+
+        premature = replace(
+            fighter.grants_at(3),
+            automatic_feature_keys=(
+                "fighter.improved_critical",
+                "fighter.champion",
+                "fighter.remarkable_athlete",
+            ),
+        )
+        definitions = list(CLASS_PROGRESSION.definitions.values())
+        definitions[definitions.index(fighter)] = replace(
+            fighter, levels=fighter.levels[:2] + (premature,)
+        )
+        with self.assertRaisesRegex(RegistryValidationError, "prerequisite"):
+            build_registry(
+                definitions,
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                CLASS_PROGRESSION.choices.values(),
+            )
+
+    def test_invalid_choice_exclusions_and_orphan_definitions_fail_closed(self):
+        """Choice policy and every registered definition belong to the graph."""
+        choices = list(CLASS_PROGRESSION.choices.values())
+        fighter_skills = CLASS_PROGRESSION.choices["fighter.skills"]
+        choices[choices.index(fighter_skills)] = replace(
+            fighter_skills,
+            mutual_exclusions=(("Athletics", "not-an-option"),),
+        )
+        with self.assertRaisesRegex(RegistryValidationError, "mutual exclusions"):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                choices,
+            )
+
+        orphan = replace(
+            fighter_skills,
+            key="fighter.unreferenced_choice",
+            mutual_exclusions=(),
+        )
+        with self.assertRaisesRegex(RegistryValidationError, "unreferenced"):
+            build_registry(
+                CLASS_PROGRESSION.definitions.values(),
+                CLASS_PROGRESSION.features.values(),
+                CLASS_PROGRESSION.resources.values(),
+                CLASS_PROGRESSION.spell_access.values(),
+                (*CLASS_PROGRESSION.choices.values(), orphan),
             )
