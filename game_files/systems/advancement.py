@@ -54,6 +54,14 @@ class AdvancementError(ValueError):
     """Raised when an XP operation cannot safely be completed."""
 
 
+class AdvancementSnapshotError(AdvancementError):
+    """Expose one bounded diagnostic code from read-only validation."""
+
+    def __init__(self, diagnostic: str):
+        super().__init__("Character advancement requires staff repair.")
+        self.diagnostic = diagnostic
+
+
 class _RepairRequired(AdvancementError):
     """Carry an inspectable quarantine reason out of a rolled-back transaction."""
 
@@ -78,6 +86,21 @@ class AdvancementResult:
     reason: str
 
 
+@dataclass(frozen=True)
+class AdvancementStateSnapshot:
+    """Validated, read-only identity for player and staff presentation."""
+
+    xp: int
+    level: int
+    class_key: str
+    registry_version: int
+    registry_fingerprint: str
+    grants: tuple[str, ...]
+    ledger_version: int
+    last_award_source: str | None
+    repair_required: str | None
+
+
 def earned_level(xp: int) -> int:
     """Return the uncapped SRD level earned by a cumulative XP total."""
     _non_negative_integer(xp, "XP")
@@ -87,6 +110,37 @@ def earned_level(xp: int) -> int:
 def effective_level(xp: int) -> int:
     """Return the level currently attainable under the alpha release cap."""
     return min(RELEASE_LEVEL_CAP, earned_level(xp))
+
+
+def advancement_state_snapshot(character: Any) -> AdvancementStateSnapshot:
+    """Validate advancement state without repairing, granting, or consuming it."""
+    repair = character.attributes.get("advancement_repair_required")
+    if repair is not None and not isinstance(repair, str):
+        raise AdvancementSnapshotError("invalid_repair_marker")
+    try:
+        _validate_character(character)
+        xp, level = _stored_xp_and_level(character)
+        if effective_level(xp) != level:
+            raise _RepairRequired("level_xp_mismatch")
+        progression = _progression_state(character, level)
+        ledger = _ledger(character)
+    except _RepairRequired as err:
+        raise AdvancementSnapshotError(err.reason) from err
+    except AdvancementError as err:
+        diagnostic = repair if isinstance(repair, str) else "invalid_advancement_state"
+        raise AdvancementSnapshotError(diagnostic) from err
+    entries = ledger["entries"]
+    return AdvancementStateSnapshot(
+        xp,
+        level,
+        progression["class_key"],
+        progression["registry_version"],
+        progression["fingerprint"],
+        tuple(progression["grants"]),
+        ledger["version"],
+        entries[-1]["source"] if entries else None,
+        repair,
+    )
 
 
 def award_xp(

@@ -6,6 +6,7 @@ import time
 
 from commands.command import Command
 from systems.action_policy import ActionCategory
+from systems.advancement_info import advancement_info
 from systems.encumbrance import character_load
 from world.chargen_data import ABILITY_NAMES, ABILITY_SHORT
 
@@ -54,6 +55,12 @@ class CmdSheet(Command):
 
     def func(self) -> None:
         char = self.caller
+        advancement = advancement_info(char)
+        if not advancement.valid or advancement.state is None:
+            char_class = char.attributes.get("char_class")
+            label = char_class if isinstance(char_class, str) else "Unknown"
+            self.caller.msg(f"|w{char.key}|n — Class: {label}\n{advancement.reason}")
+            return
         stats = char.stats
 
         # --- Identity ---
@@ -65,18 +72,13 @@ class CmdSheet(Command):
         char_class = char.db.char_class or "Unknown"
         background = char.db.background or "Unknown"
         alignment = char.db.alignment or "Unknown"
-        level = stats.level
-        xp = stats.xp
+        level = advancement.state.level
+        xp = advancement.state.xp
         prof_bonus = stats.proficiency_bonus
 
         # --- Time played (accumulated + live current session) ---
         total_seconds: float = char.db.time_played or 0.0
         login_time = char.db.session_login_time
-        if login_time is None and char.account:
-            # at_post_puppet didn't fire for this session (e.g. server hot-reload
-            # while already logged in) — start tracking from now.
-            char.db.session_login_time = time.time()
-            login_time = char.db.session_login_time
         if login_time:
             total_seconds += time.time() - login_time
         time_str = _format_time_played(total_seconds)
@@ -106,6 +108,13 @@ class CmdSheet(Command):
             f"  |yLevel:|n  {level}    |yXP:|n  {xp}"
             f"    |yProficiency Bonus:|n  +{prof_bonus}\n"
         )
+        if advancement.capped:
+            out += "  |yAdvancement:|n Level 3 alpha cap reached; XP continues to accumulate.\n"
+        else:
+            out += (
+                f"  |yNext Level:|n {advancement.next_threshold} XP "
+                f"({advancement.xp_remaining} remaining)\n"
+            )
         out += f"  |yTime Played:|n  {time_str}\n"
 
         out += _SEP + "\n"

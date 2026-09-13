@@ -106,6 +106,16 @@ class CmdPractice(Command):
                 )
         else:
             lines.append("Pending choices: None")
+        if view.resolved_choices:
+            lines.append(
+                "Resolved choices: "
+                + ", ".join(
+                    f"{item['choice_key']} ({', '.join(item['selected'])})"
+                    for item in view.resolved_choices
+                )
+            )
+        else:
+            lines.append("Resolved choices: None")
         self.caller.msg("\n".join(lines))
 
 

@@ -445,8 +445,33 @@ HELP_ENTRY_DICTS = [
 
             Class features and resources unlock automatically when their level
             is earned. Some gains are choices; they remain pending until you
-            make the required selection through training. A later rules update
-            never silently changes benefits already recorded on your character.
+            make the required selection through training. Use |wlevels|n for
+            the exact level 1–3 progression and |wpractice|n for your current
+            grants and choices. The alpha supports Cleric, Fighter, Rogue, and
+            Wizard through level 3 only. A later rules update never silently
+            changes benefits already recorded on your character.
+        """,
+    },
+    {
+        "key": "levels",
+        "aliases": ["level progression", "xp thresholds", "score xp"],
+        "category": "Character",
+        "text": """
+            Use |wlevels|n to see all currently released levels for your class.
+            Each level lists its XP threshold, automatic features, choices
+            resolved through training, and any resource or spell-access
+            changes. Spell access distinguishes known spells from prepared
+            spells, and dependent features list their prerequisites. Resource
+            values shown at your current and next levels are their maxima.
+            Automatic gains apply when you reach the threshold; choices remain
+            pending until you use a suitable trainer.
+
+            Use |wscore|n to see your total XP, effective level, and the XP
+            needed for your next level. The alpha cap is level 3 at 900 XP.
+            XP earned beyond 900 is retained but does not unlock level 4.
+            Use |wpractice|n for your current grants and training record, then
+            |whelp class progression|n, |whelp abilities|n, or |whelp spells|n
+            for more detail.
         """,
     },
     {
@@ -985,7 +1010,22 @@ HELP_ENTRY_DICTS = [
             The alpha level cap is 3 at 900 XP. You may still earn and retain
             XP after that point, but it grants no fourth level or additional
             level-based benefits. Characters have one class; multiclassing is
-            not available.
+            not available. Use |wscore|n for your current XP calculation,
+            |wlevels|n for all released class gains, and |wpractice|n for
+            choices and benefits already on your character.
+        """,
+    },
+    {
+        "key": "advancement diagnostics",
+        "aliases": ["@advancement", "@adv", "adv-05"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Builders may use |w@advancement <character or #dbref>|n to inspect
+            advancement schema, registry identity, award provenance, automatic
+            grants, and pending or resolved choices. Inspection is read-only.
+            Invalid or drifted records receive a bounded diagnostic; repair is
+            intentionally deferred and must not be attempted by viewing them.
         """,
     },
     {

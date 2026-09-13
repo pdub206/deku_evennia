@@ -15,6 +15,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 """
 
 from commands.account import CmdCharCreate, CmdOOC
+from commands.advancement import CmdAdvancement, CmdLevels
 from commands.building import (
     CmdAreas,
     CmdBuild,
@@ -109,6 +110,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWake)
         # Character sheet commands.
         self.add(CmdSheet)
+        self.add(CmdLevels)
         self.add(CmdSkills)
         self.add(CmdChange)
         self.add(CmdPractice)
@@ -145,6 +147,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdStabilize)
         self.add(CmdInjury)
         self.add(CmdCheck)
+        self.add(CmdAdvancement)
         self.add(CmdOrder)
         self.add(CmdPet)
 

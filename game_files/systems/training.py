@@ -51,6 +51,7 @@ class PracticeView:
     known_abilities: tuple[str, ...]
     spellbook_spells: tuple[str, ...]
     pending_choices: tuple[Mapping[str, Any], ...]
+    resolved_choices: tuple[Mapping[str, Any], ...]
     replaceable_choices: tuple[Mapping[str, Any], ...]
 
 
@@ -151,6 +152,7 @@ def practice_view(character: Any) -> PracticeView:
         magic.known_abilities,
         magic.spellbook_spells,
         pending,
+        tuple(deepcopy(resolved)),
         replaceable,
     )
 
