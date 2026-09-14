@@ -226,6 +226,14 @@ def _field_value(target, name: str, field) -> str:
         if isinstance(value, bool):
             value = "on" if value else "off"
         return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "room_environment":
+        from systems.room_environment import room_environment
+
+        value = getattr(room_environment(target), field.target or name)
+        value = getattr(value, "value", value)
+        if isinstance(value, bool):
+            value = "on" if value else "off"
+        return _crop(value) if value is not None else "|x(unset)|n"
     if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
@@ -365,6 +373,10 @@ def _apply_field(target, name: str, field, value) -> None:
         from systems.room_policy import set_room_policy_value
 
         set_room_policy_value(target, field.target or name, value)
+    elif field.kind == "room_environment":
+        from systems.room_environment import set_room_environment_value
+
+        set_room_environment_value(target, field.target or name, value)
     elif field.kind == "policy":
         from systems.mobile_policy import set_mobile_policy_value
 

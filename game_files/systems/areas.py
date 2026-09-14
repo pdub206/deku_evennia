@@ -30,6 +30,13 @@ from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
 from systems.doors import apply_door_area_data, door_area_data, validate_area_exit_doors
+from systems.room_environment import (
+    ROOM_ENVIRONMENT_ATTRIBUTE,
+    ROOM_ENVIRONMENT_VERSION,
+    RoomEnvironmentError,
+    room_environment_data,
+    validate_room_environment,
+)
 from systems.room_policy import (
     ROOM_POLICY_ATTRIBUTE,
     ROOM_POLICY_VERSION,
@@ -149,8 +156,14 @@ def _room_prototype(room, area_slug: str, room_key: str) -> dict:
         if not prot["tags"]:
             prot.pop("tags")
     policy = room_policy_data(room)
-    attrs = [attr for attr in prot.get("attrs", []) if attr[0] != ROOM_POLICY_ATTRIBUTE]
+    environment = room_environment_data(room)
+    attrs = [
+        attr
+        for attr in prot.get("attrs", [])
+        if attr[0] not in {ROOM_POLICY_ATTRIBUTE, ROOM_ENVIRONMENT_ATTRIBUTE}
+    ]
     attrs.append((ROOM_POLICY_ATTRIBUTE, policy, None, ""))
+    attrs.append((ROOM_ENVIRONMENT_ATTRIBUTE, environment, None, ""))
     prot["attrs"] = attrs
     return prot
 
@@ -256,12 +269,15 @@ def load_area_data(
     """
     validate_area_exit_doors(exits)
     policies: dict[str, dict] = {}
+    environments: dict[str, dict] = {}
     for room_key, prototype in rooms.items():
         raw_policy = None
+        raw_environment = None
         for attr in prototype.get("attrs", []):
             if attr[0] == ROOM_POLICY_ATTRIBUTE:
                 raw_policy = attr[1]
-                break
+            elif attr[0] == ROOM_ENVIRONMENT_ATTRIBUTE:
+                raw_environment = attr[1]
         try:
             validate_room_policy(raw_policy)
         except RoomPolicyError as err:
@@ -269,6 +285,15 @@ def load_area_data(
         policies[room_key] = {
             "version": ROOM_POLICY_VERSION,
             **asdict(validate_room_policy(raw_policy)),
+        }
+        try:
+            environment = validate_room_environment(raw_environment)
+        except RoomEnvironmentError as err:
+            raise ValueError(f"Invalid room environment in area data: {err}") from err
+        environments[room_key] = {
+            "version": ROOM_ENVIRONMENT_VERSION,
+            **asdict(environment),
+            "light": environment.light.value,
         }
     key_to_room: dict[str, object] = {}
     for room_key, prototype in rooms.items():
@@ -278,6 +303,7 @@ def load_area_data(
         room.tags.add(area_slug, category=AREA_TAG_CATEGORY)
         room.tags.add(room_key, category=ROOM_KEY_CATEGORY)
         room.attributes.add(ROOM_POLICY_ATTRIBUTE, policies[room_key])
+        room.attributes.add(ROOM_ENVIRONMENT_ATTRIBUTE, environments[room_key])
         key_to_room[room_key] = room
 
     created_or_found_exits = []

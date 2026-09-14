@@ -114,6 +114,21 @@ def as_optional_nonneg_int(raw: str) -> int | None:
     return as_nonneg_int(raw)
 
 
+def as_float_range(minimum: float, maximum: float) -> Callable[[str], float]:
+    """Return a validator accepting a finite number in an inclusive range."""
+
+    def validate(raw: str) -> float:
+        try:
+            value = float(raw.strip())
+        except ValueError:
+            raise ValueError("expected a number.")
+        if not minimum <= value <= maximum:
+            raise ValueError(f"must be between {minimum:g} and {maximum:g}.")
+        return value
+
+    return validate
+
+
 def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
     """Return a validator accepting whole numbers in an inclusive range."""
 
@@ -305,6 +320,25 @@ ROOM_FIELDS: dict[str, Field] = {
         "room_policy",
         as_optional_nonneg_int,
         "maximum characters admitted, or none for unlimited",
+    ),
+    "indoors": Field(
+        "room_environment", as_on_off, "whether daylight and weather stop at this room"
+    ),
+    "light": Field(
+        "room_environment",
+        as_choice("bright", "dim", "dark"),
+        "base ambient light: bright, dim, or dark",
+    ),
+    "safe_rest": Field(
+        "room_environment", as_on_off, "whether uninterrupted resting is safe here"
+    ),
+    "recovery_multiplier": Field(
+        "room_environment",
+        as_float_range(0, 3),
+        "natural recovery multiplier from 0 to 3",
+    ),
+    "entry_hazard": Field(
+        "room_environment", as_optional_slug, "registered entry hazard key, or none"
     ),
 }
 

@@ -133,7 +133,11 @@ class HpResource:
         base = max(1, owner.stats.level + owner.stats.ability_modifier("Constitution"))
         adjusted = max(0, base + recovery_modifier_total(owner, self.key))
         multiplier = _POSTURE_MULTIPLIERS[posture]
-        return (adjusted * multiplier.numerator) // multiplier.denominator
+        gain = (adjusted * multiplier.numerator) // multiplier.denominator
+        from systems.room_environment import room_environment
+
+        environment_multiplier = room_environment(owner.location).recovery_multiplier
+        return int(gain * environment_multiplier)
 
 
 HP_RESOURCE = HpResource()

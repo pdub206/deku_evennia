@@ -1798,6 +1798,33 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "room environments",
+        "aliases": ["dangerous rooms", "room light", "safe rest"],
+        "category": "General",
+        "text": """
+            Rooms may be indoors or outdoors, bright, dim, or dark, and may
+            alter natural recovery. Some clearly dangerous rooms cause a
+            consequence when you voluntarily enter them. Forced placement,
+            spawning, respawning, and recall do not normally trigger entry
+            hazards. A safe resting place permits uninterrupted Short and Long
+            Rest progress; it does not prevent combat or environmental harm.
+        """,
+    },
+    {
+        "key": "room environment building",
+        "aliases": ["indoors", "room light building", "entry_hazard"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            While editing a room, set |windoors on/off|n, |wlight
+            bright/dim/dark|n, |wsafe_rest on/off|n, |wrecovery_multiplier
+            <0..3>|n, and |wentry_hazard <registered-key/none>|n. Sector never
+            implies indoors. Entry hazards are code-registered definitions and
+            cannot contain commands, scripts, or Python paths. Area export
+            stores the complete validated environment record deterministically.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

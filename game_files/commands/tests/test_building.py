@@ -9,11 +9,25 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
-                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
-                               CmdBuildFields, CmdBuildSet, CmdItems,
-                               CmdLoadArea, CmdMobile, CmdNpcs, CmdRooms,
-                               CmdSpawn, _enter_build_mode, _exit_build_mode)
+from commands.building import (
+    _BUILD_PROMPT,
+    CmdAreas,
+    CmdBuild,
+    CmdBuildArea,
+    CmdBuildDel,
+    CmdBuildDig,
+    CmdBuildDone,
+    CmdBuildFields,
+    CmdBuildSet,
+    CmdItems,
+    CmdLoadArea,
+    CmdMobile,
+    CmdNpcs,
+    CmdRooms,
+    CmdSpawn,
+    _enter_build_mode,
+    _exit_build_mode,
+)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -23,9 +37,9 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
-from systems.doors import (DoorError, configure_door, door_state,
-                           transition_door)
+from systems.doors import DoorError, configure_door, door_state, transition_door
 from systems.mob_spawning import mobile_spawn_identity
+from systems.room_environment import ROOM_ENVIRONMENT_ATTRIBUTE, room_environment
 from systems.room_policy import ROOM_POLICY_ATTRIBUTE, room_policy
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
@@ -65,6 +79,7 @@ class TestBuildEditing(EvenniaCommandTest):
     def setUp(self):
         super().setUp()
         self.addCleanup(self.room1.attributes.remove, ROOM_POLICY_ATTRIBUTE)
+        self.addCleanup(self.room1.attributes.remove, ROOM_ENVIRONMENT_ATTRIBUTE)
         self.char1.permissions.add("Builder")
         # Enter the editing context bound to room1.
         self.call(CmdBuild(), "here")
@@ -85,6 +100,11 @@ class TestBuildEditing(EvenniaCommandTest):
             "no_mobiles",
             "private",
             "occupant_capacity",
+            "indoors",
+            "light",
+            "safe_rest",
+            "recovery_multiplier",
+            "entry_hazard",
         ):
             self.assertIn(field_name, out)
 
@@ -102,6 +122,22 @@ class TestBuildEditing(EvenniaCommandTest):
             CmdBuildSet(),
             "occupant_capacity -1",
             "Invalid value for 'occupant_capacity'",
+        )
+
+    def test_set_room_environment_fields_validates_one_canonical_record(self):
+        self.call(CmdBuildSet(), "indoors on")
+        self.call(CmdBuildSet(), "light dim")
+        self.call(CmdBuildSet(), "safe_rest on")
+        self.call(CmdBuildSet(), "recovery_multiplier 1.5")
+        environment = room_environment(self.room1)
+        self.assertTrue(environment.indoors)
+        self.assertEqual(environment.light.value, "dim")
+        self.assertTrue(environment.safe_rest)
+        self.assertEqual(environment.recovery_multiplier, 1.5)
+        self.call(
+            CmdBuildSet(),
+            "recovery_multiplier 3.1",
+            "Invalid value for 'recovery_multiplier'",
         )
 
     def test_unknown_field_rejected(self):

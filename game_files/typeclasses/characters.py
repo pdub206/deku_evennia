@@ -11,6 +11,7 @@ creation commands.
 import time
 from collections.abc import Iterable, Mapping
 from typing import Any
+from uuid import uuid4
 
 from django.db import transaction
 from evennia.objects.objects import DefaultCharacter
@@ -49,6 +50,9 @@ class Character(ObjectParent, DefaultCharacter):
     def move_to(self, destination: Any, **kwargs: Any) -> bool:
         """Serialize room admission so simultaneous arrivals cannot overfill it."""
         from typeclasses.rooms import Room
+
+        if kwargs.get("move_type") in {"traverse", "combat_flee"}:
+            kwargs.setdefault("arrival_id", uuid4().hex)
 
         if (
             isinstance(destination, Room)
@@ -213,6 +217,24 @@ class Character(ObjectParent, DefaultCharacter):
                     self.location,
                     SpecialEvent("arrival", actor=self, target=self),
                 )
+                if move_type in {"traverse", "combat_flee"} or kwargs.get(
+                    "trigger_entry_hazard"
+                ):
+                    from systems.room_environment import trigger_entry_hazard
+
+                    arrival_id = kwargs.get("arrival_id") or uuid4().hex
+                    try:
+                        trigger_entry_hazard(self, self.location, arrival_id)
+                    except Exception:
+                        # Arrival is already committed. Invalid authored data or
+                        # a failing owner service must not roll movement back or
+                        # permit an automatic replay of a partial consequence.
+                        from evennia.utils import logger
+
+                        logger.log_trace(
+                            "Entry hazard failed after arrival for "
+                            f"object #{getattr(self, 'id', '?')}."
+                        )
             # Capture pursuit before combat removes the departing target from
             # its encounter. MOB-04 later revalidates every route and target.
             from systems.mobile_navigation import note_target_departure

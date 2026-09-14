@@ -24,8 +24,6 @@ MAGIC_REST_VERSION = 3
 SHORT_REST_PULSES = 10
 LONG_REST_PULSES = 80
 LONG_REST_SLEEP_PULSES = 60
-SAFE_REST_TAG = "safe_rest"
-SAFE_REST_TAG_CATEGORY = "room_feature"
 
 
 class MagicRestError(ValueError):
@@ -172,12 +170,17 @@ def _rest_eligibility(owner: Any) -> tuple[bool, bool]:
 
 
 def _is_safe_rest_location(location: Any) -> bool:
-    """Allow only explicit safe-rest rooms and existing sanctuary rooms."""
+    """Use the canonical environment while retaining sanctuary compatibility."""
     tags = getattr(location, "tags", None)
     if tags is None:
         return False
-    if tags.has(SAFE_REST_TAG, category=SAFE_REST_TAG_CATEGORY):
-        return True
+    from systems.room_environment import RoomEnvironmentError, room_environment
+
+    try:
+        if room_environment(location).safe_rest:
+            return True
+    except RoomEnvironmentError:
+        return False
     # Sanctuary already denotes a protected, player-safe room in COMBAT-06.
     # Reusing it prevents a second incompatible safety marker for that case.
     try:
