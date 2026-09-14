@@ -100,8 +100,8 @@ class DoorMutation:
 
 
 def door_state(exit_obj: Any) -> DoorState | None:
-    """Return a validated state, or ``None`` for an ordinary passage."""
-    _require_exit(exit_obj)
+    """Return validated state for a door/container, or ``None`` for a passage."""
+    _require_target(exit_obj)
     raw = exit_obj.attributes.get(DOOR_STATE_ATTRIBUTE)
     if raw is None:
         return None
@@ -121,7 +121,7 @@ def configure_door(
     configured.  Traversal still fails closed until the peer exists.  Once a
     reciprocal peer is present, subsequent configuration updates both sides.
     """
-    _require_exit(exit_obj)
+    _require_target(exit_obj)
     if not isinstance(door, bool):
         raise DoorError("Door must be configured on or off.")
     current = door_state(exit_obj)
@@ -148,6 +148,11 @@ def configure_door(
         raise DoorError(f"Unknown door field(s): {', '.join(sorted(unknown))}.")
 
     normalized = _apply_configuration(state, changes)
+    if (
+        not inherits_from(exit_obj, "evennia.objects.objects.DefaultExit")
+        and normalized.pair_key
+    ):
+        raise DoorError("Containers cannot have synchronized door pairs.")
     if (
         current
         and current.pair_key
@@ -188,6 +193,26 @@ def configure_door_field(exit_obj: Any, name: str, value: Any) -> DoorState | No
             raise DoorError(f"{name.replace('_', ' ').title()} must be on or off.")
         value = value == "on"
     return configure_door(exit_obj, **{name: value})
+
+
+def configured_door_record(raw: Any, name: str, value: Any) -> dict[str, Any] | None:
+    """Apply one builder field to a primitive prototype door record."""
+    if raw is None:
+        state = None
+    elif not isinstance(raw, Mapping) or set(raw) != _STATE_KEYS:
+        raise DoorError("Door state has an invalid schema.")
+    else:
+        state = DoorState(**dict(raw))
+        _validate_state(state)
+    if name == "door":
+        if value not in {"on", "off"}:
+            raise DoorError("Door must be on or off.")
+        return asdict(state or DoorState()) if value == "on" else None
+    if state is None:
+        raise DoorError("Set door on before configuring door fields.")
+    if name in {"pickable", "hidden"} and value in {"on", "off"}:
+        value = value == "on"
+    return asdict(_apply_configuration(state, {name: value}))
 
 
 def transition_door(
@@ -248,6 +273,7 @@ def restore_initial_state(exit_obj: Any, reset_id: str) -> DoorMutation:
 
 def paired_exit(exit_obj: Any) -> Any:
     """Return the sole reciprocal pair and reject missing or divergent state."""
+    _require_exit(exit_obj)
     state = _require_door(exit_obj)
     if state.pair_key is None:
         raise DoorError("This door has no synchronized pair.")
@@ -518,6 +544,15 @@ def _require_exit(exit_obj: Any) -> None:
     """Reject non-exits before touching arbitrary Attribute storage."""
     if not inherits_from(exit_obj, "evennia.objects.objects.DefaultExit"):
         raise DoorError("Door state requires an Exit object.")
+
+
+def _require_target(target: Any) -> None:
+    """Accept an Exit or a data-driven openable container."""
+    if inherits_from(target, "evennia.objects.objects.DefaultExit"):
+        return
+    if str(target.attributes.get("type") or "").casefold() == "container":
+        return
+    raise DoorError("Door state requires an Exit or container object.")
 
 
 def _require_door(exit_obj: Any) -> DoorState:

@@ -417,6 +417,27 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         "capacity": Field(
             "attr", as_weight, "max weight in pounds it can hold", target="capacity"
         ),
+        "door": Field("door", as_choice("on", "off"), "openable state: on or off"),
+        "initial_state": Field(
+            "door", as_choice("open", "closed", "locked"), "initial open state"
+        ),
+        "key_kind": Field(
+            "door", as_optional_slug, "stable matching key kind, or none"
+        ),
+        "pickable": Field(
+            "door", as_choice("on", "off"), "whether its lock is pickable"
+        ),
+        "pick_dc": Field(
+            "door", as_optional_dc, "lock-picking DC from 0 to 30, or none"
+        ),
+    },
+    "key": {
+        "key_kind": Field("attr", as_slug, "stable key identity", target="key_kind")
+    },
+    "other": {
+        "tool_kind": Field(
+            "attr", as_choice("thieves_tools"), "supported tool identity: thieves_tools"
+        )
     },
 }
 

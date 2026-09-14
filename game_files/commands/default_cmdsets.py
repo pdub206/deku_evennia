@@ -26,6 +26,7 @@ from commands.combat import (CmdAim, CmdAttack, CmdBackstab, CmdBash,
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
+from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
 from commands.generic import (CmdAccess, CmdDrop, CmdFastHands, CmdGet,
                               CmdGive, CmdHelp, CmdHome, CmdInventory, CmdJunk,
@@ -75,6 +76,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRemove)
         self.add(CmdAccess)
         self.add(CmdHelp)
+        self.add(CmdOpen)
+        self.add(CmdClose)
+        self.add(CmdLock)
+        self.add(CmdUnlock)
+        self.add(CmdPick)
         # Position system.
         self.add(CmdSit)
         self.add(CmdRest)

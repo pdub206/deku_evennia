@@ -26,6 +26,23 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "doors",
+        "aliases": ["door", "keys", "locks", "picking"],
+        "category": "General",
+        "text": """
+            Use |wopen <target>|n and |wclose <target>|n on a visible door or
+            openable container. |wlock <target>|n and |wunlock <target>|n need
+            a matching key carried directly in your inventory. Keys are reusable;
+            one in another container or on the ground does not count.
+
+            Use |wpick <target>|n on a locked, pickable target while directly
+            carrying thieves' tools. Picking makes one Dexterity check using
+            your thieves' tools proficiency. A failed attempt leaves the lock
+            unchanged. Hidden, inaccessible, and ambiguous targets cannot be
+            manipulated.
+        """,
+    },
+    {
         "key": "checks",
         "aliases": ["ability checks", "skill checks", "advantage", "dc"],
         "category": "Character",
@@ -1532,8 +1549,8 @@ HELP_ENTRY_DICTS = [
             |wset door on|n before its other door fields. |winitial_state|n is
             open, closed, or locked and is what a later area reset restores;
             live state is deliberately not exported. |wkey_kind|n names the
-            reusable key identity used by the later door commands. |wpickable|n
-            and |wpick_dc|n configure lock picking; |whidden|n and
+            reusable key identity used by |wlock|n and |wunlock|n. |wpickable|n
+            and |wpick_dc|n configure |wpick|n; |whidden|n and
             |wdiscovery_dc|n configure later perception. DCs range from 0 to
             30, or use |wnone|n where allowed.
 

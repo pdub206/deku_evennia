@@ -272,7 +272,8 @@ def _render_fields(target) -> str:
 def _type_attr_names(item_type) -> list[str]:
     """Attribute/key names owned by an item type's extra fields (for clearing)."""
     return [
-        fld.target or fname for fname, fld in TYPE_FIELDS.get(item_type, {}).items()
+        "door_state" if fld.kind == "door" else fld.target or fname
+        for fname, fld in TYPE_FIELDS.get(item_type, {}).items()
     ]
 
 
@@ -327,6 +328,14 @@ def _apply_field(target, name: str, field, value) -> None:
                 else value
             )
             target[MOBILE_POLICY_ATTRIBUTE] = validate_mobile_policy(profile)
+        elif field.kind == "door":
+            from systems.doors import configured_door_record
+
+            record = configured_door_record(target.get("door_state"), name, value)
+            if record is None:
+                target.pop("door_state", None)
+            else:
+                target["door_state"] = record
         else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -340,7 +349,7 @@ def _apply_field(target, name: str, field, value) -> None:
     elif field.kind == "door":
         from systems.doors import configure_door_field
 
-        configure_door_field(target, field.target or name, value)
+        configure_door_field(target, name, value)
     elif field.kind == "trainer":
         from systems.training import set_trainer_profile
 
