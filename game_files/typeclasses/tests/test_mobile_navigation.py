@@ -14,6 +14,7 @@ from systems.mobile_navigation import (
 )
 from systems.mobile_policy import default_mobile_policy, set_mobile_policy
 from systems.mobiles import process_mobile_pulse, set_mobile_profile
+from systems.room_policy import ROOM_POLICY_ATTRIBUTE, set_room_policy_value
 from systems.pulses import PulseEvent, PulseLane
 from typeclasses.characters import Character
 from typeclasses.exits import Exit
@@ -30,6 +31,7 @@ class TestMobileNavigation(EvenniaTest):
 
     def setUp(self):
         super().setUp()
+        self.addCleanup(self.room2.attributes.remove, ROOM_POLICY_ATTRIBUTE)
         self.npc = create_object(Character, key="Wanderer", location=self.room1)
         self.npc.db.is_player_character = False
         self.target = create_object(Character, key="Target", location=self.room1)
@@ -58,8 +60,8 @@ class TestMobileNavigation(EvenniaTest):
         self.assertEqual(wander(self.npc, 1).reason, "no_route")
         for exit_obj in self.room1.exits:
             configure_door(exit_obj, hidden=False)
-            exit_obj.destination.attributes.add("no_mobiles", True)
-        self.room2.attributes.add("no_mobiles", True)
+            set_room_policy_value(exit_obj.destination, "no_mobiles", True)
+        set_room_policy_value(self.room2, "no_mobiles", True)
         self.assertEqual(wander(self.npc, 1).reason, "no_route")
 
     def test_area_constraint_requires_one_matching_authored_area(self):

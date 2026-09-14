@@ -51,36 +51,20 @@ ExitSelector = Callable[[tuple[Any, ...]], Any]
 
 
 def room_admission(actor: Any, destination: Any) -> NavigationOutcome:
-    """Apply the single fail-closed NPC room-admission seam.
-
-    ``no_mobiles``, ``forbid_mobiles``, ``private``, and ``mobile_capacity``
-    are intentionally compact extension attributes until ENV-01 owns a richer
-    room-flag catalogue.  Invalid values never grant admission.
-    """
+    """Adapt canonical mobile admission to MOB-04's navigation result."""
     from typeclasses.rooms import Room
+    from systems.room_policy import AdmissionMode, admission_decision
 
     if not isinstance(destination, Room) or getattr(destination, "id", None) is None:
         return NavigationOutcome("blocked", "invalid_destination")
-    values = {
-        name: destination.attributes.get(name)
-        for name in ("no_mobiles", "forbid_mobiles", "private", "mobile_capacity")
-    }
-    for name in ("no_mobiles", "forbid_mobiles", "private"):
-        if values[name] is not None and not isinstance(values[name], bool):
-            return NavigationOutcome("blocked", "malformed_admission")
-        if values[name] is True:
-            return NavigationOutcome("blocked", "room_forbidden")
-    capacity = values["mobile_capacity"]
-    if capacity is not None:
-        if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
-            return NavigationOutcome("blocked", "malformed_admission")
-        occupants = sum(
-            1
-            for obj in destination.contents_get(content_type="character")
-            if obj is not actor
+    decision = admission_decision(actor, destination, mode=AdmissionMode.MOBILE)
+    if not decision.allowed:
+        reason = (
+            "malformed_admission"
+            if decision.reason == "malformed_policy"
+            else decision.reason
         )
-        if occupants >= capacity:
-            return NavigationOutcome("blocked", "room_full")
+        return NavigationOutcome("blocked", reason)
     return NavigationOutcome("moved")
 
 

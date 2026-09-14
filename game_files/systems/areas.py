@@ -21,6 +21,7 @@ Rooms carry two bookkeeping tags so this round-trips idempotently:
 """
 
 import os
+from dataclasses import asdict
 from pprint import pformat
 
 from django.conf import settings
@@ -29,6 +30,13 @@ from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
 from systems.doors import apply_door_area_data, door_area_data, validate_area_exit_doors
+from systems.room_policy import (
+    ROOM_POLICY_ATTRIBUTE,
+    ROOM_POLICY_VERSION,
+    RoomPolicyError,
+    room_policy_data,
+    validate_room_policy,
+)
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
@@ -140,6 +148,10 @@ def _room_prototype(room, area_slug: str, room_key: str) -> dict:
         ]
         if not prot["tags"]:
             prot.pop("tags")
+    policy = room_policy_data(room)
+    attrs = [attr for attr in prot.get("attrs", []) if attr[0] != ROOM_POLICY_ATTRIBUTE]
+    attrs.append((ROOM_POLICY_ATTRIBUTE, policy, None, ""))
+    prot["attrs"] = attrs
     return prot
 
 
@@ -243,6 +255,21 @@ def load_area_data(
     the same area twice is safe.
     """
     validate_area_exit_doors(exits)
+    policies: dict[str, dict] = {}
+    for room_key, prototype in rooms.items():
+        raw_policy = None
+        for attr in prototype.get("attrs", []):
+            if attr[0] == ROOM_POLICY_ATTRIBUTE:
+                raw_policy = attr[1]
+                break
+        try:
+            validate_room_policy(raw_policy)
+        except RoomPolicyError as err:
+            raise ValueError(f"Invalid room policy in area data: {err}") from err
+        policies[room_key] = {
+            "version": ROOM_POLICY_VERSION,
+            **asdict(validate_room_policy(raw_policy)),
+        }
     key_to_room: dict[str, object] = {}
     for room_key, prototype in rooms.items():
         room = _find_room(area_slug, room_key)
@@ -250,6 +277,7 @@ def load_area_data(
             (room,) = spawn(dict(prototype))
         room.tags.add(area_slug, category=AREA_TAG_CATEGORY)
         room.tags.add(room_key, category=ROOM_KEY_CATEGORY)
+        room.attributes.add(ROOM_POLICY_ATTRIBUTE, policies[room_key])
         key_to_room[room_key] = room
 
     created_or_found_exits = []

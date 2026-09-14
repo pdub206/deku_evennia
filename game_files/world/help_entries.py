@@ -1763,6 +1763,41 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "room restrictions",
+        "aliases": ["private rooms", "room capacity", "safe rooms"],
+        "category": "General",
+        "text": """
+            Some rooms restrict entry when they are full, keep roaming creatures
+            out, or prevent combat and other harmful actions. A private room also
+            hides its interior from adjacent-room inspection. These restrictions
+            are properties of the room, not invitations or ownership: if entry is
+            denied, choose another route or wait for space.
+
+            Being placed in a no-combat room ends an existing fight, but does not
+            heal you, remove prior effects, or protect you from environmental
+            hazards.
+        """,
+    },
+    {
+        "key": "room policy building",
+        "aliases": ["room policy", "no_combat", "no_mobiles", "occupant_capacity"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            While editing a room, use |wset no_combat on/off|n,
+            |wset no_mobiles on/off|n, |wset private on/off|n, and
+            |wset occupant_capacity <number/none>|n. Capacity counts both player
+            and non-player Characters. Private rooms hide remote inspection and
+            default to capacity two unless a smaller explicit limit is set.
+
+            Normal movement, mobile navigation, following, and recall obey room
+            policy. The teleport/forced, spawn, respawn, and builder-placement
+            services own named bypasses and must audit their use; room policy does
+            not itself validate their destinations. Malformed policy remains
+            visible in builder diagnostics and denies affected operations.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

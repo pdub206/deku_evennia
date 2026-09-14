@@ -9,25 +9,11 @@ import importlib.util
 import tempfile
 from unittest.mock import MagicMock
 
-from commands.building import (
-    _BUILD_PROMPT,
-    CmdAreas,
-    CmdBuild,
-    CmdBuildArea,
-    CmdBuildDel,
-    CmdBuildDig,
-    CmdBuildDone,
-    CmdBuildFields,
-    CmdBuildSet,
-    CmdItems,
-    CmdLoadArea,
-    CmdMobile,
-    CmdNpcs,
-    CmdRooms,
-    CmdSpawn,
-    _enter_build_mode,
-    _exit_build_mode,
-)
+from commands.building import (_BUILD_PROMPT, CmdAreas, CmdBuild, CmdBuildArea,
+                               CmdBuildDel, CmdBuildDig, CmdBuildDone,
+                               CmdBuildFields, CmdBuildSet, CmdItems,
+                               CmdLoadArea, CmdMobile, CmdNpcs, CmdRooms,
+                               CmdSpawn, _enter_build_mode, _exit_build_mode)
 from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
@@ -37,8 +23,10 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
-from systems.doors import DoorError, configure_door, door_state, transition_door
+from systems.doors import (DoorError, configure_door, door_state,
+                           transition_door)
 from systems.mob_spawning import mobile_spawn_identity
+from systems.room_policy import ROOM_POLICY_ATTRIBUTE, room_policy
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
 
@@ -76,6 +64,7 @@ class TestBuildEditing(EvenniaCommandTest):
 
     def setUp(self):
         super().setUp()
+        self.addCleanup(self.room1.attributes.remove, ROOM_POLICY_ATTRIBUTE)
         self.char1.permissions.add("Builder")
         # Enter the editing context bound to room1.
         self.call(CmdBuild(), "here")
@@ -88,8 +77,32 @@ class TestBuildEditing(EvenniaCommandTest):
 
     def test_fields_lists_room_fields(self):
         out = self.call(CmdBuildFields(), "")
-        for field_name in ("name", "desc", "area"):
+        for field_name in (
+            "name",
+            "desc",
+            "area",
+            "no_combat",
+            "no_mobiles",
+            "private",
+            "occupant_capacity",
+        ):
             self.assertIn(field_name, out)
+
+    def test_set_room_policy_fields_validates_one_canonical_record(self):
+        self.call(CmdBuildSet(), "no_combat on")
+        self.call(CmdBuildSet(), "no_mobiles on")
+        self.call(CmdBuildSet(), "private on")
+        self.call(CmdBuildSet(), "occupant_capacity 1")
+        policy = room_policy(self.room1)
+        self.assertTrue(policy.no_combat)
+        self.assertTrue(policy.no_mobiles)
+        self.assertTrue(policy.private)
+        self.assertEqual(policy.occupant_capacity, 1)
+        self.call(
+            CmdBuildSet(),
+            "occupant_capacity -1",
+            "Invalid value for 'occupant_capacity'",
+        )
 
     def test_unknown_field_rejected(self):
         self.call(CmdBuildSet(), "bogus whatever", "Unknown field 'bogus'")

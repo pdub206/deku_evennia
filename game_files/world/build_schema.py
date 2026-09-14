@@ -99,6 +99,21 @@ def as_nonneg_int(raw: str) -> int:
     return value
 
 
+def as_on_off(raw: str) -> bool:
+    """Accept a builder-friendly boolean without Python truthiness surprises."""
+    value = raw.strip().lower()
+    if value not in {"on", "off"}:
+        raise ValueError("must be on or off.")
+    return value == "on"
+
+
+def as_optional_nonneg_int(raw: str) -> int | None:
+    """Accept a non-negative capacity or the explicit value ``none``."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_nonneg_int(raw)
+
+
 def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
     """Return a validator accepting whole numbers in an inclusive range."""
 
@@ -277,6 +292,20 @@ ROOM_FIELDS: dict[str, Field] = {
         target="desc",
     ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
+    "no_combat": Field(
+        "room_policy", as_on_off, "whether new hostile actions are forbidden"
+    ),
+    "no_mobiles": Field(
+        "room_policy", as_on_off, "whether ordinary NPC movement is forbidden"
+    ),
+    "private": Field(
+        "room_policy", as_on_off, "hide remote inspection and default capacity to two"
+    ),
+    "occupant_capacity": Field(
+        "room_policy",
+        as_optional_nonneg_int,
+        "maximum characters admitted, or none for unlimited",
+    ),
 }
 
 EXIT_FIELDS: dict[str, Field] = {

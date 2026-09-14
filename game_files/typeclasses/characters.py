@@ -12,6 +12,7 @@ import time
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from django.db import transaction
 from evennia.objects.objects import DefaultCharacter
 from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
@@ -44,6 +45,19 @@ class Character(ObjectParent, DefaultCharacter):
     def at_object_creation(self) -> None:
         super().at_object_creation()
         self.db.position = "standing"
+
+    def move_to(self, destination: Any, **kwargs: Any) -> bool:
+        """Serialize room admission so simultaneous arrivals cannot overfill it."""
+        from typeclasses.rooms import Room
+
+        if (
+            isinstance(destination, Room)
+            and getattr(destination, "id", None) is not None
+        ):
+            with transaction.atomic():
+                Room.objects.select_for_update().get(id=destination.id)
+                return super().move_to(destination, **kwargs)
+        return super().move_to(destination, **kwargs)
 
     @property
     def stats(self) -> CharacterStats:
@@ -133,7 +147,7 @@ class Character(ObjectParent, DefaultCharacter):
         )
 
     def at_pre_move(self, destination, **kwargs) -> bool:
-        """Apply the shared movement policy to voluntary traversal only."""
+        """Apply action, load, and canonical room admission before movement."""
         move_type = kwargs.get("move_type")
         if move_type in {"traverse", "combat_flee"}:
             decision = self.actions.check(ActionCategory.MOVE)
@@ -146,6 +160,28 @@ class Character(ObjectParent, DefaultCharacter):
                 self.msg(
                     "You are too encumbered to move. Drop or give away some items."
                 )
+                return False
+        if destination is not None:
+            from systems.room_policy import AdmissionMode, admission_decision
+
+            modes = {
+                "traverse": AdmissionMode.NORMAL,
+                "combat_flee": AdmissionMode.NORMAL,
+                "mobile_navigation": AdmissionMode.MOBILE,
+                "follow": AdmissionMode.FOLLOW,
+                "recall": AdmissionMode.RECALL,
+                "teleport": AdmissionMode.FORCED,
+                "forced": AdmissionMode.FORCED,
+                "mobile_spawn": AdmissionMode.SPAWN,
+                "spawn": AdmissionMode.SPAWN,
+                "respawn": AdmissionMode.RESPAWN,
+                "builder": AdmissionMode.BUILDER,
+            }
+            mode = modes.get(move_type, AdmissionMode.NORMAL)
+            admission = admission_decision(self, destination, mode=mode)
+            if not admission.allowed:
+                if getattr(self.db, "is_player_character", None) is not False:
+                    self.msg("You cannot enter there right now.")
                 return False
         # TODO(INTERACT-03): Apply terrain cost and stats.movement_delay() when
         # travel scheduling is introduced.
@@ -185,6 +221,11 @@ class Character(ObjectParent, DefaultCharacter):
             note_target_departure(self, source_location)
             note_leader_moved(self, source_location)
             handle_departure(self)
+            if self.location is not None:
+                from systems.room_policy import combat_decision
+
+                if not combat_decision(self.location).allowed:
+                    handle_departure(self)
 
     def at_object_delete(self) -> bool | None:
         """Remove combat references before Evennia extracts this character."""
