@@ -4,8 +4,17 @@ from unittest.mock import MagicMock, patch
 
 from commands.command import Command, MuxCommand
 from commands.default_cmdsets import CharacterCmdSet
-from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
-                              CmdHome, CmdInventory, CmdNick, CmdSetDesc)
+from commands.generic import (
+    CmdAccess,
+    CmdDrop,
+    CmdGet,
+    CmdGive,
+    CmdHelp,
+    CmdHome,
+    CmdInventory,
+    CmdNick,
+    CmdSetDesc,
+)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
@@ -129,7 +138,7 @@ class TestCommandPolicy(EvenniaCommandTest):
         cmdset = CharacterCmdSet()
         cmdset.at_cmdset_creation()
         expected = {
-            "home": CmdHome,
+            "recall": CmdHome,
             "nick": CmdNick,
             "setdesc": CmdSetDesc,
             "access": CmdAccess,

@@ -87,6 +87,10 @@ COMBAT_CONSIDER_WIN_RATE_BOUNDS = (0.10, 0.25, 0.55, 0.75, 0.90)
 # secret_settings.py for each deployed world; an unset/ambiguous value fails
 # closed for dead-character entry rather than guessing from a mutable home.
 COMBAT_RESPAWN_SANCTUARY = None
+# INTERACT-02C keeps these roles independent even when both reference one room.
+CHARACTER_START_ROOM = None
+RECALL_DESTINATION = None
+INTERACTION_INTERVAL_ACTIONS = 1
 COMBAT_LINKDEAD_MINUTES = 30
 
 # RULES-05 limits recursive carried objects independently of weight.  Builders

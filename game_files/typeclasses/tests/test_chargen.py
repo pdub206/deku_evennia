@@ -7,6 +7,7 @@ Run from the game/ directory:
 
 from unittest.mock import MagicMock
 
+from django.test import override_settings
 from evennia.utils.test_resources import EvenniaTest
 from systems.progression import CLASS_PROGRESSION
 from world.chargen_data import (
@@ -186,12 +187,18 @@ class TestAlignments(EvenniaTest):
 # ---------------------------------------------------------------------------
 
 
+@override_settings(CHARACTER_START_ROOM="test:start")
 class TestChargenEnd(EvenniaTest):
     """
     Simulate the final chargen step by setting up the temporary attributes a
     real chargen session would have produced, then calling menunode_end and
     verifying the canonical attributes are set correctly.
     """
+
+    def setUp(self):
+        super().setUp()
+        self.room2.tags.add("test", category="area")
+        self.room2.tags.add("start", category="room_key")
 
     def _make_session(self, char):
         """Return a minimal mock session with a new_char attribute."""

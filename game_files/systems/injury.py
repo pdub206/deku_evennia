@@ -185,6 +185,9 @@ def apply_damage(
         uses_death_saves=_uses_death_saves(owner),
     )
     final_hp = owner.stats.take_damage(amount)
+    from systems.action_queue import cancel_action
+
+    cancel_action(owner, reason="damage")
     next_record = InjuryRecord(
         prediction.state,
         prediction.successes,

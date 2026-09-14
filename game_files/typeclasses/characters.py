@@ -196,6 +196,10 @@ class Character(ObjectParent, DefaultCharacter):
     ) -> None:
         """Repair combat immediately after any forced relocation or extraction."""
         super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if source_location is not None and move_type != "recall":
+            from systems.action_queue import cancel_action
+
+            cancel_action(self, reason="movement")
         if source_location is not self.location:
             try:
                 from systems.magic_rest import interrupt_magic_rest

@@ -1825,6 +1825,33 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "recall",
+        "aliases": ["home", "return home"],
+        "category": "General",
+        "text": """
+            Use |wrecall|n (or |whome|n) while standing, conscious, and outside
+            combat to begin returning to the world's recall destination. Recall
+            takes one interaction interval and costs no coins or items. Moving,
+            taking damage, entering combat, disconnecting, or a full server
+            restart cancels it. Some rooms forbid recall, and a full destination
+            may prevent arrival. Recall never uses your object's mutable home.
+        """,
+    },
+    {
+        "key": "room role configuration",
+        "aliases": ["roomroles", "start room", "recall destination"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Configure |wCHARACTER_START_ROOM|n, |wCOMBAT_RESPAWN_SANCTUARY|n,
+            and |wRECALL_DESTINATION|n as independent |warea:room_key|n strings
+            in secret settings. They may intentionally name the same room, but
+            each reference must resolve to exactly one Room. Use |wroomroles|n
+            to validate all three. Add a |wrecall:false()|n room lock to forbid
+            starting or completing recall from that room.
+        """,
+    },
+    {
         "key": "delayed actions",
         "aliases": ["action delay", "action queue"],
         "category": "General",

@@ -17,12 +17,25 @@ from typing import Any
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
 from systems.progression import CLASSES
-from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
-                                BACKGROUNDS, MAX_AGE, MIN_AGE, POINT_BUY_COSTS,
-                                POINT_BUY_MAX, POINT_BUY_MIN, POINT_BUY_TOTAL,
-                                SKILLS, SPECIES, STANDARD_ARRAY,
-                                STANDARD_ARRAY_BY_CLASS, STANDARD_LANGUAGES,
-                                ability_modifier, roll_4d6_drop_lowest)
+from world.chargen_data import (
+    ABILITY_NAMES,
+    ABILITY_SHORT,
+    ALIGNMENTS,
+    BACKGROUNDS,
+    MAX_AGE,
+    MIN_AGE,
+    POINT_BUY_COSTS,
+    POINT_BUY_MAX,
+    POINT_BUY_MIN,
+    POINT_BUY_TOTAL,
+    SKILLS,
+    SPECIES,
+    STANDARD_ARRAY,
+    STANDARD_ARRAY_BY_CLASS,
+    STANDARD_LANGUAGES,
+    ability_modifier,
+    roll_4d6_drop_lowest,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1555,6 +1568,9 @@ def _restart_chargen(caller: Any, raw_string: str = "", **kwargs):
 def menunode_end(caller: Any, **kwargs):
     """Finalise all choices and write canonical character attributes."""
     char = _char(caller)
+    from systems.room_roles import resolve_room_role
+
+    start_room = resolve_room_role("CHARACTER_START_ROOM").room
     # This persists ownership across disconnects; combat must never infer PC
     # status from transient session state.
     char.db.is_player_character = True
@@ -1628,6 +1644,11 @@ def menunode_end(caller: Any, **kwargs):
     char.db.skill_proficiencies = sorted(
         set(bg_skill_profs + list(char.db.skill_proficiencies or []))
     )
+
+    if char.location is not start_room and not char.move_to(
+        start_room, quiet=True, move_type="spawn", trigger_entry_hazard=False
+    ):
+        raise RuntimeError("The configured character start room rejected placement.")
 
     # Clean up all temporary chargen attributes.
     for attr in [

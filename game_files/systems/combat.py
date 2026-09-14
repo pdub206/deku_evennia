@@ -15,12 +15,17 @@ from typing import Any
 from django.conf import settings
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
-from systems.lifecycle import (CharacterAvailability, CharacterLifecycleEvent,
-                               LifecycleConsumer, LifecycleError,
-                               ServerLifecycleEvent, ServerTransitionPhase,
-                               UnavailabilityCause,
-                               register_lifecycle_consumer,
-                               unregister_lifecycle_consumer)
+from systems.lifecycle import (
+    CharacterAvailability,
+    CharacterLifecycleEvent,
+    LifecycleConsumer,
+    LifecycleError,
+    ServerLifecycleEvent,
+    ServerTransitionPhase,
+    UnavailabilityCause,
+    register_lifecycle_consumer,
+    unregister_lifecycle_consumer,
+)
 from systems.pulses import PulseEvent, PulseLane
 
 COMBAT_CONFIG_KEY = "combat_registry"
@@ -139,6 +144,10 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
 
 def _interrupt_magic_rests(*participants: Any) -> None:
     """Discard rest credit as soon as combat initiative begins."""
+    from systems.action_queue import cancel_action
+
+    for participant in participants:
+        cancel_action(participant, reason="combat_entry")
     try:
         from systems.magic_rest import interrupt_magic_rest
 
@@ -551,8 +560,10 @@ def _process_encounter(
                         raise CombatError("Stabilization target is missing.")
                     attempt_stabilization(actor, target)
                 elif intent["kind"] == "magic":
-                    from systems.magic_actions import (MagicActionError,
-                                                       execute_magic_intent)
+                    from systems.magic_actions import (
+                        MagicActionError,
+                        execute_magic_intent,
+                    )
 
                     try:
                         execute_magic_intent(actor, intent)

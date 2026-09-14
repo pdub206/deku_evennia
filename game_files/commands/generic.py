@@ -12,7 +12,6 @@ from evennia.commands.default.general import CmdAccess as _BaseAccess
 from evennia.commands.default.general import CmdDrop as _BaseDrop
 from evennia.commands.default.general import CmdGet as _BaseGet
 from evennia.commands.default.general import CmdGive as _BaseGive
-from evennia.commands.default.general import CmdHome as _BaseHome
 from evennia.commands.default.general import CmdInventory as _BaseInventory
 from evennia.commands.default.general import CmdLook as _BaseLook
 from evennia.commands.default.general import CmdNick as _BaseNick
@@ -21,13 +20,24 @@ from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
 from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
-from systems.action_queue import (ActionQueueError, action_audit,
-                                  cancel_action, inspect_action, repair_action)
-from systems.corpses import (CorpseError, inspect_corpse, withdraw,
-                             withdraw_many)
+from systems.action_queue import (
+    ActionQueueError,
+    action_audit,
+    cancel_action,
+    inspect_action,
+    repair_action,
+)
+from systems.corpses import CorpseError, inspect_corpse, withdraw, withdraw_many
 from systems.encumbrance import can_receive, character_load
-from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
-                               allowed_wear_locations, wear_phrase)
+from systems.recall import schedule_recall
+from systems.room_roles import RoomRoleError, validate_room_roles
+from systems.equipment import (
+    WEAR_LOCATIONS,
+    WEAR_SIDES,
+    EquipmentError,
+    allowed_wear_locations,
+    wear_phrase,
+)
 
 
 class CmdLook(_BaseLook):
@@ -72,10 +82,29 @@ class CmdLook(_BaseLook):
         self.msg(f"Inside {target.key}:\n" + "\n".join(f"  {line}" for line in lines))
 
 
-class CmdHome(_BaseHome):
-    """Return home only when the shared movement policy permits it."""
+class CmdRecall(MuxCommand):
+    """Begin recalling to the configured safe destination.
 
+    Usage:
+      recall
+      home
+    """
+
+    key = "recall"
+    aliases = ("home",)
     action_category = ActionCategory.MOVE
+
+    def func(self) -> None:
+        """Queue one delayed recall without consulting Object.home."""
+        result = schedule_recall(self.caller)
+        if result.status.value in {"queued", "replaced"}:
+            self.msg("You begin recalling to safety.")
+        else:
+            self.msg(f"You cannot recall right now ({result.reason}).")
+
+
+# Compatibility import for tests and extensions; the command key is now recall.
+CmdHome = CmdRecall
 
 
 class CmdActionQueue(MuxCommand):
@@ -122,6 +151,27 @@ class CmdActionQueue(MuxCommand):
         self.msg(
             f"{target.key}: {active['definition']} [{active['status']}] "
             f"due {active['due_token']}; audit entries: {len(history)}."
+        )
+
+
+class CmdRoomRoles(MuxCommand):
+    """Validate the configured start, respawn, and recall room roles."""
+
+    key = "roomroles"
+    aliases = ("roomrolecheck",)
+    locks = "cmd:perm(Builder)"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Report all role references only when every role resolves uniquely."""
+        try:
+            roles = validate_room_roles()
+        except RoomRoleError as err:
+            self.msg(f"Room-role validation failed: {err}")
+            return
+        self.msg(
+            "Room roles valid:\n"
+            + "\n".join(f"  {role.setting} = {role.reference}" for role in roles)
         )
 
 
