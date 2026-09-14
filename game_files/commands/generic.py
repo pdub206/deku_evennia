@@ -7,7 +7,7 @@ underlying Evennia command logic.
 
 from typing import Any
 
-from commands.command import Command
+from commands.command import Command, MuxCommand
 from evennia.commands.default.general import CmdAccess as _BaseAccess
 from evennia.commands.default.general import CmdDrop as _BaseDrop
 from evennia.commands.default.general import CmdGet as _BaseGet
@@ -21,6 +21,8 @@ from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
 from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
+from systems.action_queue import (ActionQueueError, action_audit,
+                                  cancel_action, inspect_action, repair_action)
 from systems.corpses import (CorpseError, inspect_corpse, withdraw,
                              withdraw_many)
 from systems.encumbrance import can_receive, character_load
@@ -74,6 +76,53 @@ class CmdHome(_BaseHome):
     """Return home only when the shared movement policy permits it."""
 
     action_category = ActionCategory.MOVE
+
+
+class CmdActionQueue(MuxCommand):
+    """Inspect or recover durable delayed actions.
+
+    Usage:
+      actionqueue [<character>]
+      actionqueue/cancel <character>
+      actionqueue/repair <character>
+    """
+
+    key = "actionqueue"
+    aliases = ("actions",)
+    locks = "cmd:perm(Builder)"
+    switch_options = ("cancel", "repair")
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Show bounded state or perform an explicit staff recovery operation."""
+        target = self.caller
+        if self.args:
+            target = self.caller.search(self.args, global_search=True)
+            if not target:
+                return
+        if "cancel" in self.switches:
+            result = cancel_action(target, reason="staff_cancel")
+            self.msg(f"Action queue: {result.status.value} ({result.reason}).")
+            return
+        if "repair" in self.switches:
+            result = repair_action(target)
+            self.msg(f"Action queue: {result.status.value} ({result.reason}).")
+            return
+        try:
+            active = inspect_action(target)
+            history = action_audit(target)
+        except ActionQueueError as err:
+            self.msg(f"Action queue state needs repair: {err}")
+            return
+        if active is None:
+            self.msg(
+                f"{target.key} has no queued action. Audit entries: {len(history)}."
+            )
+            return
+        self.msg(
+            f"{target.key}: {active['definition']} [{active['status']}] "
+            f"due {active['due_token']}; audit entries: {len(history)}."
+        )
 
 
 class CmdNick(_BaseNick):

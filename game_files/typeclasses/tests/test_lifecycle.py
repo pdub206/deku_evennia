@@ -399,8 +399,8 @@ class TestServerLifecycle(EvenniaTest):
                 boot_id="dangling-boot",
             )
 
-        # COMBAT-01 validates its persistent registry during recovery too.
-        self.assertEqual(result.dispatched, 3)
+        # COMBAT-01 and INTERACT-06 validate persistent state during recovery too.
+        self.assertEqual(result.dispatched, 4)
         self.assertEqual(result.failures, 1)
         self.assertEqual(len(received), 1)
         log_trace.assert_called_once()

@@ -28,6 +28,7 @@ class PulseLane(str, Enum):
     WORLD_TIME = "world_time"
     WEATHER = "weather"
     RESETS = "resets"
+    ACTIONS = "actions"
 
 
 PULSE_LANES = tuple(PulseLane)
@@ -45,6 +46,7 @@ DEFAULT_PULSE_CADENCES = MappingProxyType(
         PulseLane.WORLD_TIME: 60,
         PulseLane.WEATHER: 300,
         PulseLane.RESETS: 60,
+        PulseLane.ACTIONS: 1,
     }
 )
 

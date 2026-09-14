@@ -1825,6 +1825,34 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "delayed actions",
+        "aliases": ["action delay", "action queue"],
+        "category": "General",
+        "text": """
+            Some noncombat interactions take time. The command tells you when
+            an action begins and its owning system reports completion or
+            cancellation. Starting a conflicting action may be denied or may
+            replace the earlier action when that interaction explicitly allows
+            replacement. Disconnecting normally cancels delayed actions; a hot
+            reload preserves only actions whose rules say it is safe, and a
+            full server restart cancels all player interactions.
+        """,
+    },
+    {
+        "key": "action queue administration",
+        "aliases": ["actionqueue", "actions administration"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wactionqueue [character]|n to inspect one active durable action
+            and its bounded audit count. Use |wactionqueue/cancel <character>|n
+            for an ordinary reservation-aware cancellation. Use
+            |wactionqueue/repair <character>|n only for malformed or quarantined
+            state; repair clears state without guessing how to mutate an unknown
+            reservation. These commands require Builder permission.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

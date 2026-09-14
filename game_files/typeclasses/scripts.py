@@ -181,6 +181,7 @@ class GamePulseScript(Script):
             PulseLane.WORLD_TIME: self.at_world_time_pulse,
             PulseLane.WEATHER: self.at_weather_pulse,
             PulseLane.RESETS: self.at_resets_pulse,
+            PulseLane.ACTIONS: self.at_actions_pulse,
         }
         handlers[event.lane](event)
 
@@ -221,3 +222,9 @@ class GamePulseScript(Script):
 
     def at_resets_pulse(self, event: PulseEvent) -> None:
         """Run area resets supplied by AREA-03."""
+
+    def at_actions_pulse(self, event: PulseEvent) -> None:
+        """Advance durable noncombat interactions supplied by INTERACT-06."""
+        from systems.action_queue import process_action_pulse
+
+        process_action_pulse(event)

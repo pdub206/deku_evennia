@@ -64,7 +64,10 @@ GAME_PULSE_CADENCES = {
     "world_time": 60,
     "weather": 300,
     "resets": 60,
+    "actions": 1,
 }
+# INTERACT-06's independently configurable delayed-interaction heartbeat.
+GAME_ACTION_AUDIT_LIMIT = 20
 # MAGIC-03 uses the one-minute recovery lane as its real-time clock. These
 # compressed durations represent one in-world hour per ten real minutes.
 MAGIC_SHORT_REST_RECOVERY_PULSES = 10
