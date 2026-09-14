@@ -107,6 +107,10 @@ def exit_eligibility(
         return NavigationOutcome("skipped", "overloaded")
     if not isinstance(exit_obj, Exit) or exit_obj.location is not source:
         return NavigationOutcome("no-route", "invalid_exit")
+    from systems.visibility import target_visibility
+
+    if not target_visibility(actor, exit_obj, source=source).visible:
+        return NavigationOutcome("blocked", "exit_blocked")
     destination = exit_obj.destination
     if (
         not isinstance(destination, Room)

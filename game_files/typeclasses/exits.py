@@ -35,6 +35,11 @@ class Exit(ObjectParent, DefaultExit):
 
     def at_traverse(self, traversing_object, target_location, **kwargs) -> None:
         """Reject unavailable doors before Evennia handles ordinary movement."""
+        from systems.visibility import target_visibility
+
+        if not target_visibility(traversing_object, self).visible:
+            traversing_object.msg("You cannot go that way.")
+            return False
         from systems.doors import traversal_decision
 
         door = traversal_decision(self)

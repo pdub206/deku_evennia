@@ -20,24 +20,21 @@ from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
 from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
-from systems.action_queue import (
-    ActionQueueError,
-    action_audit,
-    cancel_action,
-    inspect_action,
-    repair_action,
-)
-from systems.corpses import CorpseError, inspect_corpse, withdraw, withdraw_many
+from systems.action_queue import (ActionQueueError, action_audit,
+                                  cancel_action, inspect_action, repair_action)
+from systems.corpses import (CorpseError, inspect_corpse, withdraw,
+                             withdraw_many)
+from systems.dice import roll
+from systems.doors import DoorError, door_state
 from systems.encumbrance import can_receive, character_load
+from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
+                               allowed_wear_locations, wear_phrase)
 from systems.recall import schedule_recall
 from systems.room_roles import RoomRoleError, validate_room_roles
-from systems.equipment import (
-    WEAR_LOCATIONS,
-    WEAR_SIDES,
-    EquipmentError,
-    allowed_wear_locations,
-    wear_phrase,
-)
+from systems.visibility import (active_search, active_search_extras,
+                                discover_passively,
+                                matching_extra_descriptions, room_visibility,
+                                target_visibility)
 
 
 class CmdLook(_BaseLook):
@@ -55,31 +52,235 @@ class CmdLook(_BaseLook):
     action_category = ActionCategory.OBSERVE
 
     def func(self) -> None:
-        """Add public corpse inspection without changing ordinary look behavior."""
+        """Apply darkness, direction, and general container inspection rules."""
+        caller = self.caller
+        room = caller.location
+        if room is not None and not room_visibility(caller, room).visible:
+            self.msg("It is too dark to see.")
+            return
+        query = self.args.strip()
+        if query and not query.casefold().startswith("in "):
+            owners = [room] + list(room.filter_visible(room.contents, caller))
+            details = matching_extra_descriptions(caller, query, owners)
+            if len(details) == 1:
+                self.msg(details[0][2]["description"])
+                return
+            if len(details) > 1:
+                self.msg("You do not see one clear detail by that name.")
+                return
+            exits = [
+                exit_obj
+                for exit_obj in getattr(room, "exits", ())
+                if exit_obj.key.casefold() == query.casefold()
+            ]
+            if len(exits) == 1:
+                exit_obj = exits[0]
+                if not target_visibility(caller, exit_obj).visible:
+                    self.msg("You do not see that here.")
+                    return
+                lines = [exit_obj.get_display_name(caller)]
+                description = exit_obj.attributes.get("desc")
+                if description:
+                    lines.append(description)
+                destination = exit_obj.destination
+                if (
+                    destination is not None
+                    and room_visibility(caller, destination, adjacent=True).visible
+                ):
+                    from systems.room_policy import room_policy
+
+                    try:
+                        private = room_policy(destination).private
+                    except (TypeError, ValueError):
+                        private = True
+                    if not private:
+                        lines.extend(
+                            (
+                                destination.get_display_name(caller),
+                                destination.attributes.get("desc") or "",
+                            )
+                        )
+                self.msg("\n".join(line for line in lines if line))
+                return
         prefix = "in "
-        if not self.args.casefold().startswith(prefix):
+        if not query.casefold().startswith(prefix):
             super().func()
             return
-        target_name = self.args[len(prefix) :].strip()
+        target_name = query[len(prefix) :].strip()
         if not target_name:
             self.msg("Look in what?")
             return
         target = self.caller.search(target_name, location=self.caller.location)
         if not target:
             return
-        if not target.is_typeclass("typeclasses.objects.Corpse", exact=False):
+        if target.is_typeclass("typeclasses.objects.Corpse", exact=False):
+            try:
+                contents = inspect_corpse(target, self.caller)
+            except CorpseError:
+                self.msg("That corpse cannot be inspected right now.")
+                return
+            if not contents:
+                self.msg(
+                    f"The corpse of {target.key.removeprefix('corpse of ')} is empty."
+                )
+                return
+            lines = [item.get_display_name(self.caller) for item in contents]
+            self.msg(
+                f"Inside {target.key}:\n" + "\n".join(f"  {line}" for line in lines)
+            )
+            return
+        if str(target.attributes.get("type") or "").casefold() != "container":
             self.msg("You cannot look inside that.")
             return
         try:
-            contents = inspect_corpse(target, self.caller)
-        except CorpseError:
-            self.msg("That corpse cannot be inspected right now.")
+            state = door_state(target)
+        except DoorError:
+            self.msg("That container cannot be inspected right now.")
             return
+        if state is None or not state.open:
+            self.msg("That container is closed.")
+            return
+        if not target.access(caller, "view", default=True):
+            self.msg("You cannot inspect that container.")
+            return
+        contents = sorted(target.contents, key=lambda obj: (obj.key.casefold(), obj.id))
         if not contents:
-            self.msg(f"The corpse of {target.key.removeprefix('corpse of ')} is empty.")
+            self.msg(f"{target.get_display_name(caller)} is empty.")
             return
         lines = [item.get_display_name(self.caller) for item in contents]
         self.msg(f"Inside {target.key}:\n" + "\n".join(f"  {line}" for line in lines))
+
+
+class CmdExits(Command):
+    """List visible local exits and public door state. Usage: exits"""
+
+    key = "exits"
+    aliases = ("obvious exits",)
+    action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Render only exits the caller can currently perceive."""
+        room = self.caller.location
+        if room is None or not room_visibility(self.caller, room).visible:
+            self.msg("You cannot make out any exits.")
+            return
+        passive = set(discover_passively(self.caller, room.exits))
+        lines = []
+        for exit_obj in sorted(
+            room.exits, key=lambda obj: (obj.key.casefold(), obj.id)
+        ):
+            if (
+                exit_obj not in passive
+                and not target_visibility(self.caller, exit_obj).visible
+            ):
+                continue
+            label = exit_obj.get_display_name(self.caller)
+            try:
+                state = door_state(exit_obj)
+            except DoorError:
+                continue
+            if state is not None:
+                label += " (open)" if state.open else " (closed)"
+            lines.append(label)
+        self.msg(
+            "Obvious exits:\n"
+            + ("\n".join(f"  {line}" for line in lines) if lines else "  None.")
+        )
+
+
+class CmdSearch(Command):
+    """Actively search for hidden exits. Usage: search [direction]"""
+
+    key = "search"
+    action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Roll separately for every matching eligible hidden exit."""
+        room = self.caller.location
+        if room is None:
+            self.msg("There is nowhere to search.")
+            return
+        query = self.args.strip().casefold()
+        candidates = [
+            exit_obj
+            for exit_obj in room.exits
+            if not query or exit_obj.key.casefold().startswith(query)
+        ]
+        found = active_search(self.caller, candidates, roller=roll)
+        owners = [room] + list(room.filter_visible(room.contents, self.caller))
+        extra_found = active_search_extras(
+            self.caller, owners, query=query, roller=roll
+        )
+        names = [obj.get_display_name(self.caller) for obj in found]
+        names.extend(record["keywords"][0] for _owner, _index, record in extra_found)
+        if names:
+            self.msg("You discover: " + ", ".join(names) + ".")
+        else:
+            self.msg("You find nothing hidden.")
+
+
+class CmdExamine(Command):
+    """Inspect public details about one visible local target. Usage: examine <target>"""
+
+    key = "examine"
+    aliases = ("exam", "exa")
+    action_category = ActionCategory.OBSERVE
+
+    def func(self) -> None:
+        """Show descriptions and public physical state without private statistics."""
+        if not self.args.strip():
+            self.msg("Examine what?")
+            return
+        candidates = list(self.caller.location.contents) + list(self.caller.contents)
+        matches = self.caller.search(
+            self.args.strip(), candidates=candidates, quiet=True, use_locks=False
+        )
+        visible = [
+            obj
+            for obj in matches
+            if obj is self.caller
+            or obj.location is self.caller
+            or target_visibility(self.caller, obj).visible
+        ]
+        if len(visible) != 1:
+            self.msg("You do not see one clear target by that name.")
+            return
+        target = visible[0]
+        lines = [
+            target.get_display_name(self.caller),
+            target.get_display_desc(self.caller),
+        ]
+        item_type = target.attributes.get("type")
+        if item_type:
+            lines.append(f"Type: {item_type}.")
+        weight = target.attributes.get("weight")
+        if isinstance(weight, (int, float)) and not isinstance(weight, bool):
+            lines.append(f"Weight: {weight:g} lb.")
+        if str(item_type).casefold() == "container":
+            try:
+                state = door_state(target)
+            except DoorError:
+                state = None
+            lines.append(
+                "Container: " + ("open." if state and state.open else "closed.")
+            )
+        if hasattr(target, "action_position"):
+            lines.append(f"Posture: {target.action_position.value}.")
+            equipment = target.get_display_things(self.caller)
+            if equipment:
+                lines.append(equipment)
+            from systems.combat import get_target, is_fighting
+
+            if is_fighting(target):
+                opponent = get_target(target)
+                if (
+                    opponent is not None
+                    and target_visibility(self.caller, opponent).visible
+                ):
+                    lines.append(f"Fighting: {opponent.get_display_name(self.caller)}.")
+                else:
+                    lines.append("Fighting: yes.")
+        self.msg("\n".join(line for line in lines if line))
 
 
 class CmdRecall(MuxCommand):

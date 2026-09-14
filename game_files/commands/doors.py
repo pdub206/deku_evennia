@@ -8,6 +8,7 @@ from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.door_actions import DoorActionError, manipulate_target
 from systems.doors import DoorError, door_state
+from systems.visibility import target_visibility
 
 
 def _find_target(caller: Any, query: str) -> Any | None:
@@ -25,7 +26,7 @@ def _find_target(caller: Any, query: str) -> Any | None:
             state = None
         if (
             state is not None
-            and not state.hidden
+            and (target.location is caller or target_visibility(caller, target).visible)
             and target.access(caller, "interact", default=True)
         ):
             usable.append(target)

@@ -9,7 +9,8 @@ from typing import Any
 from uuid import uuid4
 
 from systems.checks import CheckError, CheckRequest, CheckResult, resolve_check
-from systems.doors import DoorError, DoorState, door_state, paired_exit, transition_door
+from systems.doors import (DoorError, DoorState, door_state, paired_exit,
+                           transition_door)
 
 THIEVES_TOOLS_KIND = "thieves_tools"
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,127}$")
@@ -158,7 +159,10 @@ def _usable_state(actor: Any, target: Any) -> DoorState:
         if state is None:
             raise DoorActionError("That cannot be opened or closed.")
         if state.hidden:
-            raise DoorActionError("You cannot manipulate that.")
+            from systems.visibility import target_visibility
+
+            if not target_visibility(actor, target).visible:
+                raise DoorActionError("You cannot manipulate that.")
         if state.pair_key:
             paired_exit(target)
         return state

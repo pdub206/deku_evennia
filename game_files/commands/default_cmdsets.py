@@ -50,6 +50,8 @@ from commands.generic import (
     CmdAccess,
     CmdActionQueue,
     CmdDrop,
+    CmdExamine,
+    CmdExits,
     CmdFastHands,
     CmdGet,
     CmdGive,
@@ -62,6 +64,7 @@ from commands.generic import (
     CmdRecall,
     CmdRemove,
     CmdRoomRoles,
+    CmdSearch,
     CmdSetDesc,
     CmdWear,
 )
@@ -93,6 +96,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # General commands - overrides Evennia's defaults.
         self.add(CmdRecall)
         self.add(CmdLook)
+        self.add(CmdExits)
+        self.add(CmdExamine)
+        self.add(CmdSearch)
         self.add(CmdNick)
         self.add(CmdSetDesc)
         self.add(CmdSay)

@@ -75,6 +75,17 @@ def as_text(raw: str) -> str:
     return text
 
 
+def as_extra_descriptions(raw: str) -> list[dict[str, Any]]:
+    """Parse and validate ordered extra-description records from JSON."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON list of extra descriptions.") from err
+    from systems.visibility import validate_extra_descriptions
+
+    return validate_extra_descriptions(value)
+
+
 def as_slug(raw: str) -> str:
     """A lowercase identifier safe for dict keys, tags, and module filenames.
 
@@ -306,6 +317,11 @@ ROOM_FIELDS: dict[str, Field] = {
         "the room's description (type 'desc' with no value for the editor)",
         target="desc",
     ),
+    "extra_descs": Field(
+        "attr",
+        as_extra_descriptions,
+        "ordered JSON keyword/description records with optional discovery_dc",
+    ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
     "sector": Field(
         "attr",
@@ -527,6 +543,11 @@ ITEM_FIELDS: dict[str, Field] = {
         as_text,
         "the item's description (type 'desc' with no value for the editor)",
         target="desc",
+    ),
+    "extra_descs": Field(
+        "attr",
+        as_extra_descriptions,
+        "ordered JSON keyword/description records with optional discovery_dc",
     ),
     "weight": Field(
         "attr",

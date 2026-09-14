@@ -698,7 +698,15 @@ class TestItemType(EvenniaCommandTest):
         fields = set(schema_for_prototype(self.proto))
         self.assertEqual(
             fields,
-            {"name", "desc", "weight", "value", "wear_locations", "type"},
+            {
+                "name",
+                "desc",
+                "extra_descs",
+                "weight",
+                "value",
+                "wear_locations",
+                "type",
+            },
         )
 
     def test_set_type_none_reverts_to_generic(self):

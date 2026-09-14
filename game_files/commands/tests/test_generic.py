@@ -8,8 +8,9 @@ Run from the game/ directory:
 from typing import Any
 from unittest.mock import patch
 
-from commands.generic import (CmdFastHands, CmdGet, CmdInventory, CmdJunk,
-                              CmdLook, CmdRemove, CmdWear)
+from commands.generic import (CmdExamine, CmdExits, CmdFastHands, CmdGet,
+                              CmdInventory, CmdJunk, CmdLook, CmdRemove,
+                              CmdSearch, CmdWear)
 from evennia import create_object
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import save_prototype, search_prototype
@@ -38,6 +39,41 @@ class TestInventory(EvenniaCommandTest):
         create_object("typeclasses.objects.Item", key="a rock", location=self.char1)
         self.char1.db.position = "sleeping"
         self.call(CmdInventory(), "", "You are asleep")
+
+
+class TestInspection(EvenniaCommandTest):
+    """Inspection surfaces expose only visible local public information."""
+
+    def test_exits_lists_direction_without_destination(self):
+        create_object(
+            "typeclasses.exits.Exit",
+            key="north",
+            location=self.room1,
+            destination=self.room2,
+        )
+
+        output = self.call(CmdExits(), "")
+
+        self.assertIn("north", output)
+        self.assertNotIn(self.room2.key, output)
+
+    def test_examine_item_shows_public_physical_fields(self):
+        item = create_object(
+            "typeclasses.objects.Item", key="a satchel", location=self.room1
+        )
+        item.db.desc = "A weathered leather satchel."
+        item.db.type = "container"
+        item.db.weight = 2.5
+
+        output = self.call(CmdExamine(), "satchel")
+
+        self.assertIn("weathered leather", output)
+        self.assertIn("Type: container", output)
+        self.assertIn("Weight: 2.5 lb", output)
+        self.assertIn("Container: closed", output)
+
+    def test_search_has_safe_failure_message(self):
+        self.call(CmdSearch(), "missing", "You find nothing hidden.")
 
 
 class TestFastHands(EvenniaCommandTest):

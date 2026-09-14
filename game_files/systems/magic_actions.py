@@ -15,15 +15,32 @@ from typing import Any
 
 from django.db import transaction
 from systems.action_policy import ActionCategory
-from systems.injury import (InjuryError, InjuryState, apply_damage,
-                            apply_healing, apply_stabilization, injury_record)
-from systems.magic import (AccessMode, CastSnapshot, MagicDefinition,
-                           MagicKind, MagicRegistry, MagicRegistryError,
-                           RangeCategory, TargetingMode,
-                           deserialize_cast_snapshot)
-from systems.magic_resources import (MagicResourceError, resource_current,
-                                     resource_maximum, restore_resource,
-                                     spend_resource)
+from systems.injury import (
+    InjuryError,
+    InjuryState,
+    apply_damage,
+    apply_healing,
+    apply_stabilization,
+    injury_record,
+)
+from systems.magic import (
+    AccessMode,
+    CastSnapshot,
+    MagicDefinition,
+    MagicKind,
+    MagicRegistry,
+    MagicRegistryError,
+    RangeCategory,
+    TargetingMode,
+    deserialize_cast_snapshot,
+)
+from systems.magic_resources import (
+    MagicResourceError,
+    resource_current,
+    resource_maximum,
+    restore_resource,
+    spend_resource,
+)
 
 MAGIC_ACTION_STATE_ATTRIBUTE = "magic_action_state"
 MAGIC_ACTION_STATE_VERSION = 2
@@ -838,8 +855,7 @@ def _on_concentration_effect_removed(effect: Any, _reason: Any) -> None:
 
 def _register_concentration_removal_listener() -> None:
     """Register this reload-safe effect adapter exactly once per process."""
-    from systems.effects import (register_removal_listener,
-                                 removal_listener_registered)
+    from systems.effects import register_removal_listener, removal_listener_registered
 
     listener_key = "magic.concentration"
     if not removal_listener_registered(listener_key):
@@ -930,9 +946,9 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
     if target is not caster and target.location is not caster.location:
         raise MagicActionError("That target is out of range.")
     if target is not caster and not targeting.allow_hidden:
-        location = getattr(caster, "location", None)
-        visible = () if location is None else location.filter_visible((target,), caster)
-        if target not in visible:
+        from systems.visibility import target_visibility
+
+        if not target_visibility(caster, target).visible:
             raise MagicActionError("There is no valid target here.")
     if not target.access(caster, "magic", default=True):
         raise MagicActionError("You cannot affect that target.")

@@ -202,6 +202,7 @@ class Character(ObjectParent, DefaultCharacter):
 
             cancel_action(self, reason="movement")
         if source_location is not self.location:
+            self.ndb.visibility_discoveries = set()
             try:
                 from systems.magic_rest import interrupt_magic_rest
 

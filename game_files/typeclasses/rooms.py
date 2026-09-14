@@ -34,3 +34,14 @@ class Room(ObjectParent, DefaultRoom):
             name = char.get_display_name(looker, **kwargs)
             lines.append(f"{name} is {position} here.")
         return "\n".join(lines)
+
+    def filter_visible(self, object_list, looker, **kwargs):
+        """Apply INTERACT-04's canonical local visibility to room contents."""
+        from systems.visibility import discover_passively, target_visibility
+
+        passive = set(discover_passively(looker, object_list))
+        return [
+            obj
+            for obj in object_list
+            if obj in passive or target_visibility(looker, obj, source=self).visible
+        ]

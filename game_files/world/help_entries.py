@@ -1898,6 +1898,53 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "visibility",
+        "aliases": ["light", "darkness", "hidden details", "search"],
+        "category": "General",
+        "text": """
+            Light affects what you can inspect. Normal sight cannot inspect a
+            dark room without a light; darkvision works only in your current
+            room and does not see through a dark exit. Dim light and severe
+            weather may make Perception more difficult.
+
+            Hidden exits and descriptive details can be noticed by passive
+            Perception. Use |wsearch|n or |wsearch <direction or keyword>|n to
+            make an active Wisdom (Perception) check. A discovery is personal
+            and lasts only until you leave the room. Searching does not reveal
+            failures or hidden details belonging to somebody else.
+        """,
+    },
+    {
+        "key": "inspection",
+        "aliases": ["exits", "examine", "look in", "look direction"],
+        "category": "General",
+        "text": """
+            Use |wexits|n to list visible directions and whether visible doors
+            are open or closed. |wlook <direction>|n describes an exit and may
+            show the adjacent room when light, access, and privacy permit.
+            |wlook in <container>|n lists only its visible top-level contents;
+            closed or locked containers do not disclose what they hold.
+
+            |wexamine <target>|n shows a visible local target's description and
+            public physical details. It never reveals inventories, exact combat
+            statistics, hidden opponents, or other private state.
+        """,
+    },
+    {
+        "key": "visibility building",
+        "aliases": ["discovery dc", "extra descriptions"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Exit |whidden|n and |wdiscovery_dc|n fields control observer-specific
+            discovery; DCs range from 0 through 30. Room and item
+            |wextra_descs|n accept an ordered JSON list. Each record contains
+            unique |wkeywords|n, descriptive |wdescription|n text, and an
+            optional |wdiscovery_dc|n. Extra descriptions cannot run commands,
+            scripts, locks, or grant items.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",
