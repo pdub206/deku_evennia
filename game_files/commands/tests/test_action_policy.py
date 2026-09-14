@@ -241,10 +241,13 @@ class TestExitCommandPolicy(EvenniaCommandTest):
             "You need to stand before you can do that."
         )
 
-    def test_generated_exit_allows_standing_traversal(self):
+    def test_generated_exit_queues_standing_traversal(self):
         self.call(ExitCommand(), "", obj=self.exit)
 
-        self.assertEqual(self.char1.location, self.room2)
+        from systems.action_queue import inspect_action
+
+        self.assertEqual(self.char1.location, self.room1)
+        self.assertEqual(inspect_action(self.char1)["definition"], "interact03.travel")
 
 
 class TestPositionPresentation(EvenniaCommandTest):

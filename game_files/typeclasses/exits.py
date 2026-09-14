@@ -64,6 +64,20 @@ class Exit(ObjectParent, DefaultExit):
             # ordinary traversal mode so action, encumbrance, and room hooks
             # receive exactly the same contract as player travel.
             return traversing_object.move_to(
-                target_location, move_type="traverse", use_destination=False
+                target_location,
+                move_type="traverse",
+                use_destination=False,
+                travel_authorized=True,
             )
-        super().at_traverse(traversing_object, target_location, **kwargs)
+        if kwargs.get("travel_execution"):
+            return traversing_object.move_to(
+                target_location, move_type="traverse", travel_authorized=True
+            )
+        from systems.travel import denial_message, schedule_travel
+
+        result = schedule_travel(traversing_object, self)
+        if result.status.value in {"queued", "replaced"}:
+            traversing_object.msg(f"You begin traveling {self.key}.")
+        else:
+            traversing_object.msg(denial_message(result.reason))
+        return result.status.value in {"queued", "replaced"}

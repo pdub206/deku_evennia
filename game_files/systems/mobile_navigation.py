@@ -128,6 +128,11 @@ def exit_eligibility(
     admission = room_admission(actor, destination)
     if admission.status != "moved":
         return admission
+    from systems.travel import travel_decision
+
+    travel = travel_decision(actor, exit_obj)
+    if not travel.allowed:
+        return NavigationOutcome("blocked", travel.reason)
     return NavigationOutcome("moved", exit_id=exit_obj.id)
 
 
@@ -184,6 +189,11 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
     if decision.status != "moved":
         return decision
     source, destination = request.actor.location, exit_obj.destination
+    from systems.travel import travel_decision
+
+    travel = travel_decision(request.actor, exit_obj)
+    if not travel.allowed or travel.delay is None:
+        return NavigationOutcome("blocked", travel.reason)
     try:
         # Exit traversal, rather than a direct room move, preserves ordinary
         # departure, arrival, announcements, and future terrain hooks.
@@ -206,6 +216,9 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
         return NavigationOutcome("blocked", "traversal_denied")
     state["last_successful_token"] = request.token
     _write_state(request.actor, state)
+    from systems.mobiles import defer_mobile_until
+
+    defer_mobile_until(request.actor, request.token + travel.delay)
     return NavigationOutcome("moved", exit_id=exit_obj.id)
 
 

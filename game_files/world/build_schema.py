@@ -307,6 +307,22 @@ ROOM_FIELDS: dict[str, Field] = {
         target="desc",
     ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
+    "sector": Field(
+        "attr",
+        as_choice(
+            "inside",
+            "city",
+            "field",
+            "forest",
+            "hills",
+            "mountain",
+            "shallow_water",
+            "deep_water",
+            "air",
+        ),
+        "travel terrain and base movement cost",
+        target="sector",
+    ),
     "no_combat": Field(
         "room_policy", as_on_off, "whether new hostile actions are forbidden"
     ),

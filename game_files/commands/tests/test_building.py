@@ -237,6 +237,18 @@ class TestAreaRoundTrip(EvenniaCommandTest):
         north_exits = [ex for ex in second["room"].exits if ex.key == "north"]
         self.assertEqual(len(north_exits), 1)
 
+    def test_sector_builder_validation_and_roundtrip(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildSet(), "sector mountain", "Set sector to: mountain")
+        self.call(CmdBuildSet(), "sector swamp", "Invalid value")
+        self.call(CmdBuildArea(), "sectorarea")
+
+        rooms, exits = build_area_data("sectorarea")
+        loaded = load_area_data("sectorimport", rooms, exits)
+
+        self.assertEqual(loaded["room"].db.sector, "mountain")
+
 
 class TestAreaExportFile(EvenniaCommandTest):
     """export_area writes a valid, importable area module."""

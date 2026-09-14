@@ -130,6 +130,15 @@ def mobile_state(npc: Any) -> dict[str, Any]:
     return _validate_state(raw)
 
 
+def defer_mobile_until(npc: Any, token: int) -> None:
+    """Extend an NPC's cadence without permitting an earlier next action."""
+    if isinstance(token, bool) or not isinstance(token, int) or token < 1:
+        raise MobileBehaviorError("A mobile eligibility token must be positive.")
+    state = mobile_state(npc)
+    state["next_eligible_token"] = max(state["next_eligible_token"], token)
+    _write_state(npc, state)
+
+
 def mobile_behavior_snapshot(npc: Any) -> dict[str, Any]:
     """Read runner state without initializing an absent legacy Attribute."""
     raw = npc.attributes.get(MOBILE_BEHAVIOR_ATTRIBUTE)
@@ -219,8 +228,10 @@ def _record_diagnostic_outcome(
     npc: Any, event: PulseEvent, outcome: MobileOutcome
 ) -> None:
     """Mirror runner failures into MOB-08 without affecting pulse semantics."""
-    from systems.mobile_diagnostics import (mark_mobile_failure_recovered,
-                                            record_mobile_failure)
+    from systems.mobile_diagnostics import (
+        mark_mobile_failure_recovered,
+        record_mobile_failure,
+    )
 
     if outcome.status == "failed":
         record_mobile_failure(

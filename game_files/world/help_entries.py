@@ -1880,6 +1880,24 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "travel",
+        "aliases": ["movement", "terrain", "sectors"],
+        "category": "General",
+        "text": """
+            Moving through an exit takes time. Your Speed and the destination's
+            terrain determine the delay: roads and indoor spaces are quickest,
+            while forests, hills, mountains, and water take longer. You remain
+            in your current room until travel completes, and a route that becomes
+            blocked before then is cancelled.
+
+            Deep water requires a functional boat carried directly in your
+            inventory or the ability to swim. Air requires the ability to fly.
+            Being unable to move or carrying too much prevents travel rather
+            than merely making it slower. Travel does not spend movement points
+            or cause exhaustion.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

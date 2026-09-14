@@ -44,6 +44,7 @@ from systems.room_policy import (
     room_policy_data,
     validate_room_policy,
 )
+from systems.travel import SECTORS, SECTOR_ATTRIBUTE, sector_key
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
@@ -157,6 +158,9 @@ def _room_prototype(room, area_slug: str, room_key: str) -> dict:
             prot.pop("tags")
     policy = room_policy_data(room)
     environment = room_environment_data(room)
+    sector = sector_key(room)
+    if sector is None:
+        raise ValueError(f"Room '{room.key}' has an invalid sector.")
     attrs = [
         attr
         for attr in prot.get("attrs", [])
@@ -164,6 +168,8 @@ def _room_prototype(room, area_slug: str, room_key: str) -> dict:
     ]
     attrs.append((ROOM_POLICY_ATTRIBUTE, policy, None, ""))
     attrs.append((ROOM_ENVIRONMENT_ATTRIBUTE, environment, None, ""))
+    attrs = [attr for attr in attrs if attr[0] != SECTOR_ATTRIBUTE]
+    attrs.append((SECTOR_ATTRIBUTE, sector, None, ""))
     prot["attrs"] = attrs
     return prot
 
@@ -270,14 +276,21 @@ def load_area_data(
     validate_area_exit_doors(exits)
     policies: dict[str, dict] = {}
     environments: dict[str, dict] = {}
+    sectors: dict[str, str] = {}
     for room_key, prototype in rooms.items():
         raw_policy = None
         raw_environment = None
+        raw_sector = None
         for attr in prototype.get("attrs", []):
             if attr[0] == ROOM_POLICY_ATTRIBUTE:
                 raw_policy = attr[1]
             elif attr[0] == ROOM_ENVIRONMENT_ATTRIBUTE:
                 raw_environment = attr[1]
+            elif attr[0] == SECTOR_ATTRIBUTE:
+                raw_sector = attr[1]
+        if raw_sector is not None and raw_sector not in SECTORS:
+            raise ValueError("Invalid room sector in area data.")
+        sectors[room_key] = raw_sector or "inside"
         try:
             validate_room_policy(raw_policy)
         except RoomPolicyError as err:
@@ -304,6 +317,7 @@ def load_area_data(
         room.tags.add(room_key, category=ROOM_KEY_CATEGORY)
         room.attributes.add(ROOM_POLICY_ATTRIBUTE, policies[room_key])
         room.attributes.add(ROOM_ENVIRONMENT_ATTRIBUTE, environments[room_key])
+        room.attributes.add(SECTOR_ATTRIBUTE, sectors[room_key])
         key_to_room[room_key] = room
 
     created_or_found_exits = []

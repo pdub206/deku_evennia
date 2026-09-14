@@ -154,6 +154,9 @@ class Character(ObjectParent, DefaultCharacter):
         """Apply action, load, and canonical room admission before movement."""
         move_type = kwargs.get("move_type")
         if move_type in {"traverse", "combat_flee"}:
+            if move_type == "traverse" and not kwargs.get("travel_authorized"):
+                self.msg("You must use an exit to travel there.")
+                return False
             decision = self.actions.check(ActionCategory.MOVE)
             if move_type == "combat_flee":
                 decision = None
@@ -187,8 +190,6 @@ class Character(ObjectParent, DefaultCharacter):
                 if getattr(self.db, "is_player_character", None) is not False:
                     self.msg("You cannot enter there right now.")
                 return False
-        # TODO(INTERACT-03): Apply terrain cost and stats.movement_delay() when
-        # travel scheduling is introduced.
         return True
 
     def at_post_move(
