@@ -37,6 +37,7 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
+from systems.doors import DoorError, configure_door, door_state, transition_door
 from systems.mob_spawning import mobile_spawn_identity
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
@@ -224,6 +225,109 @@ class TestEditExitRedirect(EvenniaCommandTest):
         target = self.char1.ndb._build_target
         self.assertEqual(target.key, "Armory")
         self.assertIsNone(target.destination)  # it's the room, not the exit
+
+    def test_edit_exit_opens_validated_door_fields(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+
+        self.call(CmdBuild(), "exit north")
+        self.assertEqual(self.char1.ndb._build_target.key, "north")
+        fields = self.call(CmdBuildFields(), "")
+        for name in (
+            "door",
+            "initial_state",
+            "key_kind",
+            "pickable",
+            "pick_dc",
+            "hidden",
+            "discovery_dc",
+            "pair_key",
+        ):
+            self.assertIn(name, fields)
+
+        self.call(CmdBuildSet(), "door on")
+        self.call(CmdBuildSet(), "initial_state locked")
+        self.call(CmdBuildSet(), "key_kind iron_key")
+        self.call(CmdBuildSet(), "pickable on")
+        self.call(CmdBuildSet(), "pick_dc 17")
+        state = door_state(self.char1.ndb._build_target)
+        self.assertTrue(state.locked)
+        self.assertEqual(state.key_kind, "iron_key")
+        self.assertEqual(state.pick_dc, 17)
+
+    def test_door_fields_require_door_on(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+        self.call(CmdBuild(), "exit north")
+
+        output = self.call(CmdBuildSet(), "hidden on")
+
+        self.assertIn("Set door on", output)
+        self.assertIsNone(door_state(self.char1.ndb._build_target))
+
+
+class TestDoorAreaRoundTrip(EvenniaCommandTest):
+    """Authored door configuration round-trips without exporting live state."""
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "doorarea")
+        self.call(CmdBuildDig(), "north = Gatehouse")
+        self.north = next(ex for ex in self.room1.exits if ex.key == "north")
+        self.south = next(
+            ex for ex in self.north.destination.exits if ex.key == "south"
+        )
+        config = {
+            "initial_state": "locked",
+            "key_kind": "gate_key",
+            "pickable": True,
+            "pick_dc": 14,
+            "hidden": False,
+            "pair_key": "main_gate",
+        }
+        configure_door(self.north, **config)
+        configure_door(self.south, **config)
+
+    def test_roundtrip_restores_initial_pair_state(self):
+        transition_door(
+            self.north, open=True, locked=False, state_id="test:temporary-open"
+        )
+        rooms, exits = build_area_data("doorarea")
+        door_entries = [attrs["door_state"] for *_edge, attrs in exits]
+        self.assertEqual(len(door_entries), 2)
+        self.assertTrue(all(data["initial_state"] == "locked" for data in door_entries))
+        self.assertTrue(all("open" not in data for data in door_entries))
+
+        loaded = load_area_data("imported_doors", rooms, exits)
+        new_north = next(ex for ex in loaded["room"].exits if ex.key == "north")
+        new_south = next(ex for ex in loaded["gatehouse"].exits if ex.key == "south")
+        self.assertTrue(door_state(new_north).locked)
+        self.assertEqual(door_state(new_north), door_state(new_south))
+
+        load_area_data("imported_doors", rooms, exits)
+        self.assertEqual(
+            len([ex for ex in loaded["room"].exits if ex.key == "north"]), 1
+        )
+
+    def test_invalid_pair_fails_before_creating_area(self):
+        rooms, exits = build_area_data("doorarea")
+        invalid = [entry for entry in exits if entry[1] == "north"]
+
+        with self.assertRaises(DoorError):
+            load_area_data("invalid_doors", rooms, invalid)
+
+        self.assertEqual(
+            [
+                room
+                for room in self.room1.__class__.objects.all()
+                if room.tags.has("invalid_doors", category="area")
+            ],
+            [],
+        )
 
 
 class TestRoomListing(EvenniaCommandTest):

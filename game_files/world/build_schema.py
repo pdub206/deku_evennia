@@ -164,6 +164,20 @@ def as_choice(*options: str) -> Callable[[str], str]:
     return validate
 
 
+def as_optional_slug(raw: str) -> str | None:
+    """Return a stable key or ``None`` for an explicit ``none`` value."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_slug(raw)
+
+
+def as_optional_dc(raw: str) -> int | None:
+    """Return an INTERACT-01A DC from 0 through 30, or explicit absence."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_int_range(0, 30)(raw)
+
+
 def as_named_choice(*options: str) -> Callable[[str], str]:
     """Return a case-insensitive validator preserving each option's spelling."""
     allowed = {option.lower(): option for option in options}
@@ -263,6 +277,42 @@ ROOM_FIELDS: dict[str, Field] = {
         target="desc",
     ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
+}
+
+EXIT_FIELDS: dict[str, Field] = {
+    "name": Field("key", as_text, "the exit's direction or display name"),
+    "desc": Field(
+        "attr",
+        as_text,
+        "the exit's description (type 'desc' with no value for the editor)",
+        target="desc",
+    ),
+    "door": Field("door", as_choice("on", "off"), "door state: on or off"),
+    "initial_state": Field(
+        "door",
+        as_choice("open", "closed", "locked"),
+        "state restored by area resets: open, closed, or locked",
+    ),
+    "key_kind": Field(
+        "door",
+        as_optional_slug,
+        "stable matching key kind, or none",
+    ),
+    "pickable": Field(
+        "door", as_choice("on", "off"), "whether this lock may be picked"
+    ),
+    "pick_dc": Field("door", as_optional_dc, "lock-picking DC from 0 to 30, or none"),
+    "hidden": Field(
+        "door", as_choice("on", "off"), "whether ordinary observers miss this exit"
+    ),
+    "discovery_dc": Field(
+        "door", as_optional_dc, "hidden-exit discovery DC from 0 to 30, or none"
+    ),
+    "pair_key": Field(
+        "door",
+        as_optional_slug,
+        "stable key shared by reciprocal synchronized exits, or none",
+    ),
 }
 
 # Item types supported by the builder. These follow the classic Diku/Circle/tbaMUD
@@ -590,6 +640,8 @@ def schema_for(obj) -> dict[str, Field] | None:
     """
     if inherits_from(obj, "evennia.objects.objects.DefaultRoom"):
         return ROOM_FIELDS
+    if inherits_from(obj, "evennia.objects.objects.DefaultExit"):
+        return EXIT_FIELDS
     if inherits_from(obj, "evennia.objects.objects.DefaultCharacter"):
         return NPC_FIELDS
     if inherits_from(obj, "typeclasses.objects.Item"):

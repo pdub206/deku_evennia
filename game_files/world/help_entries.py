@@ -1474,6 +1474,7 @@ HELP_ENTRY_DICTS = [
               edit new npc <name>     create a template and spawn an NPC here
               edit item <name>        edit an existing item template
               edit npc <name>         edit an existing NPC template
+              edit exit <direction>   edit an exit in your current room
               edit <object>           edit a live room, item, or NPC by name/#dbref
 
             You must have |wBuilder|n permission.  The classic builder commands
@@ -1526,6 +1527,23 @@ HELP_ENTRY_DICTS = [
             fanning several exits off a hub).  To work on the new room, type
             |wedit <direction>|n — editing an exit jumps you to the room it
             leads to — or walk there and |wedit here|n.
+
+            Use |wedit exit <direction>|n when you mean the exit itself. Use
+            |wset door on|n before its other door fields. |winitial_state|n is
+            open, closed, or locked and is what a later area reset restores;
+            live state is deliberately not exported. |wkey_kind|n names the
+            reusable key identity used by the later door commands. |wpickable|n
+            and |wpick_dc|n configure lock picking; |whidden|n and
+            |wdiscovery_dc|n configure later perception. DCs range from 0 to
+            30, or use |wnone|n where allowed.
+
+            To make two reciprocal exits one logical door, give both the same
+            |wpair_key|n. Configure the first side completely before assigning
+            the key, then configure the reciprocal side identically. Once
+            paired, changing either side synchronizes both. A missing,
+            ambiguous, or divergent peer fails closed until repaired. One-way
+            doors use |wpair_key none|n. AREA-03 will schedule resets; the
+            current builder only records and validates their initial state.
 
             ## Items
 

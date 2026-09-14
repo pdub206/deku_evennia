@@ -214,6 +214,11 @@ def _field_value(target, name: str, field) -> str:
         return target.key
     if field.kind == "type":
         return target.db.type or "|x(generic item)|n"
+    if field.kind == "door":
+        from systems.doors import door_field_value
+
+        value = door_field_value(target, field.target or name)
+        return _crop(value) if value is not None else "|x(unset)|n"
     if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
@@ -332,6 +337,10 @@ def _apply_field(target, name: str, field, value) -> None:
         _set_item_type(target, value)
     elif field.kind == "attr":
         target.attributes.add(field.target or name, value)
+    elif field.kind == "door":
+        from systems.doors import configure_door_field
+
+        configure_door_field(target, field.target or name, value)
     elif field.kind == "trainer":
         from systems.training import set_trainer_profile
 
@@ -369,6 +378,7 @@ class CmdBuild(Command):
       edit new npc <name>     create an NPC template and spawn a copy here
       edit item <name>        edit an existing item template
       edit npc <name>         edit an existing NPC template
+      edit exit <direction>   edit an exit in your current room
       edit <object>           edit a live room, item, or NPC by name/#dbref
 
     Items are authored as |ytemplates|n (prototypes), then stamped into the world
@@ -435,6 +445,10 @@ class CmdBuild(Command):
             self._edit_npc_prototype(arg[len("npc") :].strip())
             return
 
+        if lowered == "exit" or lowered.startswith("exit "):
+            self._edit_exit(arg[len("exit") :].strip())
+            return
+
         if lowered == "here":
             target = caller.location
             if target is None:
@@ -455,6 +469,32 @@ class CmdBuild(Command):
 
         _enter_build_mode(caller, target)
         caller.msg(_header(target) + "\n" + _render_show(target))
+
+    def _edit_exit(self, name: str) -> None:
+        """Bind one local exit without changing ``edit <direction>`` behavior."""
+        caller = self.caller
+        if not name:
+            caller.msg("Usage: edit exit <direction>")
+            return
+        location = caller.location
+        if location is None:
+            caller.msg("You are not in a room with exits to edit.")
+            return
+        normalized = name.casefold()
+        matches = [
+            exit_obj
+            for exit_obj in location.exits
+            if exit_obj.key.casefold() == normalized
+            or normalized in {alias.casefold() for alias in exit_obj.aliases.all()}
+        ]
+        if not matches:
+            caller.msg(f"No '{name}' exit here.")
+            return
+        if len(matches) > 1:
+            caller.msg(f"More than one local exit matches '{name}'.")
+            return
+        _enter_build_mode(caller, matches[0])
+        caller.msg(_header(matches[0]) + "\n" + _render_show(matches[0]))
 
     def _create_new(self, rest: str) -> None:
         """Dispatch ``edit new <room|item|npc> [<name>]`` to its creator.
@@ -691,6 +731,7 @@ class CmdBuild(Command):
                 "  |wedit item <name>|n     edit an existing item template\n"
                 "  |wedit new npc <name>|n  create a template and spawn an NPC here\n"
                 "  |wedit npc <name>|n      edit an existing NPC template\n"
+                "  |wedit exit <direction>|n edit one local exit/door\n"
                 "  |wedit <object>|n        edit a live room, item, or NPC by name/#dbref\n"
                 "Type |whelp build|n for the full verb list."
             )
@@ -1271,7 +1312,11 @@ class CmdBuildSet(_BuildCommand):
             caller.msg(f"Invalid value for '{name}': {err}")
             return
 
-        _apply_field(self.target, name, field, value)
+        try:
+            _apply_field(self.target, name, field, value)
+        except ValueError as err:
+            caller.msg(f"Invalid value for '{name}': {err}")
+            return
         caller.msg(f"Set |y{name}|n to: {value}")
         if field.kind == "type":
             # Changing the type reshapes the editable fields — show the new set.
@@ -1540,9 +1585,13 @@ class CmdBuildExport(_BuildCommand):
 
         try:
             path, rooms, exits = export_area(area)
+        except ValueError:
+            logger.log_trace()
+            caller.msg("Export failed validation; see the server log for details.")
+            return
         except OSError:
             logger.log_trace()
-            caller.msg("Export failed (could not write the file); see server log.")
+            caller.msg("Could not write the area file; see the server log for details.")
             return
 
         caller.msg(

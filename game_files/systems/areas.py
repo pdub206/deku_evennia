@@ -28,6 +28,7 @@ from evennia import create_object
 from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
+from systems.doors import apply_door_area_data, door_area_data, validate_area_exit_doors
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
@@ -171,6 +172,9 @@ def build_area_data(area_slug: str) -> tuple[dict, list]:
             aliases = ex.aliases.all()
             if aliases:
                 attrs["aliases"] = sorted(aliases)
+            door = door_area_data(ex)
+            if door is not None:
+                attrs["door_state"] = door
             exits.append((from_key, ex.key, key_by_id[dest.id], attrs))
 
     return rooms, sorted(exits)
@@ -238,6 +242,7 @@ def load_area_data(
     duplicated, and an exit that already exists is left untouched — so loading
     the same area twice is safe.
     """
+    validate_area_exit_doors(exits)
     key_to_room: dict[str, object] = {}
     for room_key, prototype in rooms.items():
         room = _find_room(area_slug, room_key)
@@ -247,29 +252,45 @@ def load_area_data(
         room.tags.add(room_key, category=ROOM_KEY_CATEGORY)
         key_to_room[room_key] = room
 
+    created_or_found_exits = []
     for from_key, direction, to_key, attrs in exits:
         src = key_to_room.get(from_key)
         dst = key_to_room.get(to_key)
         if src is None or dst is None:
             continue
-        if any(ex.key == direction and ex.destination == dst for ex in src.exits):
-            continue
-        create_object(
-            settings.BASE_EXIT_TYPECLASS,
-            key=direction,
-            aliases=attrs.get("aliases"),
-            location=src,
-            destination=dst,
+        existing = next(
+            (ex for ex in src.exits if ex.key == direction and ex.destination == dst),
+            None,
         )
+        if existing is None:
+            existing = create_object(
+                settings.BASE_EXIT_TYPECLASS,
+                key=direction,
+                aliases=attrs.get("aliases"),
+                location=src,
+                destination=dst,
+            )
+            created = True
+        else:
+            created = False
+        created_or_found_exits.append((existing, attrs, created))
+
+    # Configure doors only after the complete exit graph exists, so the second
+    # side of a synchronized pair can resolve the first in the same load.
+    for exit_obj, attrs, created in created_or_found_exits:
+        if created:
+            apply_door_area_data(exit_obj, attrs.get("door_state"))
 
     if mobiles:
         # MOB-05 validates all source references before any one placement can
         # create an NPC, then uses a stable load token to keep repeated loads
         # from duplicating successful copies. AREA-03 later supplies reset
         # tokens for recurring reconciliation.
-        from systems.mob_spawning import (MobileSpawnError,
-                                          reconcile_mobile_placement,
-                                          validate_mobile_placements)
+        from systems.mob_spawning import (
+            MobileSpawnError,
+            reconcile_mobile_placement,
+            validate_mobile_placements,
+        )
 
         try:
             placements = validate_mobile_placements(area_slug, mobiles, key_to_room)

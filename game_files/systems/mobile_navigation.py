@@ -15,6 +15,7 @@ from typing import Any
 
 from evennia.utils import logger
 from systems.action_policy import ActionCategory
+from systems.doors import traversal_decision
 from systems.encumbrance import character_load
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -129,12 +130,10 @@ def exit_eligibility(
         or getattr(destination, "id", None) is None
     ):
         return NavigationOutcome("no-route", "invalid_destination")
-    for name in ("closed", "hidden"):
-        value = exit_obj.attributes.get(name)
-        if value is not None and not isinstance(value, bool):
-            return NavigationOutcome("no-route", "malformed_exit")
-        if value:
-            return NavigationOutcome("blocked", "exit_blocked")
+    door = traversal_decision(exit_obj)
+    if not door.allowed:
+        reason = "malformed_exit" if door.reason == "invalid_door" else "exit_blocked"
+        return NavigationOutcome("blocked", reason)
     if not exit_obj.access(actor, "traverse", default=False):
         return NavigationOutcome("blocked", "exit_blocked")
     constrained = _resolve_area_constraint(actor, stay_in_area)
@@ -371,9 +370,12 @@ def _execute_wander(npc: Any, event: Any, data: Mapping[str, Any]) -> None:
 
 def register_mobile_behaviors() -> None:
     """Register code-owned MOB-04 behavior keys exactly once per reload."""
-    from systems.mobiles import (MobileActionDefinition,
-                                 MobileBehaviorDefinition, register_action,
-                                 register_behavior)
+    from systems.mobiles import (
+        MobileActionDefinition,
+        MobileBehaviorDefinition,
+        register_action,
+        register_behavior,
+    )
 
     try:
         register_action(MobileActionDefinition(WANDER_ACTION_KEY, _execute_wander))
@@ -450,8 +452,11 @@ def _shortest_first_exit(
 
 
 def _pursuit_target_allowed(actor: Any, target: Any) -> bool:
-    from systems.mobile_policy import (can_detect_remotely, is_protected,
-                                       may_enter_combat)
+    from systems.mobile_policy import (
+        can_detect_remotely,
+        is_protected,
+        may_enter_combat,
+    )
 
     if target is None or target.location is None or is_protected(target):
         return False

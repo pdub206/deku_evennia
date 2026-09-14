@@ -34,7 +34,14 @@ class Exit(ObjectParent, DefaultExit):
     exit_command = ExitCommand
 
     def at_traverse(self, traversing_object, target_location, **kwargs) -> None:
-        """Reject direct exit traversal once, before Evennia handles movement."""
+        """Reject unavailable doors before Evennia handles ordinary movement."""
+        from systems.doors import traversal_decision
+
+        door = traversal_decision(self)
+        if not door.allowed:
+            if not kwargs.get("mobile_navigation"):
+                traversing_object.msg(door.message)
+            return False
         if kwargs.get("combat_flee"):
             from systems.combat_movement import combat_flee_active
 
