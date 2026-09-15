@@ -154,6 +154,9 @@ class GamePulseScript(Script):
         """Restore COMBAT-02's resolver after a hot code reload."""
         super().at_server_start()
         set_combat_action_hook(resolve_game_combat_action)
+        from systems.item_resources import register_resource_clock_consumer
+
+        register_resource_clock_consumer()
 
     def at_repeat(self, **kwargs: Any) -> None:
         """Persist the next tokens, then isolate and dispatch every due lane."""
@@ -182,6 +185,7 @@ class GamePulseScript(Script):
             PulseLane.WEATHER: self.at_weather_pulse,
             PulseLane.RESETS: self.at_resets_pulse,
             PulseLane.ACTIONS: self.at_actions_pulse,
+            PulseLane.OBJECTS: self.at_objects_pulse,
         }
         handlers[event.lane](event)
 
@@ -216,8 +220,10 @@ class GamePulseScript(Script):
 
     def at_world_time_pulse(self, event: PulseEvent) -> None:
         """Advance the persisted clock supplied by ENV-01."""
+        from systems.item_resources import register_resource_clock_consumer
         from systems.world_clock import advance_world_clock
 
+        register_resource_clock_consumer()
         advance_world_clock(self, event)
 
     def at_weather_pulse(self, event: PulseEvent) -> None:
@@ -231,3 +237,9 @@ class GamePulseScript(Script):
         from systems.action_queue import process_action_pulse
 
         process_action_pulse(event)
+
+    def at_objects_pulse(self, event: PulseEvent) -> None:
+        """Consume finite lamp fuel through ITEM-05B's isolated objects lane."""
+        from systems.item_resources import process_object_pulse
+
+        process_object_pulse(event)

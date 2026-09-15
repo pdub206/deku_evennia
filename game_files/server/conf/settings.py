@@ -65,6 +65,7 @@ GAME_PULSE_CADENCES = {
     "weather": 300,
     "resets": 60,
     "actions": 1,
+    "objects": 60,
 }
 # ENV-01 starts at noon, year 1. Scale changes require a new version and
 # systems.world_clock.reconcile_clock() from the staff shell.

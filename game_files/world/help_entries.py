@@ -26,6 +26,57 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "lights",
+        "aliases": ["light", "extinguish", "lamps", "fuel"],
+        "category": "General",
+        "text": """Use light <item> to light a lamp carried directly by you,
+        including equipped lamps. It needs fuel and illuminates your room
+        brightly. It spends one fuel unit per objects pulse (one real minute
+        by default). Use extinguish <item> to stop fuel use. Empty lamps go
+        out automatically. Dropping, giving, or putting a lamp away extinguishes
+        it. A lamp inside a container cannot illuminate the room. You can light
+        a carried lamp in darkness. Sleep and other action restrictions apply.
+        Fuel use pauses while the server is stopped.""",
+    },
+    {
+        "key": "refill",
+        "aliases": ["replenishment", "charges", "recharge"],
+        "category": "General",
+        "text": """Use refill <target> from <source> with two directly carried,
+        accessible vessels. Compatible mundane liquid or fuel transfers in
+        whole units, up to what the target can hold. This spends the source's
+        units; empty sources, full targets, incompatible resources, and items
+        without a refill policy cannot transfer. Wands and staves cannot be
+        refilled by players. Some devices regain an authored number of charges
+        at dawn (06:00), once per world day, up to their maximum. Missed days
+        never accumulate. Buying a device does not recharge it. Drink/pour and
+        magical activation are documented by their own item features.""",
+    },
+    {
+        "key": "building item resources",
+        "aliases": ["building lights", "building charges", "resource profiles"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """In the item editor set resource to a JSON profile, for example:
+        {"version":1,"kind":"fuel","resource_key":"lamp_oil","current":5,
+         "maximum":10,"recharge":"refill","recharge_amount":0}
+        Light uses fuel; wand/staff use charges; drinkcon/fountain use liquid;
+        other may hold mundane fuel/liquid. resource_key must be a lowercase
+        identifier and match exactly for refill. Units range from 0 to 10000,
+        with current no greater than maximum. Policies are none, refill for
+        mundane resources, or dawn for charges. recharge_amount is 0 except
+        dawn, where it is 1 through maximum. Lights have fixed Bright room light.
+        Profiles/prototypes contain only authored data. Runtime item_resource_state
+        stores units, lit ownership, pulse/day tokens, and permanent operation
+        receipts. Editing an existing profile preserves spent units; reducing
+        maximum clamps current and increasing it adds no units. Initial current
+        seeds new copies only. Changing compatibility requires clearing the
+        resource first. Malformed profiles/state are isolated, supply no light,
+        and do not refill/recharge; inspect and repair in the staff shell without
+        removing replay receipts. Type changes clear both profile and state.
+        There is no player charge refill and no shop recharge.""",
+    },
+    {
         "key": "time",
         "aliases": ["calendar", "daylight", "world clock"],
         "category": "General",

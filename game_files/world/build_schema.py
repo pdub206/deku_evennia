@@ -86,6 +86,19 @@ def as_extra_descriptions(raw: str) -> list[dict[str, Any]]:
     return validate_extra_descriptions(value)
 
 
+def as_item_resource(raw: str) -> dict[str, Any]:
+    """Parse a bounded primitive finite-resource profile for items/prototypes."""
+    from systems.item_resources import validate_resource_profile
+
+    if len(raw) > 2000:
+        raise ValueError("resource profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON item resource profile.") from err
+    return validate_resource_profile(value)
+
+
 def as_slug(raw: str) -> str:
     """A lowercase identifier safe for dict keys, tags, and module filenames.
 
@@ -541,6 +554,15 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         )
     },
 }
+
+for _resource_type in ("light", "wand", "staff", "drinkcon", "fountain", "other"):
+    TYPE_FIELDS.setdefault(_resource_type, {})["resource"] = Field(
+        "attr",
+        as_item_resource,
+        "JSON finite-resource profile: kind, resource_key, current, maximum, recharge, recharge_amount, version",
+        target="item_resource",
+    )
+
 
 ITEM_FIELDS: dict[str, Field] = {
     "name": Field("key", as_text, "the item's name"),

@@ -347,6 +347,8 @@ def _set_item_type(item, value: str) -> None:
         return
     for attr in _type_attr_names(item.db.type):
         item.attributes.remove(attr)
+    if item.attributes.has("item_resource_state"):
+        item.attributes.remove("item_resource_state")
     item.db.type = new_type
 
 
@@ -394,6 +396,12 @@ def _apply_field(target, name: str, field, value) -> None:
                 target.pop("door_state", None)
             else:
                 target["door_state"] = record
+        elif field.target == "item_resource":
+            from systems.item_resources import validate_resource_profile
+
+            target[field.target] = validate_resource_profile(
+                value, target.get("type") or "item"
+            )
         else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -403,7 +411,12 @@ def _apply_field(target, name: str, field, value) -> None:
     elif field.kind == "type":
         _set_item_type(target, value)
     elif field.kind == "attr":
-        target.attributes.add(field.target or name, value)
+        if field.target == "item_resource":
+            from systems.item_resources import set_resource_profile
+
+            set_resource_profile(target, value)
+        else:
+            target.attributes.add(field.target or name, value)
     elif field.kind == "door":
         from systems.doors import configure_door_field
 

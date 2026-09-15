@@ -53,8 +53,10 @@ def daylight_level(room: Any) -> LightLevel | None:
 
 
 def active_light_level(observer: Any, room: Any) -> LightLevel | None:
-    """ITEM-05B adapter; no active-light contribution exists before that package."""
-    return None
+    """Combine ITEM-05B lamps within their carrier's room."""
+    from systems.item_resources import active_light_level as item_light_level
+
+    return item_light_level(observer, room)
 
 
 def weather_perception_modifier(room: Any) -> int:

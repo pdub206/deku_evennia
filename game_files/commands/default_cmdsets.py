@@ -72,6 +72,7 @@ from commands.generic import (
     CmdWear,
 )
 from commands.injury import CmdInjury, CmdStabilize
+from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.presentation import (
@@ -106,6 +107,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         """
         super().at_cmdset_creation()
         # General commands - overrides Evennia's defaults.
+        self.add(CmdLight)
+        self.add(CmdExtinguish)
+        self.add(CmdRefill)
         self.add(CmdTime)
         self.add(CmdRecall)
         self.add(CmdLook)

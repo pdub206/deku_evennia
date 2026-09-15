@@ -29,6 +29,7 @@ class PulseLane(str, Enum):
     WEATHER = "weather"
     RESETS = "resets"
     ACTIONS = "actions"
+    OBJECTS = "objects"
 
 
 PULSE_LANES = tuple(PulseLane)
@@ -47,6 +48,7 @@ DEFAULT_PULSE_CADENCES = MappingProxyType(
         PulseLane.WEATHER: 300,
         PulseLane.RESETS: 60,
         PulseLane.ACTIONS: 1,
+        PulseLane.OBJECTS: 60,
     }
 )
 
@@ -184,6 +186,10 @@ def _validated_state(
     if not isinstance(stored_sequences, Mapping):
         raise PulseError("Game pulse lane sequences must be a mapping.")
     expected_names = {lane.value for lane in PULSE_LANES}
+    # ITEM-05B adds an objects lane to existing version-1 live state. Its first
+    # sequence starts at zero; the original heartbeat and tokens stay intact.
+    if set(stored_sequences) == expected_names - {PulseLane.OBJECTS.value}:
+        stored_sequences = {**stored_sequences, PulseLane.OBJECTS.value: 0}
     if set(stored_sequences) != expected_names:
         raise PulseError("Game pulse state does not contain the expected lanes.")
 

@@ -694,7 +694,7 @@ class TestItemType(EvenniaCommandTest):
                 self.assertEqual(self.proto["type"], item_type)
 
     def test_classification_only_type_has_shared_fields(self):
-        self.call(CmdBuildSet(), "type wand")
+        self.call(CmdBuildSet(), "type furniture")
         fields = set(schema_for_prototype(self.proto))
         self.assertEqual(
             fields,

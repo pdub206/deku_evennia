@@ -296,6 +296,9 @@ class Item(Object):
         super().at_post_move(source_location, move_type=move_type, **kwargs)
         if source_location is not self.location:
             clear_equipped_state(self)
+            from systems.item_resources import extinguish_moved_light
+
+            extinguish_moved_light(self, source_location)
 
 
 class Corpse(Object):
