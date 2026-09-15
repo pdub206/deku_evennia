@@ -2020,6 +2020,32 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "shop building",
+        "aliases": ["shop profiles", "shop stock", "shop scheduling"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            NPC shops are assigned through the |wspecials|n field with one
+            |wshopkeeper|n behavior. Its version-1 configuration names a stable
+            profile key, a |wshop:...|n access lock, accepted item kinds, integer
+            buy/sell percentages from 0 through 1000, distinct open/close hours
+            from 0 through 23, an opening wallet balance, and ordered stock
+            entries containing an item prototype key and target quantity.
+
+            Authored stock is made from real carried item copies. Each copy keeps
+            durable profile and stock-entry provenance. Player-sold items are real
+            inventory but have no authored provenance and are never replenished.
+            On the first eligible world-time event each day, every authored entry
+            is topped up to its target through normal carrying-capacity checks.
+            Repeated events and reloads cannot duplicate stock; missed days do not
+            catch up. AREA resets use this same idempotent adapter.
+
+            While editing a live shop NPC, |wshow|n displays its safe definition
+            separately from actual and authored live quantities. Private lock text
+            is never included in that view.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

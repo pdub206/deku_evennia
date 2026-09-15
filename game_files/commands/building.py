@@ -262,6 +262,29 @@ def _render_show(target) -> str:
             lines.append(f"  |yexits|n    {joined}")
         else:
             lines.append("  |yexits|n    |x(none)|n")
+    if _is_prototype(target) and target.get("typeclass") == _NPC_TYPECLASS:
+        try:
+            from systems.mobile_specials import validate_mobile_specials
+
+            shop = next(
+                (
+                    entry["config"]
+                    for entry in validate_mobile_specials(
+                        target.get("mobile_specials", {"version": 1, "behaviors": []})
+                    )["behaviors"]
+                    if entry["key"] == "shopkeeper"
+                ),
+                None,
+            )
+            if shop is not None:
+                safe = {
+                    key: value for key, value in shop.items() if key != "access_lock"
+                }
+                safe["access"] = "configured"
+                lines.append(f"  |yshop definition|n {_crop(safe)}")
+                lines.append("  |yshop live stock|n |x(template; no live inventory)|n")
+        except Exception:
+            lines.append("  |yshop|n     |x(malformed or unavailable)|n")
     if (
         not _is_prototype(target)
         and getattr(getattr(target, "db", None), "is_player_character", None) is False
@@ -270,6 +293,24 @@ def _render_show(target) -> str:
             lines.append(f"  |ymobile|n   {mobile_compact_summary(target)}")
         except MobileDiagnosticError:
             lines.append("  |ymobile|n   |x(diagnostics unavailable)|n")
+        try:
+            from systems.mobile_specials import mobile_specials
+            from systems.shops import shop_snapshot
+
+            shop = next(
+                (
+                    entry["config"]
+                    for entry in mobile_specials(target)["behaviors"]
+                    if entry["key"] == "shopkeeper"
+                ),
+                None,
+            )
+            if shop is not None:
+                snapshot = shop_snapshot(target, shop)
+                lines.append(f"  |yshop definition|n {_crop(snapshot['definition'])}")
+                lines.append(f"  |yshop live stock|n {_crop(snapshot['live_stock'])}")
+        except Exception:
+            lines.append("  |yshop|n     |x(malformed or unavailable)|n")
     return "\n".join(lines) if lines else "  |x(nothing editable yet)|n"
 
 
