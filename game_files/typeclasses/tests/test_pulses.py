@@ -6,11 +6,22 @@ from django.test import override_settings
 from evennia import create_object
 from evennia.utils.containers import GlobalScriptContainer
 from evennia.utils.test_resources import EvenniaTest
-from systems.effects import (EFFECT_REGISTRY, EFFECTS_ATTRIBUTE,
-                             EffectDefinition, EffectMessage)
-from systems.pulses import (PULSE_LANES, PulseError, PulseEvent, PulseLane,
-                            advance_pulse_state, configured_cadences,
-                            initial_pulse_state, process_effect_pulse)
+from systems.effects import (
+    EFFECT_REGISTRY,
+    EFFECTS_ATTRIBUTE,
+    EffectDefinition,
+    EffectMessage,
+)
+from systems.pulses import (
+    PULSE_LANES,
+    PulseError,
+    PulseEvent,
+    PulseLane,
+    advance_pulse_state,
+    configured_cadences,
+    initial_pulse_state,
+    process_effect_pulse,
+)
 from typeclasses.scripts import GamePulseScript
 
 
@@ -66,6 +77,7 @@ class TestPulseState(EvenniaTest):
         with (
             patch.object(self.script, "at_combat_pulse") as combat,
             patch.object(self.script, "at_effects_pulse") as effects,
+            patch.object(self.script, "at_world_time_pulse"),
         ):
             for _ in range(6):
                 self.script.at_repeat()
@@ -96,6 +108,7 @@ class TestPulseState(EvenniaTest):
                 side_effect=RuntimeError("combat failed"),
             ),
             patch.object(self.script, "at_effects_pulse") as effects,
+            patch.object(self.script, "at_world_time_pulse"),
             patch("typeclasses.scripts.logger.log_trace") as log_trace,
         ):
             self.script.at_repeat()

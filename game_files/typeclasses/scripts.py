@@ -216,6 +216,9 @@ class GamePulseScript(Script):
 
     def at_world_time_pulse(self, event: PulseEvent) -> None:
         """Advance the persisted clock supplied by ENV-01."""
+        from systems.world_clock import advance_world_clock
+
+        advance_world_clock(self, event)
 
     def at_weather_pulse(self, event: PulseEvent) -> None:
         """Run weather transitions supplied by ENV-02."""

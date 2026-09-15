@@ -37,8 +37,19 @@ class VisibilityDecision:
 
 
 def daylight_level(room: Any) -> LightLevel | None:
-    """ENV-01 adapter; no daylight contribution exists before that package."""
-    return None
+    """Supply calendar daylight outdoors; indoor rooms ignore the sun."""
+    from systems.world_clock import clock_owner, clock_state, is_daylight
+
+    if room_environment(room).indoors:
+        return None
+    owner = clock_owner()
+    if owner is None:
+        return None
+    return (
+        LightLevel.BRIGHT
+        if is_daylight(clock_state(owner)["minute"])
+        else LightLevel.DARK
+    )
 
 
 def active_light_level(observer: Any, room: Any) -> LightLevel | None:

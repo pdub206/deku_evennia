@@ -335,10 +335,10 @@ def _bounded_int(value: Any, label: str, minimum: int, maximum: int) -> int:
 
 
 def current_shop_hour() -> int:
-    """ENV-01 seam: fixed noon until a persisted world clock is implemented."""
-    from django.conf import settings
+    """Read shop hours from the canonical persisted world calendar."""
+    from systems.world_clock import clock_state
 
-    return _bounded_int(getattr(settings, "GAME_SHOP_HOUR", 12), "world hour", 0, 23)
+    return clock_state()["minute"] // 60 % 24
 
 
 def shop_profile(npc: Any) -> dict[str, Any]:

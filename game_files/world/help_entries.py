@@ -26,6 +26,35 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "time",
+        "aliases": ["calendar", "daylight", "world clock"],
+        "category": "General",
+        "text": """Use time to see the world date and time, even while sleeping.
+        Each year has twelve 30-day months. Sunrise is at 06:00 and sunset at
+        18:00. Outdoors, daylight improves visibility; indoors you need the
+        room's lighting or an active light. By default one world hour takes
+        ten real minutes. Time pauses while the server is stopped.
+        Shop opening hours follow this shared clock.""",
+    },
+    {
+        "key": "world clock administration",
+        "aliases": ["clock repair", "clock scale"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """The global game_pulse Script stores the versioned world_clock
+        Attribute: minute, epoch, scale, scale_version, step, and last_token.
+        Malformed state stops clock work rather than resetting time. Inspect and
+        repair it through the staff Evennia shell, preserving minute and token.
+        To change scale/cadence, set GAME_CLOCK_REAL_SECONDS_PER_HOUR and increase
+        GAME_CLOCK_SCALE_VERSION, reload, then call
+        systems.world_clock.reconcile_clock(). Steps must be whole minutes.
+        GAME_CLOCK_EPOCH_MINUTE seeds new clocks; reconciliation keeps current
+        time. Boundary consumers register code callbacks for hour/day/dawn/dusk
+        with stable minute/day:event identities. Delivery is at most once:
+        a crash can skip a consumer, and missed days are never caught up.
+        ITEM-05B and AREA-03 register their recharge/reset consumers here.""",
+    },
+    {
         "key": "doors",
         "aliases": ["door", "keys", "locks", "picking"],
         "category": "General",

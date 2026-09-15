@@ -66,6 +66,12 @@ GAME_PULSE_CADENCES = {
     "resets": 60,
     "actions": 1,
 }
+# ENV-01 starts at noon, year 1. Scale changes require a new version and
+# systems.world_clock.reconcile_clock() from the staff shell.
+GAME_CLOCK_EPOCH_MINUTE = 720
+GAME_CLOCK_REAL_SECONDS_PER_HOUR = 600
+GAME_CLOCK_SCALE_VERSION = 1
+
 # INTERACT-06's independently configurable delayed-interaction heartbeat.
 GAME_ACTION_AUDIT_LIMIT = 20
 # MAGIC-03 uses the one-minute recovery lane as its real-time clock. These

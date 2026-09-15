@@ -86,6 +86,7 @@ from commands.sheet import CmdSheet
 from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
 from commands.training import CmdPractice, CmdTrain
+from commands.world_time import CmdTime
 from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
@@ -105,6 +106,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         """
         super().at_cmdset_creation()
         # General commands - overrides Evennia's defaults.
+        self.add(CmdTime)
         self.add(CmdRecall)
         self.add(CmdLook)
         self.add(CmdExits)
