@@ -424,7 +424,10 @@ def _read_record(owner: Any, *, required: bool) -> dict[str, Any] | None:
     raw = owner.attributes.get(ACTION_ATTRIBUTE)
     if raw is None and not required:
         return None
-    return _validate_record(raw)
+    record = _validate_record(raw)
+    if record["owner_id"] != getattr(owner, "id", None):
+        raise ActionQueueError("Action record owner does not match its storage owner.")
+    return record
 
 
 def _validate_record(raw: Any) -> dict[str, Any]:
@@ -533,7 +536,9 @@ def _bounded_reason(reason: str) -> str:
 def _write_action_sequence(sequence: int) -> None:
     from evennia.server.models import ServerConfig
 
-    ServerConfig.objects.conf(ACTION_CLOCK_CONFIG_KEY, value=sequence)
+    current = current_action_sequence()
+    if sequence > current:
+        ServerConfig.objects.conf(ACTION_CLOCK_CONFIG_KEY, value=sequence)
 
 
 def _quarantine(owner: Any, record: dict[str, Any], reason: str) -> None:

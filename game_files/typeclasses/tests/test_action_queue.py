@@ -11,6 +11,7 @@ from systems.action_queue import (
     ActionStatus,
     action_audit,
     cancel_action,
+    current_action_sequence,
     inspect_action,
     process_action_pulse,
     register_action_definition,
@@ -157,6 +158,41 @@ class TestActionQueue(EvenniaTest):
         schedule_action(self.char1, definition.key, {}, delay=1)
         self.assertEqual(cancel_action(self.char1).status, ActionStatus.CANCELLED)
         self.assertEqual(cancel_action(self.char1).reason, "no_action")
+
+    def test_record_owner_mismatch_is_quarantined_without_execution(self):
+        definition = self.definition("wrong_owner")
+        schedule_action(self.char1, definition.key, {}, delay=1)
+        record = inspect_action(self.char1)
+        record["owner_id"] = self.char2.id
+        self.char1.attributes.add(ACTION_ATTRIBUTE, record)
+
+        self.pulse(1)
+
+        self.executed.assert_not_called()
+        with self.assertRaises(ActionQueueError):
+            inspect_action(self.char1)
+
+    def test_out_of_order_pulse_does_not_rewind_action_clock(self):
+        self.pulse(5)
+        self.pulse(3)
+
+        self.assertEqual(current_action_sequence(), 5)
+
+    def test_reservation_acquisition_failure_leaves_no_action(self):
+        definition = self.definition(
+            "reservation_failure",
+            acquire=Mock(side_effect=RuntimeError("unavailable")),
+            release=self.released,
+            commit=self.committed,
+        )
+
+        result = schedule_action(self.char1, definition.key, {}, delay=1)
+
+        self.assertEqual(result.status, ActionStatus.DECLINED)
+        self.assertEqual(result.reason, "reservation_failed")
+        self.assertIsNone(inspect_action(self.char1))
+        self.released.assert_not_called()
+        self.committed.assert_not_called()
 
 
 class TestActionQueueCommand(EvenniaCommandTest):
