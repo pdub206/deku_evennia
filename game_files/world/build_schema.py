@@ -512,6 +512,12 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         "capacity": Field(
             "attr", as_weight, "max weight in pounds it can hold", target="capacity"
         ),
+        "transparent": Field(
+            "attr",
+            as_choice("on", "off"),
+            "whether contents remain visible while closed",
+            target="transparent",
+        ),
         "door": Field("door", as_choice("on", "off"), "openable state: on or off"),
         "initial_state": Field(
             "door", as_choice("open", "closed", "locked"), "initial open state"

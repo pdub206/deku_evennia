@@ -271,6 +271,13 @@ def can_receive(destination: Any, arriving: Sequence[Any] | Any) -> AdmissionRes
                     _message("containment_cycle", destination),
                 )
             unique.append(item)
+        max_depth = _setting_int("MAX_CONTAINER_NESTING", DEFAULT_MAX_CONTAINER_DEPTH)
+        destination_depth = len(_container_ancestors(destination))
+        for item in unique:
+            if destination_depth + _subtree_container_depth(item) > max_depth:
+                return AdmissionResult(
+                    False, "invalid_tree", _message("invalid_tree", destination)
+                )
         # A batch that names a container and one of its children is ambiguous;
         # reject it rather than count the child twice or move it independently.
         for item in unique:
@@ -379,6 +386,20 @@ def can_receive(destination: Any, arriving: Sequence[Any] | Any) -> AdmissionRes
         return AdmissionResult(
             False, "invalid_tree", _message("invalid_tree", destination)
         )
+
+
+def _subtree_container_depth(root: Any, visited: set[int] | None = None) -> int:
+    """Return the greatest number of nested containers below one root."""
+    visited = set() if visited is None else visited
+    marker = int(root.id) if getattr(root, "id", None) is not None else id(root)
+    if marker in visited:
+        raise EncumbranceError("containment cycle detected.")
+    visited.add(marker)
+    child_depth = max(
+        (_subtree_container_depth(child, visited) for child in root.contents), default=0
+    )
+    visited.remove(marker)
+    return child_depth + (1 if is_container(root) else 0)
 
 
 def place_with_capacity(

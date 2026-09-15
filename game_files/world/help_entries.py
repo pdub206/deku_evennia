@@ -1630,7 +1630,8 @@ HELP_ENTRY_DICTS = [
               |wset type armor|n      adds |wbase_ac|n, armor |wsubtype|n,
                                   |wmitigation_flat|n, |wmitigation_percent|n,
                                   and |wmitigation_types|n
-              |wset type container|n  adds |wcapacity|n (max weight it can hold)
+              |wset type container|n  adds |wcapacity|n (max contained weight),
+                                  |wtransparent|n, and door/open/lock state fields
               |wset type none|n       back to a plain item (drops those fields)
 
             Armor mitigation protects the hit location implied by
@@ -1935,6 +1936,27 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "containers",
+        "aliases": ["put", "get from", "container"],
+        "category": "Items",
+        "text": """
+            Use |wput <item> [in] <container>|n and
+            |wget <item> [from] <container>|n. The |win|n and |wfrom|n words
+            are optional, so |wput gem satchel|n and |wget gem satchel|n work.
+            Use |wall|n instead of an item name for a batch; ordinary container
+            batches succeed completely or do not move anything. |wget all|n
+            picks up all eligible loose room items.
+
+            Containers must be open to add or remove contents. A transparent
+            closed container can be looked into, but cannot be changed. Filled
+            containers retain their contents and their total weight counts
+            against carrying and container capacity. Containers cannot be put
+            inside themselves or nested beyond the configured safe depth.
+            Corpses are special withdrawal-only containers; their bulk looting
+            may leave behind individual items you cannot carry.
+        """,
+    },
+    {
         "key": "inspection",
         "aliases": ["exits", "examine", "look in", "look direction"],
         "category": "General",
@@ -1942,8 +1964,9 @@ HELP_ENTRY_DICTS = [
             Use |wexits|n to list visible directions and whether visible doors
             are open or closed. |wlook <direction>|n describes an exit and may
             show the adjacent room when light, access, and privacy permit.
-            |wlook in <container>|n lists only its visible top-level contents;
-            closed or locked containers do not disclose what they hold.
+            |wlook in <container>|n lists only its visible top-level contents.
+            Closed opaque containers reveal nothing; transparent ones remain
+            visible but cannot have contents added or removed.
 
             |wexamine <target>|n shows a visible local target's description and
             public physical details. It never reveals inventories, exact combat

@@ -61,6 +61,7 @@ from commands.generic import (
     CmdLook,
     CmdNick,
     CmdPose,
+    CmdPut,
     CmdRecall,
     CmdRemove,
     CmdRoomRoles,
@@ -112,6 +113,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPose)
         self.add(CmdInventory)
         self.add(CmdGet)
+        self.add(CmdPut)
         self.add(CmdFastHands)
         self.add(CmdDrop)
         self.add(CmdGive)

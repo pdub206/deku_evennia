@@ -37,12 +37,30 @@ class ObjectParent:
                 arriving_object, source_location, **kwargs
             )
 
+        from systems.containers import container_is_open
+        from systems.encumbrance import is_container
+
+        if is_container(self) and not container_is_open(self):
+            return False
         result = can_receive(self, arriving_object)
         if not result.allowed:
             actor = kwargs.get("capacity_actor") or arriving_object
             actor.msg(result.message)
             return False
         return super().at_pre_object_receive(arriving_object, source_location, **kwargs)
+
+    def at_pre_object_leave(self, leaving_object, destination, **kwargs) -> bool:
+        """Prevent direct removal from a closed ordinary container."""
+        from systems.containers import container_is_open
+        from systems.encumbrance import is_container
+
+        if (
+            is_container(self)
+            and not kwargs.get("encumbrance_bypass")
+            and not container_is_open(self)
+        ):
+            return False
+        return super().at_pre_object_leave(leaving_object, destination, **kwargs)
 
 
 class Object(ObjectParent, DefaultObject):

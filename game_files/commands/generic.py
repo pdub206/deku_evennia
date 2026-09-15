@@ -22,6 +22,8 @@ from evennia.utils import utils
 from systems.action_policy import ActionCategory
 from systems.action_queue import (ActionQueueError, action_audit,
                                   cancel_action, inspect_action, repair_action)
+from systems.containers import (can_access_contents, container_is_open,
+                                container_is_transparent)
 from systems.corpses import (CorpseError, inspect_corpse, withdraw,
                              withdraw_many)
 from systems.dice import roll
@@ -133,11 +135,11 @@ class CmdLook(_BaseLook):
             self.msg("You cannot look inside that.")
             return
         try:
-            state = door_state(target)
+            door_state(target)
         except DoorError:
             self.msg("That container cannot be inspected right now.")
             return
-        if state is None or not state.open:
+        if not container_is_open(target) and not container_is_transparent(target):
             self.msg("That container is closed.")
             return
         if not target.access(caller, "view", default=True):
@@ -458,18 +460,40 @@ class CmdGet(_BaseGet):
 
     Usage:
       get <item>
+      get <item|all> [from] <container>
     """
 
     action_category = ActionCategory.MANIPULATE
 
     def func(self) -> None:
         """Preflight every selected object so a batch never partially picks up."""
-        if " from " in self.args.casefold():
-            self._get_from_corpse()
+        source = self._parse_container_source()
+        if source:
+            item_name, container = source
+            if not item_name or container is None:
+                return
+            if container.is_typeclass("typeclasses.objects.Corpse", exact=False):
+                self._get_from_corpse(item_name, container)
+            else:
+                self._get_from_container(item_name, container)
             return
         caller = self.caller
         if not self.args:
             self.msg("Get what?")
+            return
+        if self.args.strip().casefold() == "all":
+            objs = [
+                obj
+                for obj in caller.location.contents
+                if obj is not caller
+                and not obj.destination
+                and obj.access(caller, "get")
+                and not obj.is_typeclass("typeclasses.objects.Corpse", exact=False)
+            ]
+            if not objs:
+                self.msg("There is nothing here you can pick up.")
+                return
+            self._move_container_batch(objs, caller, caller.location, "pick up", "in")
             return
         objs = caller.search(self.args, location=caller.location, stacked=self.number)
         if not objs:
@@ -509,25 +533,75 @@ class CmdGet(_BaseGet):
             f"$You() $conj(pick) up {obj_name}.", from_obj=caller
         )
 
-    def _get_from_corpse(self) -> None:
+    def _parse_container_source(self) -> tuple[str, Any] | None:
+        """Resolve explicit or shorthand container grammar without guessing."""
+        args = self.args.strip()
+        lowered = args.casefold()
+        candidates = self._reachable_objects()
+        if " from " in lowered:
+            index = lowered.index(" from ")
+            item_name, source_name = args[:index].strip(), args[index + 6 :].strip()
+            if not item_name or not source_name:
+                self.msg("Usage: get <item|all> [from] <container>")
+                return ("", None)
+            source = self.caller.search(
+                source_name,
+                candidates=candidates,
+                use_locks=False,
+            )
+            return (item_name, source) if source else ("", None)
+        words = args.split()
+        matches = []
+        for index in range(1, len(words)):
+            container_name = " ".join(words[index:])
+            found = self.caller.search(
+                container_name,
+                candidates=candidates,
+                quiet=True,
+                use_locks=False,
+            )
+            if not found:
+                found = [
+                    obj
+                    for obj in candidates
+                    if obj.key.casefold().endswith(container_name.casefold())
+                ]
+            for obj in found:
+                if str(
+                    obj.attributes.get("type") or ""
+                ).casefold() == "container" or obj.is_typeclass(
+                    "typeclasses.objects.Corpse", exact=False
+                ):
+                    matches.append((" ".join(words[:index]), obj))
+        by_container = {}
+        for item, obj in matches:
+            current = by_container.get(obj.id)
+            if current is None or len(item) < len(current[0]):
+                by_container[obj.id] = (item, obj)
+        return next(iter(by_container.values())) if len(by_container) == 1 else None
+
+    def _reachable_objects(self) -> list[Any]:
+        """Return direct objects plus descendants of open reachable containers."""
+        found = list(self.caller.contents) + list(self.caller.location.contents)
+        pending = list(found)
+        seen = {obj.id for obj in found}
+        while pending:
+            parent = pending.pop()
+            if not container_is_open(parent):
+                continue
+            for child in parent.contents:
+                if child.id in seen:
+                    continue
+                seen.add(child.id)
+                found.append(child)
+                pending.append(child)
+        return found
+
+    def _get_from_corpse(self, item_name: str, corpse: Any) -> None:
         """Withdraw a selected item or every eligible item from one corpse."""
-        item_name, separator, corpse_name = self.args.partition(" from ")
-        if not separator:
-            # Preserve the user's original capitalization when a mixed-case
-            # separator reached us through an unusual client/parser path.
-            index = self.args.casefold().find(" from ")
-            item_name, corpse_name = self.args[:index], self.args[index + 6 :]
-        item_name, corpse_name = item_name.strip(), corpse_name.strip()
-        if not item_name or not corpse_name:
-            self.msg("Usage: get <item> from <corpse>")
+        if not item_name or corpse is None:
             return
         caller = self.caller
-        corpse = caller.search(corpse_name, location=caller.location)
-        if not corpse:
-            return
-        if not corpse.is_typeclass("typeclasses.objects.Corpse", exact=False):
-            self.msg("You can only withdraw items from a corpse this way.")
-            return
         if item_name.casefold() == "all":
             self._get_all_from_corpse(corpse)
             return
@@ -579,6 +653,118 @@ class CmdGet(_BaseGet):
             self.msg(f"Left behind — {reasons}")
         if not results:
             self.msg("That corpse is empty.")
+
+    def _get_from_container(self, item_name: str, container: Any) -> None:
+        """Move one or all selected contents atomically into the caller."""
+        if not item_name or container is None:
+            return
+        if not can_access_contents(container, self.caller, insert=False):
+            self.msg("That container is closed or inaccessible.")
+            return
+        objs = (
+            list(container.contents)
+            if item_name.casefold() == "all"
+            else utils.make_iter(
+                self.caller.search(item_name, location=container, stacked=self.number)
+            )
+        )
+        if not objs:
+            self.msg(
+                "That container is empty."
+                if item_name.casefold() == "all"
+                else "You do not find that inside."
+            )
+            return
+        self._move_container_batch(objs, self.caller, container, "take", "from")
+
+    def _move_container_batch(
+        self, objs: list[Any], destination: Any, other: Any, verb: str, preposition: str
+    ) -> None:
+        """Preflight and move a batch, rolling every committed move back on failure."""
+        taking = destination is self.caller
+        if taking:
+            for obj in objs:
+                if not obj.access(self.caller, "get") or not obj.at_pre_get(
+                    self.caller
+                ):
+                    return
+        result = can_receive(destination, objs)
+        if not result.allowed:
+            self.msg(result.message)
+            return
+        sources = {obj: obj.location for obj in objs}
+        moved = []
+        for obj in objs:
+            if not obj.move_to(destination, quiet=True, capacity_actor=self.caller):
+                for prior in moved:
+                    prior.move_to(
+                        sources[prior],
+                        quiet=True,
+                        encumbrance_bypass="container batch rollback",
+                    )
+                self.msg("That transfer could not be completed.")
+                return
+            moved.append(obj)
+        for obj in moved:
+            obj.at_get(self.caller) if taking else obj.at_drop(self.caller)
+        names = ", ".join(obj.get_display_name(self.caller) for obj in moved)
+        self.caller.location.msg_contents(
+            f"$You() $conj({verb}) {names} {preposition} {other.get_display_name(self.caller)}.",
+            from_obj=self.caller,
+        )
+
+
+class CmdPut(CmdGet):
+    """Put carried items into an open container.
+
+    Usage: put <item|all> [in] <container>
+    """
+
+    key = "put"
+
+    def func(self) -> None:
+        """Resolve either grammar and atomically insert the selected items."""
+        parsed = self._parse_put()
+        if not parsed:
+            self.msg("Usage: put <item|all> [in] <container>")
+            return
+        item_name, container = parsed
+        if container.is_typeclass("typeclasses.objects.Corpse", exact=False):
+            self.msg("You cannot put anything into a corpse.")
+            return
+        if not can_access_contents(container, self.caller, insert=True):
+            self.msg("That container is closed or inaccessible.")
+            return
+        ancestors = set()
+        current = container
+        while current is not None:
+            ancestors.add(current)
+            current = current.location
+        objs = (
+            [obj for obj in self.caller.contents if obj not in ancestors]
+            if item_name.casefold() == "all"
+            else utils.make_iter(
+                self.caller.search(item_name, location=self.caller, stacked=self.number)
+            )
+        )
+        if not objs:
+            self.msg("You have nothing to put there.")
+            return
+        for obj in objs:
+            if not obj.access(self.caller, "drop") or not obj.at_pre_drop(self.caller):
+                return
+        self._move_container_batch(objs, container, container, "put", "in")
+
+    def _parse_put(self) -> tuple[str, Any] | None:
+        """Resolve an inventory/room container with an optional ``in`` keyword."""
+        original = self.args
+        lowered = original.casefold()
+        if " in " in lowered:
+            index = lowered.index(" in ")
+            self.args = original[:index] + " from " + original[index + 4 :]
+        result = self._parse_container_source()
+        self.args = original
+        return result
 
 
 class CmdFastHands(CmdGet):
