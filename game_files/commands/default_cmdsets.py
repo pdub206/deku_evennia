@@ -49,9 +49,9 @@ from commands.effects import CmdEffects
 from commands.generic import (
     CmdAccess,
     CmdActionQueue,
-    CmdDrop,
     CmdCoins,
     CmdCurrency,
+    CmdDrop,
     CmdExamine,
     CmdExits,
     CmdFastHands,
@@ -83,6 +83,7 @@ from commands.presentation import (
 )
 from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
+from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
 from commands.training import CmdPractice, CmdTrain
 from evennia import default_cmds
@@ -114,6 +115,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSay)
         self.add(CmdPose)
         self.add(CmdInventory)
+        self.add(CmdList)
+        self.add(CmdValue)
+        self.add(CmdBuy)
+        self.add(CmdSell)
         self.add(CmdCoins)
         self.add(CmdCurrency)
         self.add(CmdGet)

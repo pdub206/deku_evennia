@@ -160,6 +160,7 @@ def _enter_build_mode(caller, target) -> None:
     ``commands.command._PromptPersistMixin`` (it reads ``ndb._prompt``), so it
     stays visible no matter what the builder types — we only arm it here.
     """
+    caller.cmdset.remove("commands.shop_building.ShopBuildModeCmdSet")
     caller.ndb._build_target = target
     caller.ndb._build_del_pending = None
     caller.ndb._prompt = _BUILD_PROMPT
@@ -168,6 +169,7 @@ def _enter_build_mode(caller, target) -> None:
 
 def _exit_build_mode(caller) -> None:
     """Remove the build cmdset, clear the context, and drop the edit prompt."""
+    caller.cmdset.remove("commands.shop_building.ShopBuildModeCmdSet")
     caller.cmdset.remove(BuildModeCmdSet)
     caller.ndb._build_target = None
     caller.ndb._build_del_pending = None
@@ -451,6 +453,8 @@ class CmdBuild(Command):
       edit new npc <name>     create an NPC template and spawn a copy here
       edit item <name>        edit an existing item template
       edit npc <name>         edit an existing NPC template
+      edit new shop <npc>     attach a shop to a live NPC by name/#dbref
+      edit shop <npc>         edit that NPC’s shop by name/#dbref
       edit exit <direction>   edit an exit in your current room
       edit <object>           edit a live room, item, or NPC by name/#dbref
 
@@ -501,6 +505,17 @@ class CmdBuild(Command):
 
         if not arg or lowered == "help":
             self._status()
+            return
+
+        if lowered == "shop" or lowered.startswith("shop "):
+            from commands.shop_building import edit_shop
+
+            edit_shop(caller, arg[4:].strip())
+            return
+        if lowered == "new shop" or lowered.startswith("new shop "):
+            from commands.shop_building import edit_shop
+
+            edit_shop(caller, arg[8:].strip(), create=True)
             return
 
         if lowered == "new" or lowered.startswith("new "):

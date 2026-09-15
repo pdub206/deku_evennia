@@ -2025,7 +2025,20 @@ HELP_ENTRY_DICTS = [
         "category": "Builder",
         "locks": "read:perm(Builder)",
         "text": """
-            NPC shops are assigned through the |wspecials|n field with one
+            Attach a shop to a live NPC with |wedit new shop <npc>|n.
+            Edit it later with |wedit shop <npc>|n. Names, keywords, and #dbrefs
+            use the same object search as the other build commands.
+            Use |wfields|n, |wshow|n,
+            |wset <field> <value>|n, and |wdone|n just as in the other editors.
+            Shops attach to that exact NPC, not its template. |wdel|n twice
+            detaches the shop while preserving the NPC, inventory, and coins.
+            Lists and stock use JSON; for example:
+              set accepted_kinds ["weapon", "armor"]
+              set stock [{"prototype_key": "iron_blade", "target_quantity": 2}]
+            Numeric fields take whole numbers. Editing wallet_opening_balance
+            never refills an existing wallet; use audited currency staff tools.
+
+            NPC shops may also be assigned through the |wspecials|n field with one
             |wshopkeeper|n behavior. Its version-1 configuration names a stable
             profile key, a |wshop:...|n access lock, accepted item kinds, integer
             buy/sell percentages from 0 through 1000, distinct open/close hours
@@ -2042,7 +2055,105 @@ HELP_ENTRY_DICTS = [
 
             While editing a live shop NPC, |wshow|n displays its safe definition
             separately from actual and authored live quantities. Private lock text
-            is never included in that view.
+            is never included in that view. A purchased authored item loses
+            shop provenance, so selling it back cannot count as authored stock.
+
+            Until ENV-01 supplies a world clock, requests use GAME_SHOP_HOUR
+            (default noon); schedule/reset adapters are invoked by their future
+            milestones. Creating a shop does not immediately spawn stock.
+            Place actual item copies on the NPC for immediate trading.
+        """,
+    },
+    {
+        "key": "shop transactions",
+        "aliases": ["shop diagnostics", "trade diagnostics"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wedit shop <npc>|n then |wtransactions|n to see the last
+            twenty attempts, including transaction identity, actor/item dbrefs,
+            operation, price, success, and a safe failure reason. The currency
+            audit ledger records both sides of committed payments.
+
+            Each service attempt has a stable identity. Permanent actor receipts
+            prevent financial replay across reloads or currency-ledger pruning.
+            Reusing an identity for a different item/shop/operation is rejected.
+            Failed attempts also retain their outcome; a fresh attempt gets a new
+            identity. Messages are attempted once after commit; disconnected
+            clients or failed delivery never cause the trade to execute again.
+        """,
+    },
+    {
+        "key": "shops",
+        "aliases": ["shopping", "trade"],
+        "category": "Shops",
+        "text": """
+            Shopkeepers trade actual carried items using finite coin wallets.
+            Use list, value, buy, and sell in their room. With one visible open
+            shop, omit the shopkeeper. When several qualify, use the NPC's name
+            or keywords: list merchant, value blade at merchant,
+            buy blade from merchant, sell blade to merchant.
+
+            Buy prices round up; sale prices round down. Both are at least one
+            coin for a positive-value accepted item. A quote does not reserve a
+            price, item, or coins. Closed, dead, fighting, inaccessible, or unseen
+            shopkeepers cannot trade. You and the shop must have room to carry
+            the item and enough wallet space to receive payment.
+
+            Shops refuse money piles, corpses, filled containers, equipped items,
+            zero-value items, no-drop or account-bound items, and unaccepted item
+            kinds. They do not offer credit, haggling, identification, repairs,
+            bulk trades, remote trades, or guaranteed buyback.
+        """,
+    },
+    {
+        "key": "list",
+        "aliases": ["shop list"],
+        "category": "Shops",
+        "text": """
+            Usage: list [shopkeeper]
+            Shows visible actual stock, quantity, and final buy price in coins.
+            Omit the shopkeeper when only one visible open shop qualifies.
+            With several shops, use a name or keyword: list merchant.
+            See help shops for trading rules.
+        """,
+    },
+    {
+        "key": "value",
+        "aliases": ["shop value", "appraise"],
+        "category": "Shops",
+        "text": """
+            Usage: value <item> [at shopkeeper]
+            Quotes what a shop would pay for one eligible carried item, rounding
+            down with a minimum of one coin. This does not reserve a sale or
+            guarantee funds. Omit at shopkeeper with one visible open shop;
+            otherwise use its name or keywords. See help shops.
+        """,
+    },
+    {
+        "key": "buy",
+        "aliases": ["shop buy", "purchase"],
+        "category": "Shops",
+        "text": """
+            Usage: buy <item> [from shopkeeper]
+            Buys one actual visible stock item at the current price, rounded up.
+            Coins and the item transfer together after all checks succeed.
+            Omit from shopkeeper with one visible open shop; otherwise use its
+            name or keywords. You need enough coins and carrying capacity.
+            Bulk buy all is unsupported. See help shops.
+        """,
+    },
+    {
+        "key": "sell",
+        "aliases": ["shop sell"],
+        "category": "Shops",
+        "text": """
+            Usage: sell <item> [to shopkeeper]
+            Sells one eligible carried item at the current price, rounded down.
+            Remove equipped items first. The shop must accept its kind and have
+            enough coins and carrying capacity. Omit to shopkeeper with one
+            visible open shop; otherwise use its name or keywords.
+            Bulk sell all is unsupported. See help shops for exclusions.
         """,
     },
     {
