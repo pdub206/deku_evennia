@@ -196,7 +196,13 @@ class Character(ObjectParent, DefaultCharacter):
         self, source_location: Any | None, move_type: str = "move", **kwargs: Any
     ) -> None:
         """Repair combat immediately after any forced relocation or extraction."""
-        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if self.location is not None and self.location.access(self, "view"):
+            self.msg(
+                text=(
+                    self.at_look(self.location, arrival=True),
+                    {"type": "look", "arrival": True},
+                )
+            )
         if source_location is not None and move_type != "recall":
             from systems.action_queue import cancel_action
 

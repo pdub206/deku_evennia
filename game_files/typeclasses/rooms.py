@@ -6,6 +6,7 @@ Rooms are simple containers that has no location of their own.
 """
 
 from evennia.objects.objects import DefaultRoom
+from systems.presentation import get_presentation_profile
 
 from .objects import ObjectParent
 
@@ -45,3 +46,23 @@ class Room(ObjectParent, DefaultRoom):
             for obj in object_list
             if obj in passive or target_visibility(looker, obj, source=self).visible
         ]
+
+    def get_display_desc(self, looker, **kwargs) -> str:
+        """Suppress only arrival descriptions when brief mode is enabled."""
+        profile = get_presentation_profile(looker)
+        if kwargs.get("arrival") and profile.room_mode == "brief":
+            return ""
+        return super().get_display_desc(looker, **kwargs)
+
+    def get_display_exits(self, looker, **kwargs) -> str:
+        """Honor the observer's automatic-exit preference on room displays."""
+        if not get_presentation_profile(looker).auto_exits:
+            return ""
+        return super().get_display_exits(looker, **kwargs)
+
+    def format_appearance(self, appearance, looker, **kwargs) -> str:
+        """Remove optional blank lines for compact output without dropping content."""
+        rendered = super().format_appearance(appearance, looker, **kwargs)
+        if get_presentation_profile(looker).spacing == "compact":
+            return "\n".join(line for line in rendered.splitlines() if line.strip())
+        return rendered

@@ -71,6 +71,13 @@ from commands.generic import (
 from commands.injury import CmdInjury, CmdStabilize
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
+from commands.presentation import (
+    CmdAutoExits,
+    CmdBrief,
+    CmdCompact,
+    CmdPreferences,
+    CmdPrompt,
+)
 from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
 from commands.skills import CmdSkills
@@ -116,6 +123,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdActionQueue)
         self.add(CmdRoomRoles)
         self.add(CmdHelp)
+        self.add(CmdBrief)
+        self.add(CmdCompact)
+        self.add(CmdAutoExits)
+        self.add(CmdPrompt)
+        self.add(CmdPreferences)
         self.add(CmdOpen)
         self.add(CmdClose)
         self.add(CmdLock)

@@ -214,7 +214,9 @@ def refresh_combat_prompt(character: Any) -> None:
     if character.sessions.count() and not getattr(
         character.ndb, "_command_running", False
     ):
-        character.msg(prompt=prompt or "")
+        from systems.presentation import active_prompt
+
+        character.msg(prompt=active_prompt(character) or "")
 
 
 def estimate_threat(observer: Any, target: Any) -> CombatEstimate:

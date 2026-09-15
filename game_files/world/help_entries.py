@@ -1083,6 +1083,26 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "display preferences",
+        "aliases": ["preferences", "prefs", "brief", "compact", "autoexits", "prompt"],
+        "category": "General",
+        "text": """
+            Use |wpreferences|n (or |wprefs|n) to review your saved display
+            settings. Each individual command accepts |won|n or |woff|n, or no
+            argument to query its current value.
+
+            |wbrief|n hides room descriptions when you arrive, while explicit
+            |wlook|n always shows them. |wcompact|n removes optional blank lines.
+            |wautoexits|n controls exit summaries on room displays. |wprompt|n
+            controls the fixed ordinary input prompt. Combat and builder-editor
+            prompts have their own settings and take priority when active.
+
+            Defaults are brief off, compact off, autoexits on, and prompt on.
+            These settings change presentation only, never what your character
+            can see or do.
+        """,
+    },
+    {
         "key": "combat prompt",
         "aliases": ["combatprompt", "health"],
         "category": "Combat",
