@@ -97,6 +97,9 @@ COMBAT_LINKDEAD_MINUTES = 30
 # may override this per character/NPC with ``carry_item_limit`` when needed.
 CARRIED_ITEM_LIMIT = 100
 MAX_CONTAINER_NESTING = 20
+# ITEM-02 wallet and per-owner idempotency/audit policy.
+GAME_MAX_CURRENCY = 2_000_000_000
+GAME_CURRENCY_LEDGER_LIMIT = 100
 # COMBAT-05 converts these policy durations to durable corpse-lane pulse
 # counts at creation. NPC prototypes may set ``corpse_decay_minutes``; PC
 # duration is deliberately global policy.

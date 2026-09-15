@@ -50,6 +50,8 @@ from commands.generic import (
     CmdAccess,
     CmdActionQueue,
     CmdDrop,
+    CmdCoins,
+    CmdCurrency,
     CmdExamine,
     CmdExits,
     CmdFastHands,
@@ -112,6 +114,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdSay)
         self.add(CmdPose)
         self.add(CmdInventory)
+        self.add(CmdCoins)
+        self.add(CmdCurrency)
         self.add(CmdGet)
         self.add(CmdPut)
         self.add(CmdFastHands)

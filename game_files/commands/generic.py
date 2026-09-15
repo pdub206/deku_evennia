@@ -6,6 +6,7 @@ underlying Evennia command logic.
 """
 
 from typing import Any
+from uuid import uuid4
 
 from commands.command import Command, MuxCommand
 from evennia.commands.default.general import CmdAccess as _BaseAccess
@@ -20,23 +21,54 @@ from evennia.commands.default.general import CmdSetDesc as _BaseSetDesc
 from evennia.commands.default.help import CmdHelp as _BaseHelp
 from evennia.utils import utils
 from systems.action_policy import ActionCategory
-from systems.action_queue import (ActionQueueError, action_audit,
-                                  cancel_action, inspect_action, repair_action)
-from systems.containers import (can_access_contents, container_is_open,
-                                container_is_transparent)
-from systems.corpses import (CorpseError, inspect_corpse, withdraw,
-                             withdraw_many)
+from systems.action_queue import (
+    ActionQueueError,
+    action_audit,
+    cancel_action,
+    inspect_action,
+    repair_action,
+)
+from systems.containers import (
+    can_access_contents,
+    container_is_open,
+    container_is_transparent,
+)
+from systems.corpses import (
+    CorpseError,
+    inspect_corpse,
+    withdraw,
+    transfer_currency,
+    withdraw_many,
+)
+from systems.currency import (
+    CurrencyError,
+    balance,
+    create_pile,
+    debit,
+    format_coins,
+    pickup_pile,
+    transfer,
+)
 from systems.dice import roll
 from systems.doors import DoorError, door_state
 from systems.encumbrance import can_receive, character_load
-from systems.equipment import (WEAR_LOCATIONS, WEAR_SIDES, EquipmentError,
-                               allowed_wear_locations, wear_phrase)
+from systems.equipment import (
+    WEAR_LOCATIONS,
+    WEAR_SIDES,
+    EquipmentError,
+    allowed_wear_locations,
+    wear_phrase,
+)
 from systems.recall import schedule_recall
 from systems.room_roles import RoomRoleError, validate_room_roles
-from systems.visibility import (active_search, active_search_extras,
-                                discover_passively,
-                                matching_extra_descriptions, room_visibility,
-                                target_visibility)
+from systems.visibility import (
+    active_search,
+    active_search_extras,
+    discover_passively,
+    matching_extra_descriptions,
+    room_visibility,
+    target_visibility,
+)
 
 
 class CmdLook(_BaseLook):
@@ -499,6 +531,23 @@ class CmdGet(_BaseGet):
         if not objs:
             return
         objs = utils.make_iter(objs)
+        if (
+            len(objs) == 1
+            and str(objs[0].attributes.get("type") or "").casefold() == "money"
+        ):
+            pile = objs[0]
+            try:
+                result = pickup_pile(pile, caller, f"pickup:{pile.id}")
+            except CurrencyError:
+                self.msg("Those coins cannot be picked up right now.")
+                return
+            if not result.success:
+                self.msg("You cannot carry any more coins.")
+                return
+            caller.location.msg_contents(
+                f"$You() $conj(pick) up {format_coins(result.amount)}.", from_obj=caller
+            )
+            return
         if len(objs) == 1 and caller == objs[0]:
             self.msg("You can't get yourself.")
             return
@@ -602,6 +651,18 @@ class CmdGet(_BaseGet):
         if not item_name or corpse is None:
             return
         caller = self.caller
+        if item_name.casefold() in {"coin", "coins", "money"}:
+            try:
+                amount = transfer_currency(corpse, caller)
+            except CorpseError as err:
+                self.msg(str(err))
+                return
+            self.msg(
+                f"You take {format_coins(amount)} from {corpse.key}."
+                if amount
+                else "That corpse has no coins."
+            )
+            return
         if item_name.casefold() == "all":
             self._get_all_from_corpse(corpse)
             return
@@ -634,6 +695,7 @@ class CmdGet(_BaseGet):
         """Report every independent bulk-loot outcome in deterministic order."""
         try:
             results = withdraw_many(corpse, self.caller)
+            amount = transfer_currency(corpse, self.caller)
         except CorpseError:
             self.msg("That corpse cannot be looted right now.")
             return
@@ -645,13 +707,15 @@ class CmdGet(_BaseGet):
             self.caller.location.msg_contents(
                 f"$You() $conj(search) {corpse.key}.", from_obj=self.caller
             )
+        if amount:
+            self.msg(f"You take {format_coins(amount)}.")
         if failed:
             reasons = " ".join(
                 f"{result.item.get_display_name(self.caller)}: {result.message}"
                 for result in failed
             )
             self.msg(f"Left behind — {reasons}")
-        if not results:
+        if not results and not amount:
             self.msg("That corpse is empty.")
 
     def _get_from_container(self, item_name: str, container: Any) -> None:
@@ -810,12 +874,58 @@ class CmdDrop(_BaseDrop):
 
     action_category = ActionCategory.MANIPULATE
 
+    def func(self) -> None:
+        """Drop an item, or turn wallet currency into one physical pile."""
+        words = self.args.strip().split()
+        parsed_amount = self.number if len(words) == 1 else None
+        if (len(words) == 2 and words[1].casefold() in {"coin", "coins"}) or (
+            parsed_amount and words[0].casefold() in {"coin", "coins"}
+        ):
+            try:
+                amount = int(parsed_amount or words[0])
+                transaction_id = f"drop:{self.caller.id}:{uuid4()}"
+                result = debit(
+                    self.caller,
+                    amount,
+                    transaction_id,
+                    actor=self.caller,
+                    source="command:drop",
+                    reason="physical money pile",
+                )
+            except (CurrencyError, ValueError):
+                self.msg("Usage: drop <positive amount> coins")
+                return
+            if not result.success:
+                self.msg("You do not have that many coins.")
+                return
+            try:
+                create_pile(self.caller.location, amount, transaction_id)
+            except Exception:
+                from systems.currency import credit
+
+                credit(
+                    self.caller,
+                    amount,
+                    f"rollback:{transaction_id}",
+                    actor=self.caller,
+                    source="command:drop",
+                    reason="pile creation rollback",
+                )
+                self.msg("You cannot drop those coins right now.")
+                return
+            self.caller.location.msg_contents(
+                f"$You() $conj(drop) {format_coins(amount)}.", from_obj=self.caller
+            )
+            return
+        super().func()
+
 
 class CmdGive(_BaseGive):
     """Give an item when the shared action policy allows manipulation.
 
     Usage:
-      give <item> = <character>
+      give <item> <character>
+      give <amount> coins <character>
     """
 
     action_category = ActionCategory.MANIPULATE
@@ -823,20 +933,32 @@ class CmdGive(_BaseGive):
     def func(self) -> None:
         """Preflight aggregate giving so the recipient gets all objects or none."""
         caller = self.caller
-        if not self.args or not self.rhs:
-            caller.msg("Usage: give <inventory object> = <target>")
+        if not self.args:
+            caller.msg(
+                "Usage: give <item> <character> or give <amount> coins <character>"
+            )
+            return
+        parsed = self._parse_recipient()
+        if not parsed:
+            caller.msg(
+                "Usage: give <item> <character> or give <amount> coins <character>"
+            )
+            return
+        item_name, target = parsed
+        words = item_name.split()
+        if (len(words) == 2 and words[1].casefold() in {"coin", "coins"}) or (
+            self.number and item_name.casefold() in {"coin", "coins"}
+        ):
+            self._give_coins(str(self.number or words[0]), target)
             return
         to_give = caller.search(
-            self.lhs,
+            item_name,
             location=caller,
-            nofound_string=f"You aren't carrying {self.lhs}.",
-            multimatch_string=f"You carry more than one {self.lhs}:",
+            nofound_string=f"You aren't carrying {item_name}.",
+            multimatch_string=f"You carry more than one {item_name}:",
             stacked=self.number,
         )
         if not to_give:
-            return
-        target = caller.search(self.rhs)
-        if not target:
             return
         to_give = utils.make_iter(to_give)
         singular, plural = to_give[0].get_numbered_name(len(to_give), caller)
@@ -873,6 +995,122 @@ class CmdGive(_BaseGive):
         obj_name = to_give[0].get_numbered_name(len(moved), caller, return_string=True)
         caller.msg(f"You give {obj_name} to {target.get_display_name(caller)}.")
         target.msg(f"{caller.get_display_name(target)} gives you {obj_name}.")
+
+    def _parse_recipient(self) -> tuple[str, Any] | None:
+        """Resolve a trailing, visible room character without required separators."""
+        args = self.args.strip()
+        if self.rhs:
+            target = self.caller.search(self.rhs, location=self.caller.location)
+            return (self.lhs.strip(), target) if target else None
+        words = args.split()
+        for index in range(1, len(words)):
+            target_name = " ".join(words[index:])
+            matches = self.caller.search(
+                target_name, location=self.caller.location, quiet=True
+            )
+            characters = [
+                obj
+                for obj in matches
+                if obj.is_typeclass("typeclasses.characters.Character", exact=False)
+            ]
+            if len(characters) == 1:
+                return " ".join(words[:index]), characters[0]
+        return None
+
+    def _give_coins(self, raw_amount: str, target: Any) -> None:
+        """Transfer wallet funds with one private message per participant."""
+        try:
+            amount = int(raw_amount)
+            result = transfer(
+                self.caller,
+                target,
+                amount,
+                f"give:{self.caller.id}:{target.id}:{uuid4()}",
+                actor=self.caller,
+                source="command:give",
+                reason="player transfer",
+            )
+        except (CurrencyError, ValueError) as err:
+            self.msg(str(err))
+            return
+        if not result.success:
+            self.msg(
+                "You do not have that many coins."
+                if result.outcome == "insufficient funds"
+                else "That character cannot receive any more coins."
+            )
+            return
+        amount_text = format_coins(amount)
+        self.msg(f"You give {amount_text} to {target.get_display_name(self.caller)}.")
+        target.msg(f"{self.caller.get_display_name(target)} gives you {amount_text}.")
+
+
+class CmdCoins(Command):
+    """Display the caller's weightless wallet currency."""
+
+    key = "coins"
+    aliases = ["wealth"]
+    help_category = "Items"
+
+    def func(self) -> None:
+        """Show only the caller's validated balance."""
+        try:
+            self.msg(f"You have {format_coins(balance(self.caller))}.")
+        except CurrencyError:
+            self.msg("Your wallet needs staff attention.")
+
+
+class CmdCurrency(MuxCommand):
+    """Inspect or correct wallets through audited Builder-only operations."""
+
+    key = "currency"
+    locks = "cmd:perm(Builder)"
+    help_category = "Builder"
+
+    def func(self) -> None:
+        """Run inspect, grant, remove, or repair with explicit provenance."""
+        from systems.currency import audit_entries, credit, repair
+
+        operation = next(iter(self.switches), "inspect").casefold()
+        if operation == "inspect":
+            target = self.caller.search(self.args.strip(), global_search=True)
+            if not target:
+                return
+            try:
+                value = balance(target)
+            except CurrencyError as err:
+                value = f"invalid ({err})"
+            self.msg(
+                f"{target.key}: {value}; ledger entries: {len(audit_entries(target))}."
+            )
+            return
+        words = self.args.strip().split(maxsplit=3)
+        if operation not in {"grant", "remove", "repair"} or len(words) != 4:
+            self.msg(
+                "Usage: currency/<grant|remove|repair> <amount> <target> <source> <reason>"
+            )
+            return
+        raw_amount, target_name, source, reason = words
+        target = self.caller.search(target_name, global_search=True)
+        if not target:
+            return
+        try:
+            amount = int(raw_amount)
+            function = {"grant": credit, "remove": debit, "repair": repair}[operation]
+            result = function(
+                target,
+                amount,
+                f"staff:{source}",
+                actor=self.caller,
+                source=source,
+                reason=reason,
+            )
+        except (CurrencyError, ValueError) as err:
+            self.msg(str(err))
+            return
+        self.msg(
+            f"{operation.title()} {target.key}: {result.outcome}; balance {result.after}."
+        )
 
 
 class CmdJunk(Command):

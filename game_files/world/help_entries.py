@@ -1168,14 +1168,46 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "coins",
+        "aliases": ["currency", "money", "wealth", "give coins", "drop coins"],
+        "category": "Items",
+        "text": """
+            Use |wcoins|n or |wwealth|n to see the coins in your wallet. Wallet
+            coins have no weight. Use |wgive <amount> coins <character>|n to
+            pay a visible character in your room, or |wdrop <amount> coins|n
+            to make a physical money pile. Pick a pile up with |wget <pile>|n.
+
+            Give an ordinary item with |wgive <item> <character>|n. No equals
+            sign or extra |wto|n word is needed. Loot corpse currency with
+            |wget coins <corpse>|n; |wget all <corpse>|n also takes its coins.
+            NPC corpse coins are public, while player corpse coins follow the
+            same owner-only protection as the corpse's items.
+        """,
+    },
+    {
+        "key": "currency administration",
+        "aliases": ["currency inspect", "currency grant", "currency repair"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wcurrency/inspect <target>|n to view a wallet and its bounded
+            audit count. Staff corrections use
+            |wcurrency/grant <amount> <target> <source> <reason>|n,
+            |wcurrency/remove ...|n, or |wcurrency/repair ...|n. Amounts must
+            be bounded whole numbers. Source must be a stable unique identity;
+            repeating it safely returns the original transaction result.
+        """,
+    },
+    {
         "key": "corpses",
         "aliases": ["corpse", "loot", "looting"],
         "category": "Combat",
         "text": """
             When a character dies, their possessions remain in a corpse in the
             room. Use |wlook in <corpse>|n to inspect its visible contents and
-            |wget <item> from <corpse>|n or |wget all from <corpse>|n to take
-            items. If you cannot carry every item, |wget all|n takes what it
+            |wget <item> <corpse>|n, |wget coins <corpse>|n, or
+            |wget all <corpse>|n to take assets. If you cannot carry every item,
+            |wget all|n takes what it
             can and tells you what remains.
 
             NPC corpses can be looted by anyone. A player character's corpse

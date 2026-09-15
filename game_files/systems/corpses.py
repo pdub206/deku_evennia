@@ -16,6 +16,7 @@ from django.conf import settings
 from evennia import create_object
 from evennia.utils import logger
 from systems.encumbrance import can_receive
+from systems.currency import CurrencyError, balance, create_pile, credit, debit
 from systems.pulses import PulseEvent, PulseLane
 
 CORPSE_ATTRIBUTE = "corpse_state"
@@ -114,8 +115,10 @@ def corpse_record(corpse: Any) -> CorpseRecord:
         for value in integers
     ):
         raise CorpseError("Corpse counters are invalid.")
-    if raw["creation_location_id"] < 1 or raw["remaining_pulses"] < 0 or (
-        raw["remaining_pulses"] == 0 and status != "expiring"
+    if (
+        raw["creation_location_id"] < 1
+        or raw["remaining_pulses"] < 0
+        or (raw["remaining_pulses"] == 0 and status != "expiring")
     ):
         raise CorpseError("Corpse location or lifetime is invalid.")
     if not isinstance(raw["currency_transferred"], bool):
@@ -242,8 +245,16 @@ def transfer_currency(corpse: Any, looter: Any) -> int:
     amount = record.currency
     if not amount:
         return 0
-    current = _currency(looter)
-    _set_currency(looter, current + amount)
+    result = credit(
+        looter,
+        amount,
+        f"corpse-loot:{record.death_id}",
+        actor=looter,
+        source=f"corpse:{corpse.id}",
+        reason="corpse currency withdrawal",
+    )
+    if not result.success:
+        raise CorpseError("You cannot carry any more coins.")
     _write(corpse, replace(record, currency=0))
     return amount
 
@@ -298,8 +309,21 @@ def _complete_creation(corpse: Any, owner: Any) -> Any:
         logger.log_err(f"Corpse #{corpse.id} has no location while being created.")
         return corpse
     if not record.currency_transferred:
-        amount = _currency(owner)
-        _set_currency(owner, 0)
+        try:
+            amount = balance(owner)
+            if amount:
+                result = debit(
+                    owner,
+                    amount,
+                    f"death:{record.death_id}",
+                    actor=owner,
+                    source=f"corpse:{corpse.id}",
+                    reason="death escrow",
+                )
+                if not result.success:
+                    raise CorpseError("Could not escrow corpse currency.")
+        except CurrencyError as err:
+            raise CorpseError(str(err)) from err
         record = replace(
             record, currency=record.currency + amount, currency_transferred=True
         )
@@ -336,7 +360,7 @@ def _decay(corpse: Any) -> None:
         ):
             raise CorpseError(f"Could not spill {item.key} from an expired corpse.")
     if record.currency:
-        _set_currency(location, _currency(location) + record.currency)
+        create_pile(location, record.currency, f"corpse-decay:{record.death_id}")
         _write(corpse, replace(record, currency=0))
     location.msg_contents(f"The corpse of {record.display_name} decays away.")
     corpse.delete()
@@ -412,21 +436,6 @@ def _is_pc(owner: Any) -> bool:
     """Match COMBAT-04's default-PC convention without a typeclass dependency."""
     value = owner.attributes.get("is_player_character")
     return True if value is None else bool(value)
-
-
-def _currency(owner: Any) -> int:
-    """Read the deliberately small currency seam, rejecting corrupt values."""
-    value = owner.attributes.get(CURRENCY_ATTRIBUTE, default=0)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise CorpseError("Currency must be a non-negative whole number.")
-    return value
-
-
-def _set_currency(owner: Any, amount: int) -> None:
-    """Write a validated currency amount through the same future-economy seam."""
-    if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
-        raise CorpseError("Currency must be a non-negative whole number.")
-    owner.attributes.add(CURRENCY_ATTRIBUTE, amount)
 
 
 def _content_sort_key(item: Any) -> tuple[str, int]:
