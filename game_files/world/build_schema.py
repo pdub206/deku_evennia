@@ -99,6 +99,24 @@ def as_item_resource(raw: str) -> dict[str, Any]:
     return validate_resource_profile(value)
 
 
+def as_magic_item(raw: str) -> dict[str, Any]:
+    """Parse a bounded primitive magic-item activation profile for items/prototypes."""
+    from systems.magic_items import validate_magic_item_profile
+
+    if len(raw) > 2000:
+        raise ValueError("magic item profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON magic item profile.") from err
+    from systems.magic_items import MagicItemError
+
+    try:
+        return validate_magic_item_profile(value)
+    except MagicItemError as err:
+        raise ValueError(str(err)) from err
+
+
 def as_slug(raw: str) -> str:
     """A lowercase identifier safe for dict keys, tags, and module filenames.
 
@@ -554,6 +572,14 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         )
     },
 }
+
+for _magic_type in ("potion", "scroll", "wand", "staff"):
+    TYPE_FIELDS.setdefault(_magic_type, {})["magic"] = Field(
+        "attr",
+        as_magic_item,
+        "JSON magic activation profile: version, definition, uses",
+        target="magic_item",
+    )
 
 for _resource_type in ("light", "wand", "staff", "drinkcon", "fountain", "other"):
     TYPE_FIELDS.setdefault(_resource_type, {})["resource"] = Field(

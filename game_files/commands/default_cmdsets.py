@@ -74,6 +74,7 @@ from commands.generic import (
 from commands.injury import CmdInjury, CmdStabilize
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
+from commands.magic_items import CmdQuaff, CmdRecite, CmdUseDevice
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.presentation import (
     CmdAutoExits,
@@ -167,6 +168,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdCast)
         self.add(CmdSpells)
         self.add(CmdAbilities)
+        self.add(CmdQuaff)
+        self.add(CmdRecite)
+        self.add(CmdUseDevice)
         # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
         # which otherwise runs no command and so wouldn't refresh it.
         self.add(CmdNoInput)

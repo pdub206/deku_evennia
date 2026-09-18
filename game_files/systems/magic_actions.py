@@ -468,6 +468,9 @@ def _resolve_cast(
     definition: MagicDefinition,
     target: Any,
     snapshot: CastSnapshot,
+    *,
+    category: ActionCategory | None = None,
+    check_armor: bool = True,
 ) -> MagicActionResult:
     """Resolve and pay for one accepted snapshot in a single transaction."""
 
@@ -478,7 +481,14 @@ def _resolve_cast(
                 _lock(target)
             # State that can change between parsing and execution is checked a
             # second time while the relevant character rows are locked.
-            _revalidate(caster, definition, target, snapshot)
+            _revalidate(
+                caster,
+                definition,
+                target,
+                snapshot,
+                category=category,
+                check_armor=check_armor,
+            )
             result = _execute(caster, definition, target, snapshot)
             for resource_key, amount in snapshot.resource_reservation.items():
                 spend_resource(caster, resource_key, amount)
@@ -561,6 +571,79 @@ def execute_magic_intent(caster: Any, intent: Mapping[str, Any]) -> MagicActionR
     if target is None:
         raise MagicActionError("That prepared target is no longer available.")
     return _resolve_cast(caster, definition, target, snapshot)
+
+
+def knows_action(actor: Any, action_key: str) -> bool:
+    """Return whether this actor may presently select a released action itself.
+
+    ITEM-04B's ``known-class-action`` access rule reads this rather than
+    re-deriving class, level, spellbook, and preparation rules in item code.
+    """
+    registry = _registry()
+    if not registry.is_available(action_key):
+        return False
+    definition = registry.definition_for(action_key, include_disabled=False)
+    return _has_access(actor, definition, _action_state(actor))
+
+
+def prepare_item_action(
+    user: Any,
+    action_key: str,
+    target_name: str | None = None,
+    *,
+    category: ActionCategory = ActionCategory.MANIPULATE,
+    registry: MagicRegistry | None = None,
+) -> tuple[MagicDefinition, Any, CastSnapshot]:
+    """Accept and snapshot one item-supplied activation without spending the user.
+
+    The item, not the character, pays for the magic, so no class resource is
+    reserved and no personal entitlement is required; ITEM-04B's own access rule
+    decides who may activate the item.  Targeting, potency, and eligibility stay
+    with MAGIC-01.  Activation is a MANIPULATE action in this milestone, so the
+    definition's own combat category is deliberately not consulted.
+    """
+    active_registry = registry or _registry()
+    try:
+        definition = active_registry.definition_for(action_key, include_disabled=False)
+    except MagicRegistryError as err:
+        raise MagicActionError("That magic is not available.") from err
+    if definition.cast_time > 1:
+        raise MagicActionError(
+            "That action requires casting support that is not available."
+        )
+    decision = user.actions.check(category)
+    if not decision.allowed:
+        raise MagicActionError(decision.message)
+    targeting = definition.targeting
+    if target_name is None and targeting.mode != TargetingMode.SELF:
+        # An unaimed activation affects its user, which is the only reading that
+        # makes `quaff <potion>` work without inventing a second targeting model.
+        if not targeting.include_caster:
+            raise MagicActionError("You must name a target for that magic.")
+        target = user
+        _validate_target(user, definition, target)
+    else:
+        target = _resolve_target(user, definition, target_name)
+    snapshot = _snapshot(user, definition, target, active_registry, reserve_cost=False)
+    return definition, target, snapshot
+
+
+def commit_item_action(
+    user: Any,
+    definition: MagicDefinition,
+    target: Any,
+    snapshot: CastSnapshot,
+    *,
+    category: ActionCategory = ActionCategory.MANIPULATE,
+) -> MagicActionResult:
+    """Revalidate under lock and resolve one prepared item activation.
+
+    Callers run this inside their own reservation transaction so a rejected or
+    failing activation rolls the reserved portion, item, or charge back with it.
+    """
+    return _resolve_cast(
+        user, definition, target, snapshot, category=category, check_armor=False
+    )
 
 
 def _registry() -> MagicRegistry:
@@ -1007,7 +1090,12 @@ def _validate_target(caster: Any, definition: MagicDefinition, target: Any) -> N
 
 
 def _snapshot(
-    caster: Any, definition: MagicDefinition, target: Any, registry: MagicRegistry
+    caster: Any,
+    definition: MagicDefinition,
+    target: Any,
+    registry: MagicRegistry,
+    *,
+    reserve_cost: bool = True,
 ) -> CastSnapshot:
     """Freeze potency and the exact resource cost before effect resolution."""
     class_key = caster.attributes.get("char_class")
@@ -1022,7 +1110,7 @@ def _snapshot(
     ritual = _uses_ritual_access(caster, definition, _action_state(caster))
     reservation = (
         {definition.cost.resource_key: definition.cost.amount}
-        if definition.cost is not None and not ritual
+        if reserve_cost and definition.cost is not None and not ritual
         else {}
     )
     for resource_key, amount in reservation.items():
@@ -1051,12 +1139,19 @@ def _revalidate(
     definition: MagicDefinition,
     target: Any,
     snapshot: CastSnapshot,
+    *,
+    category: ActionCategory | None = None,
+    check_armor: bool = True,
 ) -> None:
     """Repeat mutable actor, target, and resource checks just before commit."""
-    decision = caster.actions.check(_action_category(definition))
+    decision = caster.actions.check(category or _action_category(definition))
     if not decision.allowed:
         raise MagicActionError(decision.message)
-    if definition.kind == MagicKind.SPELL and caster.stats.has_untrained_armor:
+    if (
+        check_armor
+        and definition.kind == MagicKind.SPELL
+        and caster.stats.has_untrained_armor
+    ):
         raise MagicActionError("You cannot cast spells while wearing untrained armor.")
     if target is not caster:
         _validate_target(caster, definition, target)

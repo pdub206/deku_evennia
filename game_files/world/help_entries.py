@@ -53,6 +53,89 @@ HELP_ENTRY_DICTS = [
         magical activation are documented by their own item features.""",
     },
     {
+        "key": "magic items",
+        "aliases": ["quaff", "recite", "potions", "scrolls", "wands", "staves"],
+        "category": "Magic",
+        "text": """Some items hold magic you can release without knowing the
+        spell yourself. Carry the item directly, stand somewhere you can act,
+        and use the command its kind answers to:
+
+          |wquaff <potion> [on <target>]|n     drink one portion
+          |wrecite <scroll> [on <target>]|n    read a scroll aloud
+          |wuse <wand|staff> [on <target>]|n   spend one charge
+
+        Name a target only when the magic can affect someone else; with no
+        target the magic affects you if it is able to. Targeting, saves, attack
+        rolls, healing, damage, and concentration follow the same rules as the
+        spell itself, so a bottled concentration spell still breaks your other
+        concentration.
+
+        A potion loses one portion per drink and the empty bottle disappears.
+        A scroll is used up the first time it works. Wands and staves spend one
+        charge and stop working at zero until they recharge; see |whelp refill|n.
+        Nothing is spent when the magic is refused or fails — a wrong target,
+        an unknown spell, or an interrupted action costs you nothing.
+
+        Magic items are a noncombat action in this release: you cannot use them
+        while fighting. A magic item uses your own level and aptitude for its
+        potency.
+
+        # subtopics
+
+        ## Access
+
+        Some items can be used by anyone. Others are bound to their magic and
+        only work for someone who already knows that spell or ability — you are
+        told plainly when an item refuses you. There is no identification,
+        attunement, command-word guessing, or spell copying in this release.
+
+        ## Released items
+
+          |wPotion of Healing|n (quaff, anyone) — restores health to you or a
+          creature you name. SRD 5.2.1 Magic Items: Potion of Healing.
+          |wPotion of Blurring|n (quaff, anyone) — blurs your outline while you
+          concentrate. Alpha adaptation of SRD 5.2.1 Spell Descriptions: Blur.
+          |wSpell Scroll of Magic Missile|n (recite, must know Magic Missile) —
+          SRD 5.2.1 Magic Items: Spell Scroll.
+          |wWand of Magic Missiles|n (use, anyone) — SRD 5.2.1 Magic Items: Wand
+          of Magic Missiles.
+          |wStaff of Healing|n (use, must know Healing Word) — SRD 5.2.1 Magic
+          Items: Staff of Healing.""",
+    },
+    {
+        "key": "building magic items",
+        "aliases": ["magic item profiles", "building potions", "building wands"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """Set an item's type to potion, scroll, wand, or staff, then
+        set |wmagic|n to a JSON activation profile, for example:
+        {"version":1,"definition":"potion.healing","uses":2}
+
+        |wdefinition|n must name a released magic-item definition and its item
+        type must match the item's type. The definition — not authored data —
+        owns the magic action, targeting mode, activation command, access rule,
+        and consumption mode, so content can never point an item at arbitrary
+        magic or an arbitrary command. Released definitions are listed in
+        |whelp magic items|n.
+
+        |wuses|n is authored portions, from 1 to 20, for a potion; exactly 1 for
+        a scroll; and exactly 0 for a wand or staff, whose units live in the
+        ITEM-05B charge |wresource|n profile instead (see |whelp building item
+        resources|n). Initial uses seed new copies only.
+
+        Runtime magic_item_state stores remaining uses and permanent activation
+        receipts. Re-authoring a profile preserves what has been spent and
+        clamps remaining uses downward; raising uses adds nothing to an existing
+        item. Changing an item's type clears both the profile and its state.
+        A potion or scroll is deleted in the same transaction as its last
+        successful use. A wand or staff stays at zero charges.
+
+        Malformed profiles or state deny activation on that one item only;
+        inspect and repair them in the staff shell without removing receipts.
+        Profiles and prototypes contain only authored primitives — never Python,
+        commands, or callables.""",
+    },
+    {
         "key": "building item resources",
         "aliases": ["building lights", "building charges", "resource profiles"],
         "category": "Building",

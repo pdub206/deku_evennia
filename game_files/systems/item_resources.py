@@ -184,8 +184,12 @@ def _refresh(obj: Any) -> None:
 
 
 @contextmanager
-def _mutation(*objects: Any) -> Iterator[None]:
-    """Serialize ORM writes and reject reentrant use of a reserved object."""
+def item_mutation(*objects: Any) -> Iterator[None]:
+    """Serialize ORM writes and reject reentrant use of a reserved object.
+
+    ITEM-04B shares this reservation lane so a potion, wand, or lamp can never
+    be spent twice concurrently through two different item packages.
+    """
     from evennia.objects.models import ObjectDB
 
     ids = {obj.pk for obj in objects if obj is not None}
@@ -226,7 +230,7 @@ def _store(item: Any, state: dict[str, Any]) -> None:
 def set_resource_profile(item: Any, raw: Any) -> None:
     """Author a live profile while preserving spent units and replay receipts."""
     profile = validate_resource_profile(raw, item.db.type or "item")
-    with _mutation(item):
+    with item_mutation(item):
         state = (
             resource_state(item) if item.attributes.has(RESOURCE_ATTRIBUTE) else None
         )
@@ -314,7 +318,7 @@ def set_light(actor: Any, item: Any, lit: bool, *, identity: str | None = None) 
         raise ItemResourceError("Invalid light transition.")
     identity = _identity(uuid4().hex if identity is None else identity)
     operation = "light" if lit else "extinguish"
-    with _mutation(actor, item):
+    with item_mutation(actor, item):
         state = resource_state(item)
         if _receipt(state, identity, operation) is not None:
             return False
@@ -347,7 +351,7 @@ def refill_resource(
     identity = _identity(uuid4().hex if identity is None else identity)
     if target is source:
         raise ItemResourceError("Choose two different items.")
-    with _mutation(actor, target, source):
+    with item_mutation(actor, target, source):
         target_state, source_state = resource_state(target), resource_state(source)
         prior = _receipt(target_state, identity, "refill", source.pk)
         if prior is not None:
@@ -404,7 +408,7 @@ def commit_resource_use(
     """
     units = _integer(units, low=1)
     identity = _identity(identity)
-    with _mutation(item, *participants):
+    with item_mutation(item, *participants):
         state = resource_state(item)
         prior = _receipt(state, identity, "spend")
         if prior is not None:
@@ -444,7 +448,7 @@ def extinguish_moved_light(item: Any, former_carrier: Any | None) -> None:
     if not item.attributes.has(RESOURCE_ATTRIBUTE):
         return
     try:
-        with _mutation(item):
+        with item_mutation(item):
             state = resource_state(item)
             _extinguish(item, state, former_carrier)
     except ItemResourceError:
@@ -491,7 +495,7 @@ def process_object_pulse(event: Any) -> None:
         .iterator()
     ):
         try:
-            with _mutation(item):
+            with item_mutation(item):
                 state = resource_state(item)
                 if token <= state["last_pulse"]:
                     continue
@@ -533,7 +537,7 @@ def process_dawn_recharge(boundary: Any) -> None:
         .iterator()
     ):
         try:
-            with _mutation(item):
+            with item_mutation(item):
                 profile, state = resource_profile(item), resource_state(item)
                 if profile["recharge"] != "dawn" or day <= state["last_dawn"]:
                     continue

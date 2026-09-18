@@ -347,8 +347,9 @@ def _set_item_type(item, value: str) -> None:
         return
     for attr in _type_attr_names(item.db.type):
         item.attributes.remove(attr)
-    if item.attributes.has("item_resource_state"):
-        item.attributes.remove("item_resource_state")
+    for state_attr in ("item_resource_state", "magic_item_state"):
+        if item.attributes.has(state_attr):
+            item.attributes.remove(state_attr)
     item.db.type = new_type
 
 
@@ -402,6 +403,12 @@ def _apply_field(target, name: str, field, value) -> None:
             target[field.target] = validate_resource_profile(
                 value, target.get("type") or "item"
             )
+        elif field.target == "magic_item":
+            from systems.magic_items import validate_magic_item_profile
+
+            target[field.target] = validate_magic_item_profile(
+                value, target.get("type")
+            )
         else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -415,6 +422,10 @@ def _apply_field(target, name: str, field, value) -> None:
             from systems.item_resources import set_resource_profile
 
             set_resource_profile(target, value)
+        elif field.target == "magic_item":
+            from systems.magic_items import set_magic_item_profile
+
+            set_magic_item_profile(target, value)
         else:
             target.attributes.add(field.target or name, value)
     elif field.kind == "door":
