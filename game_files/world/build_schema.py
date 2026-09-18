@@ -117,6 +117,25 @@ def as_magic_item(raw: str) -> dict[str, Any]:
         raise ValueError(str(err)) from err
 
 
+def as_key_kind(raw: str) -> str:
+    """A key identity INTERACT-01B can match against door and container locks."""
+    from systems.door_actions import DoorActionError, validate_key_kind
+
+    try:
+        return validate_key_kind(as_slug(raw))
+    except DoorActionError as err:
+        raise ValueError(str(err)) from err
+
+
+def as_decay_minutes(raw: str) -> int | None:
+    """Whole minutes until an item decays, or ``none`` for no decay."""
+    if raw.strip().lower() == "none":
+        return None
+    from systems.item_decay import MAX_DECAY_MINUTES
+
+    return as_int_range(1, MAX_DECAY_MINUTES)(raw)
+
+
 def as_slug(raw: str) -> str:
     """A lowercase identifier safe for dict keys, tags, and module filenames.
 
@@ -564,7 +583,9 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         ),
     },
     "key": {
-        "key_kind": Field("attr", as_slug, "stable key identity", target="key_kind")
+        "key_kind": Field(
+            "attr", as_key_kind, "stable key identity matched by locks", "key_kind"
+        )
     },
     "other": {
         "tool_kind": Field(
@@ -615,6 +636,24 @@ ITEM_FIELDS: dict[str, Field] = {
         as_choice_list(*WEAR_LOCATIONS),
         "comma-separated equipment slots where this can be worn",
         target="wear_locations",
+    ),
+    "no_drop": Field(
+        "attr",
+        as_on_off,
+        "on/off: holders cannot drop, give, put, junk, or sell it",
+        target="no_drop",
+    ),
+    "account_bound": Field(
+        "attr",
+        as_on_off,
+        "on/off: binds to the first PC who gets it; never leaves their possession",
+        target="account_bound",
+    ),
+    "decay_minutes": Field(
+        "attr",
+        as_decay_minutes,
+        "whole minutes in the world before it decays, or none",
+        target="decay_minutes",
     ),
     "type": Field(
         "type",

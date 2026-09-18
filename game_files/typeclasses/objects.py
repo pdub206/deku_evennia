@@ -289,6 +289,16 @@ class Item(Object):
         self.db.value = 0
         self.db.wear_locations = []
 
+    def at_pre_move(
+        self, destination: Any, move_type: str = "move", **kwargs: Any
+    ) -> bool:
+        """Apply ITEM-05A's possession rule to direct ``move_to`` calls too."""
+        from systems.item_transfer import move_denial
+
+        if move_denial(self, destination, move_type=move_type, **kwargs):
+            return False
+        return super().at_pre_move(destination, move_type=move_type, **kwargs)
+
     def at_post_move(
         self, source_location: Any | None, move_type: str = "move", **kwargs: Any
     ) -> None:
@@ -297,8 +307,35 @@ class Item(Object):
         if source_location is not self.location:
             clear_equipped_state(self)
             from systems.item_resources import extinguish_moved_light
+            from systems.item_transfer import bind_to_holder
 
             extinguish_moved_light(self, source_location)
+            bind_to_holder(self)
+
+    def at_pre_get(self, getter: Any, **kwargs: Any) -> bool:
+        """Explain a bound-item pickup denial before any move is attempted."""
+        return self._transfer_allowed(getter, "get", getter)
+
+    def at_pre_drop(self, dropper: Any, **kwargs: Any) -> bool:
+        """Deny dropping, or putting when a ``container`` destination is given."""
+        container = kwargs.get("container")
+        if container is not None:
+            return self._transfer_allowed(dropper, "put", container)
+        return self._transfer_allowed(dropper, "drop", dropper.location)
+
+    def at_pre_give(self, giver: Any, getter: Any, **kwargs: Any) -> bool:
+        """Deny giving no-drop and account-bound items."""
+        return self._transfer_allowed(giver, "give", getter)
+
+    def _transfer_allowed(self, actor: Any, operation: str, destination: Any) -> bool:
+        """Send exactly one player-safe denial from the canonical policy."""
+        from systems.item_transfer import transfer_denial
+
+        denial = transfer_denial(self, actor, operation, destination)
+        if denial:
+            actor.msg(denial)
+            return False
+        return True
 
 
 class Corpse(Object):
@@ -328,8 +365,8 @@ class Corpse(Object):
     def at_pre_object_receive(
         self, arriving_object: Any, source_location: Any, **kwargs: Any
     ) -> bool:
-        """Accept physical contents only during the audited death transfer."""
-        if not kwargs.get("corpse_transfer"):
+        """Accept contents only by death transfer or a nested item's decay spill."""
+        if not (kwargs.get("corpse_transfer") or kwargs.get("item_decay")):
             return False
         return True
 

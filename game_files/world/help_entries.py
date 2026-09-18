@@ -1624,7 +1624,98 @@ HELP_ENTRY_DICTS = [
 
             Junking destroys only that particular item. It cannot be recovered,
             but its underlying template remains in the game and builders can
-            spawn new copies from it.
+            spawn new copies from it. Empty a container before junking it.
+            No-drop and account-bound items cannot be junked (see
+            |whelp item restrictions|n).
+        """,
+    },
+    {
+        "key": "item restrictions",
+        "aliases": ["no drop", "no_drop", "bound items", "account bound", "decay"],
+        "category": "Items",
+        "text": """
+            Some items restrict where they can go.
+
+            A |wno-drop|n item stays with whoever carries it. You cannot drop,
+            give, put, junk, or sell it. If you die, it goes into your corpse
+            like everything else.
+
+            An |waccount-bound|n item belongs to the first player character
+            who picks it up or receives it, and to nobody else, ever. It can
+            only be carried by its owner or kept in containers they carry.
+            It cannot be dropped, given, junked, or sold, and it never goes
+            into your corpse: you keep it through death and respawn, though it
+            is no longer worn or wielded. Nobody else can pick it up.
+
+            Some items |wdecay|n. After a set time they crumble away, and you
+            (or the room) see one message. Anything inside spills out into
+            wherever the item was, still in its own containers. A worn item is
+            removed first. The timer runs whether or not the item is carried,
+            but it pauses while you are logged out of the world and never
+            counts time the server was down. Keys, coins, and account-bound
+            items never decay.
+        """,
+    },
+    {
+        "key": "building item policy",
+        "aliases": ["decay_minutes", "account_bound fields", "no_drop fields"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Items and item templates share three policy fields:
+
+              |wset no_drop on|n         holders cannot drop, give, put, junk,
+                                      or sell it; death still moves it
+              |wset account_bound on|n   binds to the first PC who gets it
+              |wset decay_minutes 30|n   decays after 30 in-world minutes
+              |wset decay_minutes none|n  never decays
+
+            An account-bound item records its owner once and can then exist
+            only in that PC's carried tree. Rooms, containers, and resets may
+            hold it unbound. NPCs, shop stock, and corpses never may. A live
+            item that is already bound cannot have the flag cleared. Staff use
+            |witempolicy/unbind|n instead. Money cannot be account-bound.
+
+            Decay counts one objects pulse (one real minute by default) while
+            the item is in a room or carried/contained there. Setting or
+            clearing |wdecay_minutes|n on a live item starts a fresh timer. On
+            expiry, direct contents spill into the item's parent in name order,
+            keeping their own containers and timers, and only the item itself
+            is deleted. Keys, money, and bound items never decay. Corpses keep
+            their own separate timer.
+
+            A |wkey|n item's |wkey_kind|n must be a stable identity (lowercase
+            letters, digits, and underscores) matching the door or container
+            lock it opens. Keys are ordinary reusable items. Only keys you
+            carry directly count; there is no key ring.
+        """,
+    },
+    {
+        "key": "item policy administration",
+        "aliases": ["itempolicy/move", "itempolicy/unbind", "itempolicy/decay"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            |witempolicy <item>|n shows an item's raw no_drop, account_bound,
+            binding, decay policy, decay record, quarantine state, and recent
+            audit entries.
+
+            Repairs require a reason and are recorded on the item and in the
+            server log:
+
+              |witempolicy/move <item> = <destination>, <reason>|n
+                  relocate past transfer and capacity rules (a bound item
+                  moved into another PC's inventory while unbound binds to
+                  them)
+              |witempolicy/unbind <item> = <reason>|n
+                  clear the owner so the next PC grant binds it afresh
+              |witempolicy/decay <item> = <reason>|n
+                  clear a malformed or quarantined decay record and restart
+                  the authored timer
+
+            A malformed decay record quarantines only that item. Other items
+            keep decaying. Malformed flags or bindings block that item's
+            transfers until repaired.
         """,
     },
     {
@@ -1798,6 +1889,9 @@ HELP_ENTRY_DICTS = [
               |wvalue|n     worth in coins
               |wwear_locations|n  comma-separated equipment slots, such as
                               |whead|n or |wleft wrist, right wrist|n
+              |wno_drop|n   on/off; see |whelp building item policy|n
+              |waccount_bound|n  on/off; see |whelp building item policy|n
+              |wdecay_minutes|n  minutes until it decays, or |wnone|n
 
             Changes to a template persist immediately and apply to copies spawned
             afterwards.  To customise one existing copy in the world, |wedit|n it

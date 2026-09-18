@@ -9,8 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from systems.checks import CheckError, CheckRequest, CheckResult, resolve_check
-from systems.doors import (DoorError, DoorState, door_state, paired_exit,
-                           transition_door)
+from systems.doors import DoorError, DoorState, door_state, paired_exit, transition_door
 
 THIEVES_TOOLS_KIND = "thieves_tools"
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,127}$")
@@ -46,14 +45,18 @@ def set_pending_traversal_checker(checker: Callable[[Any], bool]) -> None:
     _pending_traversal_checker = checker
 
 
+def validate_key_kind(value: Any) -> str:
+    """Validate the stable identity a key shares with the locks it opens."""
+    if not isinstance(value, str) or not _KEY_RE.fullmatch(value):
+        raise DoorActionError("That key is not configured correctly.")
+    return value
+
+
 def item_key_kind(item: Any) -> str | None:
     """Return a canonical key identity, rejecting malformed key objects."""
     if str(item.attributes.get("type") or "").casefold() != "key":
         return None
-    value = item.attributes.get("key_kind")
-    if not isinstance(value, str) or not _KEY_RE.fullmatch(value):
-        raise DoorActionError("That key is not configured correctly.")
-    return value
+    return validate_key_kind(item.attributes.get("key_kind"))
 
 
 def has_matching_key(actor: Any, key_kind: str | None) -> bool:

@@ -15,8 +15,9 @@ from typing import Any
 from django.conf import settings
 from evennia import create_object
 from evennia.utils import logger
-from systems.encumbrance import can_receive
 from systems.currency import CurrencyError, balance, create_pile, credit, debit
+from systems.encumbrance import can_receive
+from systems.item_transfer import retain_bound_items
 from systems.pulses import PulseEvent, PulseLane
 
 CORPSE_ATTRIBUTE = "corpse_state"
@@ -329,8 +330,10 @@ def _complete_creation(corpse: Any, owner: Any) -> Any:
         )
         _write(corpse, record)
     owner.equipment.unequip_all()
+    # ITEM-05A: bound items stay with their owner through death and respawn.
+    retained = set(retain_bound_items(owner))
     for item in tuple(owner.contents):
-        if item.location is not owner:
+        if item.location is not owner or item in retained:
             continue
         if not item.move_to(
             corpse,

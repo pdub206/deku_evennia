@@ -72,6 +72,7 @@ from commands.generic import (
     CmdWear,
 )
 from commands.injury import CmdInjury, CmdStabilize
+from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.magic_items import CmdQuaff, CmdRecite, CmdUseDevice
@@ -135,6 +136,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdGive)
         self.add(CmdWhisper)
         self.add(CmdJunk)
+        self.add(CmdItemPolicy)
         self.add(CmdWear)
         self.add(CmdRemove)
         self.add(CmdAccess)

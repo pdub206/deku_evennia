@@ -239,7 +239,13 @@ class GamePulseScript(Script):
         process_action_pulse(event)
 
     def at_objects_pulse(self, event: PulseEvent) -> None:
-        """Consume finite lamp fuel through ITEM-05B's isolated objects lane."""
+        """Consume lamp fuel (ITEM-05B), then advance item decay (ITEM-05A)."""
+        from systems.item_decay import process_decay_pulse
         from systems.item_resources import process_object_pulse
 
-        process_object_pulse(event)
+        try:
+            process_object_pulse(event)
+        finally:
+            # Each consumer isolates its own items; one failing never starves
+            # the other of this token.
+            process_decay_pulse(event)

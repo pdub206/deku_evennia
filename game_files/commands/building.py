@@ -409,6 +409,8 @@ def _apply_field(target, name: str, field, value) -> None:
             target[field.target] = validate_magic_item_profile(
                 value, target.get("type")
             )
+        elif field.target == "decay_minutes" and value is None:
+            target.pop("decay_minutes", None)
         else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -426,6 +428,15 @@ def _apply_field(target, name: str, field, value) -> None:
             from systems.magic_items import set_magic_item_profile
 
             set_magic_item_profile(target, value)
+        elif field.target in ("no_drop", "account_bound"):
+            from systems.item_transfer import validate_flag_change
+
+            validate_flag_change(target, field.target, value)
+            target.attributes.add(field.target, value)
+        elif field.target == "decay_minutes":
+            from systems.item_decay import set_decay_policy
+
+            set_decay_policy(target, value)
         else:
             target.attributes.add(field.target or name, value)
     elif field.kind == "door":

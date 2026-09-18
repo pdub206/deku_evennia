@@ -36,8 +36,8 @@ from systems.containers import (
 from systems.corpses import (
     CorpseError,
     inspect_corpse,
-    withdraw,
     transfer_currency,
+    withdraw,
     withdraw_many,
 )
 from systems.currency import (
@@ -59,6 +59,7 @@ from systems.equipment import (
     allowed_wear_locations,
     wear_phrase,
 )
+from systems.item_transfer import transfer_denial
 from systems.recall import schedule_recall
 from systems.room_roles import RoomRoleError, validate_room_roles
 from systems.visibility import (
@@ -764,6 +765,7 @@ class CmdGet(_BaseGet):
                     prior.move_to(
                         sources[prior],
                         quiet=True,
+                        move_type="rollback",
                         encumbrance_bypass="container batch rollback",
                     )
                 self.msg("That transfer could not be completed.")
@@ -815,7 +817,9 @@ class CmdPut(CmdGet):
             self.msg("You have nothing to put there.")
             return
         for obj in objs:
-            if not obj.access(self.caller, "drop") or not obj.at_pre_drop(self.caller):
+            if not obj.access(self.caller, "drop") or not obj.at_pre_drop(
+                self.caller, container=container
+            ):
                 return
         self._move_container_batch(objs, container, container, "put", "in")
 
@@ -1121,7 +1125,9 @@ class CmdJunk(Command):
       junk <item>
 
     The selected item instance disappears from the game. Its prototype remains
-    available, so builders can continue spawning new copies.
+    available, so builders can continue spawning new copies. No-drop and
+    account-bound items cannot be junked, and containers must be emptied first
+    so nothing inside is destroyed with them.
     """
 
     key = "junk"
@@ -1146,6 +1152,13 @@ class CmdJunk(Command):
             return
         if not utils.inherits_from(item, "typeclasses.objects.Item"):
             caller.msg("You can only junk items.")
+            return
+        denial = transfer_denial(item, caller, "junk")
+        if denial:
+            caller.msg(denial)
+            return
+        if item.contents:
+            caller.msg(f"Empty {item.get_display_name(caller)} first.")
             return
 
         display_name = item.get_display_name(caller)

@@ -10,6 +10,7 @@ from typing import Any
 from evennia.prototypes.prototypes import PROTOTYPE_TAG_CATEGORY, search_prototype
 from systems.combat import is_fighting
 from systems.encumbrance import spawn_with_capacity
+from systems.item_transfer import transfer_denial
 from world.build_schema import ITEM_TYPES
 
 SHOP_STOCK_PROVENANCE_ATTRIBUTE = "shop_stock_provenance"
@@ -397,8 +398,7 @@ def trade_eligible(
         or kind not in profile["accepted_kinds"]
         or item.contents
         or item.attributes.get("worn_location")
-        or item.attributes.get("no_drop")
-        or item.attributes.get("account_bound")
+        or transfer_denial(item, actor, "sell")
     ):
         raise ShopError("That item cannot be traded.")
     if check_access and not item.access(

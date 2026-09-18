@@ -705,6 +705,9 @@ class TestItemType(EvenniaCommandTest):
                 "weight",
                 "value",
                 "wear_locations",
+                "no_drop",
+                "account_bound",
+                "decay_minutes",
                 "type",
             },
         )
