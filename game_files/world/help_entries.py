@@ -158,6 +158,70 @@ HELP_ENTRY_DICTS = [
         commands, or callables.""",
     },
     {
+        "key": "building starting packages",
+        "aliases": ["starting packages", "starting equipment"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """Starting equipment comes from one registry. Packages are
+        written by hand in |wworld/starting_package_data.py|n (CLASS_PACKAGES
+        and BACKGROUND_PACKAGES, keyed by class or background name). Items are
+        module prototypes in |wworld/prototypes.py|n. Chargen text is generated
+        from these files; there is no other equipment source. Edit the files,
+        sync, and reload, then run |wstartpackages|n to see the result.
+
+        # subtopics
+
+        ## Packages
+
+        Every package needs |wsrd_reference|n (starting "SRD 5.2.1 ") and may
+        have |wadaptation|n text explaining a MUD change. |witems|n are always
+        granted: each entry has |wprototype|n, |wquantity|n (1-100, default 1),
+        and optional |wequip|n, a list of wear locations to fill with that many
+        copies. |wcoins|n (0-100000) is always granted. |wchoices|n is a list
+        of {key, count, options}; the player picks |wcount|n distinct options.
+        Each option has a key (shown as its capital letter), items, coins, and
+        may hold one more level of choices. Keys are lowercase letters,
+        digits, and underscores. An option must grant something.
+
+        ITEM-07B will pass selections as choice paths, such as
+        class.equipment = (a,) or background.equipment.a.gaming_set = (dice,).
+
+        ## Prototypes
+
+        Each referenced prototype must be defined in world/prototypes.py (not
+        only in the database), use typeclass typeclasses.objects.Item, and set
+        key, weight, value, type, no_drop, account_bound, and srd_reference.
+        Every other field must be one the item builder offers for that type,
+        stored exactly as the builder would store it (for example weight 3.0
+        and wear_locations ["body"]). Callables and $protfuncs are refused so
+        weights and names stay fixed. Money-type prototypes are refused; use
+        coins instead. Prototype parents are allowed.
+
+        ## Validation failures
+
+        |wstartpackages|n lists each problem. The registry is complete only
+        when there are none; until then chargen shows "Not yet available" and
+        no package can be granted. Problems include:
+          - a selectable class or background with no package, or a package for
+            one that is not selectable in this release;
+          - unknown fields, bad keys, out-of-range quantity/coins/count, a
+            choice with fewer than two options, nesting beyond one level, or
+            the same prototype listed twice in one item list;
+          - a prototype that is missing, exists only in the database, is
+            shadowed by a database copy with the same key, cannot be spawned,
+            or fails a builder field rule;
+          - equipping more copies than the quantity, a location the item
+            cannot be worn at, two items equipping the same location in any
+            class + background combination, or auto-equipping armor the class
+            is not trained in;
+          - a class + background pair where no choice combination fits the
+            weakest character chargen can make (Strength 3; 45 lb and the
+            carried item limit), or where coins exceed the wallet maximum.
+        Use |wstartpackages <name>|n to preview one package and
+        |wstartpackages/check|n to revalidate after fixing database prototypes.
+        Bump STARTING_PACKAGE_VERSION when you change published packages.""",
+    },
+    {
         "key": "building item resources",
         "aliases": ["building lights", "building charges", "resource profiles"],
         "category": "Building",
@@ -1045,7 +1109,10 @@ HELP_ENTRY_DICTS = [
 
             2. |yChoose Your Origin|n — Your origin has two parts:
                - Background: represents your pre-adventuring occupation and gives
-                 skill proficiencies, a tool proficiency, a feat, and starting gear.
+                 skill proficiencies, a tool proficiency, and a feat.
+               Each class and background detail page also lists its starting
+               equipment options, or "Not yet available" until staff finish
+               the starting packages.
                - Species: your ancestral heritage, determining size and speed.
                - Languages: your character automatically knows Common plus 2 more.
 

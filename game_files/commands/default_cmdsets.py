@@ -89,6 +89,7 @@ from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
 from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
+from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
 from commands.world_time import CmdTime
 from evennia import default_cmds
@@ -141,6 +142,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdJunk)
         self.add(CmdItemPolicy)
         self.add(CmdNoteAdmin)
+        self.add(CmdStartPackages)
         self.add(CmdWear)
         self.add(CmdRemove)
         self.add(CmdAccess)

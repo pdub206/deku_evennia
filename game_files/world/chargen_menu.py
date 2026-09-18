@@ -17,6 +17,7 @@ from typing import Any
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
 from systems.progression import CLASSES
+from systems.starting_packages import describe_package
 from world.chargen_data import (
     ABILITY_NAMES,
     ABILITY_SHORT,
@@ -156,6 +157,7 @@ def menunode_class_detail(
         |yArmor Training:|n  {', '.join(data['armor_training']) or 'None'}
         |yWeapons:|n         {data['weapon_profs']}
         |ySkill Picks:|n     {data['skill_choices']} from: {', '.join(data['skills_available'])}
+        |yEquipment:|n       {describe_package("class", selected_class)}
 
         |ySuggested Standard Array:|n
 {sug_line}
@@ -204,7 +206,7 @@ def menunode_choose_background(caller: Any, **kwargs):
 
         Your background represents the place and occupation most formative
         for your character.  It grants skill proficiencies, a tool
-        proficiency, starting equipment, and a feat.
+        proficiency, and a feat, and lists its starting equipment options.
 
         Select a background to learn more.
     """)
@@ -243,7 +245,7 @@ def menunode_background_detail(
         |ySkill Proficiencies:|n  {', '.join(data['skill_proficiencies'])}
         |yTool Proficiency:|n     {data['tool_proficiency']}
         |yFeat:|n                 {data['feat']}
-        |yEquipment:|n            {data['equipment']}
+        |yEquipment:|n            {describe_package("background", selected_bg)}
 
         Do you want to take the |w{selected_bg}|n background?
     """)

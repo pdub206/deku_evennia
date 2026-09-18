@@ -113,11 +113,16 @@ def _setting_int(name: str, default: int) -> int:
     return value
 
 
+def default_carried_item_limit() -> int:
+    """Return the settings-managed item limit for owners without an override."""
+    return _setting_int("CARRIED_ITEM_LIMIT", DEFAULT_CARRIED_ITEM_LIMIT)
+
+
 def carried_item_limit(owner: Any) -> int:
     """Return an explicit owner override or the settings-managed safe limit."""
     override = owner.attributes.get("carry_item_limit")
     if override is None:
-        return _setting_int("CARRIED_ITEM_LIMIT", DEFAULT_CARRIED_ITEM_LIMIT)
+        return default_carried_item_limit()
     if isinstance(override, bool) or not isinstance(override, int) or override < 0:
         raise EncumbranceError("carry item limit must be a non-negative whole number.")
     return override
