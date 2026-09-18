@@ -127,6 +127,16 @@ def as_key_kind(raw: str) -> str:
         raise ValueError(str(err)) from err
 
 
+def as_note_title(raw: str) -> str:
+    """A bounded, markup-free single-line note title."""
+    from systems.notes import NoteError, sanitize_title
+
+    try:
+        return sanitize_title(raw)
+    except NoteError as err:
+        raise ValueError(str(err)) from err
+
+
 def as_decay_minutes(raw: str) -> int | None:
     """Whole minutes until an item decays, or ``none`` for no decay."""
     if raw.strip().lower() == "none":
@@ -585,6 +595,14 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
     "key": {
         "key_kind": Field(
             "attr", as_key_kind, "stable key identity matched by locks", "key_kind"
+        )
+    },
+    "note": {
+        "title": Field(
+            "attr",
+            as_note_title,
+            "plain-text title shown when the note is read",
+            target="note_title",
         )
     },
     "other": {

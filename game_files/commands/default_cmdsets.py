@@ -76,6 +76,7 @@ from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.magic_items import CmdQuaff, CmdRecite, CmdUseDevice
+from commands.notes import CmdNoteAdmin, CmdRead, CmdWrite
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.presentation import (
     CmdAutoExits,
@@ -112,6 +113,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLight)
         self.add(CmdExtinguish)
         self.add(CmdRefill)
+        self.add(CmdRead)
+        self.add(CmdWrite)
         self.add(CmdTime)
         self.add(CmdRecall)
         self.add(CmdLook)
@@ -137,6 +140,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWhisper)
         self.add(CmdJunk)
         self.add(CmdItemPolicy)
+        self.add(CmdNoteAdmin)
         self.add(CmdWear)
         self.add(CmdRemove)
         self.add(CmdAccess)

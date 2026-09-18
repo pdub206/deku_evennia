@@ -53,6 +53,28 @@ HELP_ENTRY_DICTS = [
         magical activation are documented by their own item features.""",
     },
     {
+        "key": "notes",
+        "aliases": ["read", "write", "writing", "pen", "pens"],
+        "category": "General",
+        "text": """Notes are items you can write on and read.
+
+          |wread <note>|n              read a note you carry or can see
+          |wwrite <note> = <text>|n    replace what a note says
+
+        To write, carry the note and a pen directly, not inside a bag. You
+        must be able to act (not asleep or fighting). Writing replaces the
+        whole note; there is no appending. Type |w||/|n in your text to start a
+        new line. Colour codes, links, and other markup are removed, so notes
+        are always plain text. Text over the length limit (2000 characters by
+        default) is refused rather than cut short, and if writing fails the
+        note keeps its old text.
+
+        Reading needs enough light to see. Each note shows the name of the
+        last person who wrote on it, as they were named when they wrote. You
+        cannot remove or change that. Some notes are locked against reading
+        or writing. Scrolls are recited, not read; see |whelp magic items|n.""",
+    },
+    {
         "key": "magic items",
         "aliases": ["quaff", "recite", "potions", "scrolls", "wands", "staves"],
         "category": "Magic",
@@ -1691,6 +1713,48 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "building notes",
+        "aliases": ["note title", "note building", "pen building"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Set |wtype note|n to make an item writable and readable, and
+            |wtype pen|n for something players can write with. Pens have no
+            ink or other fields.
+
+              |wset title A Crumpled Letter|n   title shown when read
+
+            The title is plain text on one line, up to 80 characters by
+            default (|wNOTE_TITLE_MAX_LENGTH|n); markup is stripped. Without a
+            title, the item's name is shown. The body can only be written by
+            players with |wwrite|n (|wNOTE_BODY_MAX_LENGTH|n, 2000 by default)
+            and is never copied into a template. Changing a note's type clears
+            its writing.
+
+            Optional locks: |wread|n controls who can read it and |wwrite|n who
+            can write on it, e.g. |wlock letter = write:perm(Builder)|n. The
+            normal |wview|n and |winteract|n locks also apply.
+        """,
+    },
+    {
+        "key": "note administration",
+        "aliases": ["noteadmin", "noteadmin/delete"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            |wnoteadmin <note>|n shows the last writer's character and account
+            ids, their name at the time and now, the write time, the revision,
+            and the body shown escaped (markup appears as text).
+
+            |wnoteadmin/delete <note> = <reason>|n deletes an abusive note.
+            The reason and the full authorship record go to the server log.
+            A note holding other objects must be emptied first.
+
+            Players cannot set or clear authorship, and there is no player
+            erase. Rewriting a note records the new writer.
+        """,
+    },
+    {
         "key": "item policy administration",
         "aliases": ["itempolicy/move", "itempolicy/unbind", "itempolicy/decay"],
         "category": "Builder",
@@ -1921,7 +1985,8 @@ HELP_ENTRY_DICTS = [
                                   and |wmitigation_types|n
               |wset type container|n  adds |wcapacity|n (max contained weight),
                                   |wtransparent|n, and door/open/lock state fields
-              |wset type none|n       back to a plain item (drops those fields)
+              |wset type note|n       adds |wtitle|n (see |whelp building notes|n)
+              |wset type none|n      back to a plain item (drops those fields)
 
             Armor mitigation protects the hit location implied by
             |wwear_locations|n; there is no separate coverage field. Mitigation

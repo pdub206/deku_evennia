@@ -347,7 +347,7 @@ def _set_item_type(item, value: str) -> None:
         return
     for attr in _type_attr_names(item.db.type):
         item.attributes.remove(attr)
-    for state_attr in ("item_resource_state", "magic_item_state"):
+    for state_attr in ("item_resource_state", "magic_item_state", "note_record"):
         if item.attributes.has(state_attr):
             item.attributes.remove(state_attr)
     item.db.type = new_type

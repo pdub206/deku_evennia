@@ -107,6 +107,9 @@ MAX_CONTAINER_NESTING = 20
 # ITEM-02 wallet and per-owner idempotency/audit policy.
 GAME_MAX_CURRENCY = 2_000_000_000
 GAME_CURRENCY_LEDGER_LIMIT = 100
+# ITEM-06 note limits, in characters after sanitization and normalization.
+NOTE_TITLE_MAX_LENGTH = 80
+NOTE_BODY_MAX_LENGTH = 2000
 # COMBAT-05 converts these policy durations to durable corpse-lane pulse
 # counts at creation. NPC prototypes may set ``corpse_decay_minutes``; PC
 # duration is deliberately global policy.
