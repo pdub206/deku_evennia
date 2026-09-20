@@ -2,8 +2,12 @@
 
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
-
 from systems import groups
+from systems.lifecycle import (
+    CharacterAvailability,
+    CharacterLifecycleEvent,
+    UnavailabilityCause,
+)
 
 
 class TestGroups(EvenniaTest):
@@ -14,6 +18,8 @@ class TestGroups(EvenniaTest):
         ServerConfig.objects.filter(db_key=groups.GROUP_CONFIG_KEY).delete()
         self.char1.db.is_player_character = True
         self.char2.db.is_player_character = True
+        self.char1.key = "Leader"
+        self.char2.key = "Invitee"
         self.char1.db.senses = ["darkvision"]
         self.char2.db.senses = ["darkvision"]
         self.char1.location = self.room1
@@ -46,3 +52,44 @@ class TestGroups(EvenniaTest):
         party = groups.group_for(self.char2)
         self.assertEqual(party["leader_id"], self.char2.id)
         self.assertEqual(party["members"], [self.char2.id])
+
+    def test_final_disconnect_ends_invitation_but_preserves_membership(self):
+        """Only a final lifecycle transition clears an offer, never the party."""
+        self.assertTrue(groups.invite(self.char1, self.char2).accepted)
+        groups._on_character_lifecycle(
+            CharacterLifecycleEvent(
+                self.char1,
+                CharacterAvailability.UNAVAILABLE,
+                1,
+                UnavailabilityCause.DISCONNECT,
+            )
+        )
+        self.assertEqual(groups._read()["invitations"], [])
+
+        self.assertTrue(groups.invite(self.char1, self.char2).accepted)
+        self.assertTrue(groups.accept(self.char2, self.char1).accepted)
+        groups._on_character_lifecycle(
+            CharacterLifecycleEvent(
+                self.char1,
+                CharacterAvailability.UNAVAILABLE,
+                2,
+                UnavailabilityCause.OOC,
+            )
+        )
+        self.assertEqual(
+            groups.group_members(self.char1), (self.char1.id, self.char2.id)
+        )
+
+    def test_status_is_ordered_and_does_not_disclose_inaccessible_room(self):
+        """Status uses consented labels while respecting the room's view lock."""
+        self.assertTrue(groups.invite(self.char1, self.char2).accepted)
+        self.assertTrue(groups.accept(self.char2, self.char1).accepted)
+        self.room1.locks.add("view:false()")
+
+        status = groups.status_lines(self.char1)
+
+        self.assertIsNotNone(status)
+        self.assertEqual(status[0], "Leader: Leader")
+        self.assertIn("Location unavailable", status[1])
+        self.assertIn("Location unavailable", status[2])
+        self.assertNotIn("#", "\n".join(status))

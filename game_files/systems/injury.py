@@ -607,6 +607,16 @@ def _write(owner: Any, record: InjuryRecord, *, source: Any | None = None) -> No
         # idempotent follow-up and isolates a recoverable corpse failure from
         # the irreversible injury transition.
         try:
+            # GROUP-02 preserves membership across death, but a dead PC's
+            # outstanding invitation is never safe to accept.
+            from systems.groups import cancel_invitations
+
+            cancel_invitations(owner)
+        except Exception:
+            logger.log_trace(
+                f"GROUP-02 invitation cleanup failed for #{getattr(owner, 'id', '?')}."
+            )
+        try:
             from systems.rewards import resolve_death
 
             resolve_death(owner, record.death_id or "", source=source)

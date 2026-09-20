@@ -1,4 +1,4 @@
-"""GROUP-02A's durable, transaction-serialized party registry.
+"""GROUP-02's durable party registry, lifecycle policy, and safe status readers.
 
 The registry intentionally stores only primitive identifiers.  It does not
 create follow edges or confer access; its sole cross-system policy is the
@@ -14,10 +14,20 @@ from typing import Any
 
 from django.db import transaction
 from evennia.server.models import ServerConfig
+from systems.lifecycle import (
+    CharacterAvailability,
+    LifecycleConsumer,
+    LifecycleError,
+    UnavailabilityCause,
+    is_character_unavailable,
+    register_lifecycle_consumer,
+    unregister_lifecycle_consumer,
+)
 
 GROUP_CONFIG_KEY = "group02_registry"
 GROUP_VERSION = 1
 GROUP_CAPACITY = 8
+GROUP_LIFECYCLE_KEY = "group02.lifecycle"
 
 
 @dataclass(frozen=True)
@@ -45,6 +55,34 @@ def group_members(character: Any) -> tuple[int, ...]:
     """Return ordered member ids for a PC's current group."""
     group = group_for(character)
     return tuple(group["members"]) if group else ()
+
+
+def status_lines(character: Any) -> tuple[str, ...] | None:
+    """Return consented, privacy-safe status rows for one current group.
+
+    This reader intentionally degrades missing or malformed member state to
+    bounded labels. It never exposes a room key, dbref, exact resources, or a
+    lifecycle diagnostic.
+    """
+    group = group_for(character)
+    if group is None:
+        return None
+    lines = ["Leader: " + _member_name(group["leader_id"], character)]
+    for member_id in group["members"]:
+        member = _pc_by_id(member_id)
+        lines.append(
+            " | ".join(
+                (
+                    _member_name(member_id, character),
+                    _member_class_level(member),
+                    _member_presence(member),
+                    _member_room(member, character),
+                    _member_position(member),
+                    _member_health(member),
+                )
+            )
+        )
+    return tuple(lines)
 
 
 def are_allied(first: Any, second: Any) -> bool:
@@ -207,6 +245,9 @@ def transfer_leader(leader: Any, member: Any) -> GroupOutcome:
         if _id(member) == _id(leader):
             return GroupOutcome(True, reason="already_leader")
         found[1]["leader_id"] = _id(member)
+        # Invitations are authority-specific: the former leader cannot leave
+        # offers outstanding after no longer being authorized to form a party.
+        _remove_invitations(state, leader_id=_id(leader))
         state["sequence"] += 1
         _write(state)
         return GroupOutcome(True, True, "transferred")
@@ -254,6 +295,17 @@ def remove_deleted(character: Any) -> None:
             _write(state)
 
 
+def cancel_invitations(character: Any) -> None:
+    """End invitations involving a permanently unavailable PC, idempotently."""
+    with transaction.atomic():
+        state = _locked()
+        before = len(state["invitations"])
+        _remove_invitations(state, leader_id=_id(character), target_id=_id(character))
+        if len(state["invitations"]) != before:
+            state["sequence"] += 1
+            _write(state)
+
+
 def _remove_member(state: dict[str, Any], identifier: int | None) -> GroupOutcome:
     found = _group_by_member(state, identifier)
     if found is None or identifier is None:
@@ -291,8 +343,8 @@ def _invite_eligible(leader: Any, target: Any) -> bool:
     ):
         return False
     try:
-        from systems.injury import injury_record
         from systems.combat_outcomes import InjuryState
+        from systems.injury import injury_record
         from systems.visibility import target_visibility
 
         return (
@@ -333,6 +385,103 @@ def _pc_by_id(identifier: int) -> Any | None:
         return Character.objects.get(id=identifier)
     except Exception:
         return None
+
+
+def _member_name(identifier: int, observer: Any) -> str:
+    """Render a group member's display name without leaking absent records."""
+    member = _pc_by_id(identifier)
+    if member is None:
+        return "Unknown member"
+    try:
+        return member.get_display_name(observer)
+    except Exception:
+        return "Unknown member"
+
+
+def _member_class_level(member: Any) -> str:
+    """Return only validated, released advancement identity."""
+    if member is None:
+        return "Class/level unavailable"
+    try:
+        from systems.advancement_info import advancement_info, display_name
+
+        info = advancement_info(member)
+        if info.valid and info.state is not None:
+            return f"{display_name(info.state.class_key)} {info.state.level}"
+    except Exception:
+        pass
+    return "Class/level unavailable"
+
+
+def _member_presence(member: Any) -> str:
+    """Return one bounded connection/death label with no session detail."""
+    if member is None:
+        return "unavailable"
+    try:
+        from systems.combat_outcomes import InjuryState
+        from systems.injury import injury_record
+
+        if injury_record(member).state is InjuryState.DEAD:
+            return "dead"
+    except Exception:
+        return "unavailable"
+    if member.sessions.count():
+        return "connected"
+    if member.attributes.get("combat_linkdead") is not None:
+        return "link-dead"
+    if is_character_unavailable(member):
+        return "OOC"
+    return "OOC"
+
+
+def _member_room(member: Any, observer: Any) -> str:
+    """Return a room display name only when that room authorizes the observer."""
+    room = getattr(member, "location", None) if member is not None else None
+    try:
+        if room is not None and room.access(observer, "view"):
+            return room.get_display_name(observer)
+    except Exception:
+        pass
+    return "Location unavailable"
+
+
+def _member_position(member: Any) -> str:
+    """Return the canonical effective position without exposing repair detail."""
+    try:
+        return member.action_position.value
+    except Exception:
+        return "unavailable"
+
+
+def _member_health(member: Any) -> str:
+    """Return COMBAT-09's qualitative health band only."""
+    try:
+        from systems.combat_controls import health_description
+
+        return health_description(member)
+    except Exception:
+        return "unavailable"
+
+
+def _on_character_lifecycle(event: Any) -> None:
+    """Expire offers only when a PC truly disconnects or deliberately goes OOC."""
+    if event.availability is CharacterAvailability.UNAVAILABLE and event.cause in {
+        UnavailabilityCause.DISCONNECT,
+        UnavailabilityCause.OOC,
+    }:
+        cancel_invitations(event.character)
+
+
+def _register_lifecycle_consumer() -> None:
+    """Replace this reloadable module's callback without duplicating it."""
+    consumer = LifecycleConsumer(
+        GROUP_LIFECYCLE_KEY, on_character=_on_character_lifecycle
+    )
+    try:
+        register_lifecycle_consumer(consumer)
+    except LifecycleError:
+        unregister_lifecycle_consumer(GROUP_LIFECYCLE_KEY)
+        register_lifecycle_consumer(consumer)
 
 
 def _pc(character: Any) -> bool:
@@ -440,3 +589,6 @@ def _valid(state: Any) -> bool:
 
 def _id_value(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+_register_lifecycle_consumer()

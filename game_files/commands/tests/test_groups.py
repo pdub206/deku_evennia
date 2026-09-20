@@ -1,9 +1,8 @@
 """Command-level coverage for GROUP-02A party management."""
 
+from commands.groups import CmdGroup
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaCommandTest
-
-from commands.groups import CmdGroup
 from systems import groups
 
 
@@ -24,5 +23,11 @@ class TestCmdGroup(EvenniaCommandTest):
     def test_invite_and_display_party(self):
         """An invite uses the local visible target and group displays members."""
         self.call(CmdGroup(), "invite Invitee", "You invite Invitee.")
-        self.call(CmdGroup(), "accept Leader", "You join Leader's group.", caller=self.char2)
+        self.call(
+            CmdGroup(), "accept Leader", "You join Leader's group.", caller=self.char2
+        )
         self.call(CmdGroup(), "", "Leader: Leader\nMembers: Leader, Invitee")
+
+    def test_status_requires_membership(self):
+        """The consented status roster is unavailable to nonmembers."""
+        self.call(CmdGroup(), "status", "You are not in a group.")

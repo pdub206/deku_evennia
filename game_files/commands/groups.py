@@ -1,14 +1,14 @@
-"""Player command surface for GROUP-02A party management."""
+"""Player command surface for GROUP-02 party management and status."""
 
 from commands.command import Command
-from systems.action_policy import ActionCategory
 from systems import groups
+from systems.action_policy import ActionCategory
 
 
 class CmdGroup(Command):
     """Create and manage a durable party.
 
-    Usage: group [invite|accept|decline|leave|kick|leader|disband] [character]
+    Usage: group [status|invite|accept|decline|leave|kick|leader|disband] [character]
     """
 
     key = "group"
@@ -35,6 +35,13 @@ class CmdGroup(Command):
                     f"Leader: {getattr(groups._pc_by_id(group['leader_id']), 'key', 'someone')}\nMembers: {', '.join(names)}"
                 )
             return
+        if verb == "status":
+            if name:
+                self.msg("Usage: group status")
+                return
+            status = groups.status_lines(self.caller)
+            self.msg("You are not in a group." if status is None else "\n".join(status))
+            return
         if verb in {"leave", "disband"} and name:
             self.msg("Usage: group " + verb)
             return
@@ -57,7 +64,7 @@ class CmdGroup(Command):
         }.get(verb)
         if operation is None:
             self.msg(
-                "Usage: group [invite|accept|decline|leave|kick|leader|disband] [character]"
+                "Usage: group [status|invite|accept|decline|leave|kick|leader|disband] [character]"
             )
             return
         result = operation()
