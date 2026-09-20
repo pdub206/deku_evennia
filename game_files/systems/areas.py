@@ -21,6 +21,7 @@ Rooms carry two bookkeeping tags so this round-trips idempotently:
 """
 
 import os
+from dataclasses import asdict
 from pprint import pformat
 
 from django.conf import settings
@@ -28,6 +29,22 @@ from evennia import create_object
 from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
+from systems.doors import apply_door_area_data, door_area_data, validate_area_exit_doors
+from systems.room_environment import (
+    ROOM_ENVIRONMENT_ATTRIBUTE,
+    ROOM_ENVIRONMENT_VERSION,
+    RoomEnvironmentError,
+    room_environment_data,
+    validate_room_environment,
+)
+from systems.room_policy import (
+    ROOM_POLICY_ATTRIBUTE,
+    ROOM_POLICY_VERSION,
+    RoomPolicyError,
+    room_policy_data,
+    validate_room_policy,
+)
+from systems.travel import SECTOR_ATTRIBUTE, SECTORS, sector_key
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
@@ -89,9 +106,16 @@ def ensure_room_key(room, area_slug: str) -> str:
 
 def assign_area(room, area_slug: str) -> None:
     """Tag ``room`` into ``area_slug`` (replacing any prior area) and key it."""
+    profiles = {
+        profile
+        for member in search_tag(area_slug, category=AREA_TAG_CATEGORY)
+        for profile in member.tags.get(category="weather_profile", return_list=True)
+    }
     for old in room.tags.get(category=AREA_TAG_CATEGORY, return_list=True):
         room.tags.remove(old, category=AREA_TAG_CATEGORY)
     room.tags.add(area_slug, category=AREA_TAG_CATEGORY)
+    if profiles == {"temperate"}:
+        room.tags.add("temperate", category="weather_profile")
     ensure_room_key(room, area_slug)
 
 
@@ -139,6 +163,21 @@ def _room_prototype(room, area_slug: str, room_key: str) -> dict:
         ]
         if not prot["tags"]:
             prot.pop("tags")
+    policy = room_policy_data(room)
+    environment = room_environment_data(room)
+    sector = sector_key(room)
+    if sector is None:
+        raise ValueError(f"Room '{room.key}' has an invalid sector.")
+    attrs = [
+        attr
+        for attr in prot.get("attrs", [])
+        if attr[0] not in {ROOM_POLICY_ATTRIBUTE, ROOM_ENVIRONMENT_ATTRIBUTE}
+    ]
+    attrs.append((ROOM_POLICY_ATTRIBUTE, policy, None, ""))
+    attrs.append((ROOM_ENVIRONMENT_ATTRIBUTE, environment, None, ""))
+    attrs = [attr for attr in attrs if attr[0] != SECTOR_ATTRIBUTE]
+    attrs.append((SECTOR_ATTRIBUTE, sector, None, ""))
+    prot["attrs"] = attrs
     return prot
 
 
@@ -171,6 +210,9 @@ def build_area_data(area_slug: str) -> tuple[dict, list]:
             aliases = ex.aliases.all()
             if aliases:
                 attrs["aliases"] = sorted(aliases)
+            door = door_area_data(ex)
+            if door is not None:
+                attrs["door_state"] = door
             exits.append((from_key, ex.key, key_by_id[dest.id], attrs))
 
     return rooms, sorted(exits)
@@ -238,6 +280,41 @@ def load_area_data(
     duplicated, and an exit that already exists is left untouched — so loading
     the same area twice is safe.
     """
+    validate_area_exit_doors(exits)
+    policies: dict[str, dict] = {}
+    environments: dict[str, dict] = {}
+    sectors: dict[str, str] = {}
+    for room_key, prototype in rooms.items():
+        raw_policy = None
+        raw_environment = None
+        raw_sector = None
+        for attr in prototype.get("attrs", []):
+            if attr[0] == ROOM_POLICY_ATTRIBUTE:
+                raw_policy = attr[1]
+            elif attr[0] == ROOM_ENVIRONMENT_ATTRIBUTE:
+                raw_environment = attr[1]
+            elif attr[0] == SECTOR_ATTRIBUTE:
+                raw_sector = attr[1]
+        if raw_sector is not None and raw_sector not in SECTORS:
+            raise ValueError("Invalid room sector in area data.")
+        sectors[room_key] = raw_sector or "inside"
+        try:
+            validate_room_policy(raw_policy)
+        except RoomPolicyError as err:
+            raise ValueError(f"Invalid room policy in area data: {err}") from err
+        policies[room_key] = {
+            "version": ROOM_POLICY_VERSION,
+            **asdict(validate_room_policy(raw_policy)),
+        }
+        try:
+            environment = validate_room_environment(raw_environment)
+        except RoomEnvironmentError as err:
+            raise ValueError(f"Invalid room environment in area data: {err}") from err
+        environments[room_key] = {
+            "version": ROOM_ENVIRONMENT_VERSION,
+            **asdict(environment),
+            "light": environment.light.value,
+        }
     key_to_room: dict[str, object] = {}
     for room_key, prototype in rooms.items():
         room = _find_room(area_slug, room_key)
@@ -245,31 +322,50 @@ def load_area_data(
             (room,) = spawn(dict(prototype))
         room.tags.add(area_slug, category=AREA_TAG_CATEGORY)
         room.tags.add(room_key, category=ROOM_KEY_CATEGORY)
+        room.attributes.add(ROOM_POLICY_ATTRIBUTE, policies[room_key])
+        room.attributes.add(ROOM_ENVIRONMENT_ATTRIBUTE, environments[room_key])
+        room.attributes.add(SECTOR_ATTRIBUTE, sectors[room_key])
         key_to_room[room_key] = room
 
+    created_or_found_exits = []
     for from_key, direction, to_key, attrs in exits:
         src = key_to_room.get(from_key)
         dst = key_to_room.get(to_key)
         if src is None or dst is None:
             continue
-        if any(ex.key == direction and ex.destination == dst for ex in src.exits):
-            continue
-        create_object(
-            settings.BASE_EXIT_TYPECLASS,
-            key=direction,
-            aliases=attrs.get("aliases"),
-            location=src,
-            destination=dst,
+        existing = next(
+            (ex for ex in src.exits if ex.key == direction and ex.destination == dst),
+            None,
         )
+        if existing is None:
+            existing = create_object(
+                settings.BASE_EXIT_TYPECLASS,
+                key=direction,
+                aliases=attrs.get("aliases"),
+                location=src,
+                destination=dst,
+            )
+            created = True
+        else:
+            created = False
+        created_or_found_exits.append((existing, attrs, created))
+
+    # Configure doors only after the complete exit graph exists, so the second
+    # side of a synchronized pair can resolve the first in the same load.
+    for exit_obj, attrs, created in created_or_found_exits:
+        if created:
+            apply_door_area_data(exit_obj, attrs.get("door_state"))
 
     if mobiles:
         # MOB-05 validates all source references before any one placement can
         # create an NPC, then uses a stable load token to keep repeated loads
         # from duplicating successful copies. AREA-03 later supplies reset
         # tokens for recurring reconciliation.
-        from systems.mob_spawning import (MobileSpawnError,
-                                          reconcile_mobile_placement,
-                                          validate_mobile_placements)
+        from systems.mob_spawning import (
+            MobileSpawnError,
+            reconcile_mobile_placement,
+            validate_mobile_placements,
+        )
 
         try:
             placements = validate_mobile_placements(area_slug, mobiles, key_to_room)

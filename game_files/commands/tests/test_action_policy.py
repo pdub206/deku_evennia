@@ -4,8 +4,17 @@ from unittest.mock import MagicMock, patch
 
 from commands.command import Command, MuxCommand
 from commands.default_cmdsets import CharacterCmdSet
-from commands.generic import (CmdAccess, CmdDrop, CmdGet, CmdGive, CmdHelp,
-                              CmdHome, CmdInventory, CmdNick, CmdSetDesc)
+from commands.generic import (
+    CmdAccess,
+    CmdDrop,
+    CmdGet,
+    CmdGive,
+    CmdHelp,
+    CmdHome,
+    CmdInventory,
+    CmdNick,
+    CmdSetDesc,
+)
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaCommandTest
@@ -129,7 +138,7 @@ class TestCommandPolicy(EvenniaCommandTest):
         cmdset = CharacterCmdSet()
         cmdset.at_cmdset_creation()
         expected = {
-            "home": CmdHome,
+            "recall": CmdHome,
             "nick": CmdNick,
             "setdesc": CmdSetDesc,
             "access": CmdAccess,
@@ -232,10 +241,13 @@ class TestExitCommandPolicy(EvenniaCommandTest):
             "You need to stand before you can do that."
         )
 
-    def test_generated_exit_allows_standing_traversal(self):
+    def test_generated_exit_queues_standing_traversal(self):
         self.call(ExitCommand(), "", obj=self.exit)
 
-        self.assertEqual(self.char1.location, self.room2)
+        from systems.action_queue import inspect_action
+
+        self.assertEqual(self.char1.location, self.room1)
+        self.assertEqual(inspect_action(self.char1)["definition"], "interact03.travel")
 
 
 class TestPositionPresentation(EvenniaCommandTest):

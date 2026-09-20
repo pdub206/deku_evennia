@@ -12,11 +12,15 @@ are all removed when menunode_end finalises the character.
 
 from __future__ import annotations
 
+from itertools import product
 from typing import Any
 
 from evennia.utils import dedent
 from systems.character_stats import calculate_max_hp
 from systems.progression import CLASSES
+from systems.starting_packages import (StartingPackageError, describe_package,
+                                       package_selections, plan_starting_grant,
+                                       starting_package_registry)
 from world.chargen_data import (ABILITY_NAMES, ABILITY_SHORT, ALIGNMENTS,
                                 BACKGROUNDS, MAX_AGE, MIN_AGE, POINT_BUY_COSTS,
                                 POINT_BUY_MAX, POINT_BUY_MIN, POINT_BUY_TOTAL,
@@ -143,6 +147,7 @@ def menunode_class_detail(
         |yArmor Training:|n  {', '.join(data['armor_training']) or 'None'}
         |yWeapons:|n         {data['weapon_profs']}
         |ySkill Picks:|n     {data['skill_choices']} from: {', '.join(data['skills_available'])}
+        |yEquipment:|n       {describe_package("class", selected_class)}
 
         |ySuggested Standard Array:|n
 {sug_line}
@@ -191,7 +196,7 @@ def menunode_choose_background(caller: Any, **kwargs):
 
         Your background represents the place and occupation most formative
         for your character.  It grants skill proficiencies, a tool
-        proficiency, starting equipment, and a feat.
+        proficiency, and a feat, and lists its starting equipment options.
 
         Select a background to learn more.
     """)
@@ -230,7 +235,7 @@ def menunode_background_detail(
         |ySkill Proficiencies:|n  {', '.join(data['skill_proficiencies'])}
         |yTool Proficiency:|n     {data['tool_proficiency']}
         |yFeat:|n                 {data['feat']}
-        |yEquipment:|n            {data['equipment']}
+        |yEquipment:|n            {describe_package("background", selected_bg)}
 
         Do you want to take the |w{selected_bg}|n background?
     """)
@@ -1465,7 +1470,7 @@ def menunode_review(caller: Any, **kwargs):
         {
             "key": ("0", "play", "yes", "y"),
             "desc": "Start playing — enter the world",
-            "goto": "menunode_end",
+            "goto": "menunode_choose_starting_equipment",
         },
         {
             "key": "1",
@@ -1547,14 +1552,86 @@ def _restart_chargen(caller: Any, raw_string: str = "", **kwargs):
         "chargen_bg_bonus_two_pts",
         "chargen_alignment",
         "chargen_from_review",
+        "chargen_starting_selections",
     ]:
         char.attributes.remove(attr)
     return "menunode_choose_class"
 
 
+def menunode_choose_starting_equipment(caller: Any, **kwargs):
+    """Let the player select one fully validated class/background grant plan."""
+    char = _char(caller)
+    char.db.chargen_step = "menunode_choose_starting_equipment"
+    registry = starting_package_registry()
+    cls_name = char.db.chargen_class or "Fighter"
+    background = char.db.chargen_background or ""
+    if not registry.complete:
+        return (
+            "Starting equipment is not available until staff finish its packages.",
+            {"desc": "Return to review", "goto": "menunode_review"},
+        )
+    class_package = registry.classes.get(cls_name)
+    background_package = registry.backgrounds.get(background)
+    if class_package is None or background_package is None:
+        return (
+            "Starting equipment is not available for this character.",
+            {"desc": "Return to review", "goto": "menunode_review"},
+        )
+    options = []
+    for class_choices, background_choices in product(
+        package_selections(class_package), package_selections(background_package)
+    ):
+        selections = {**class_choices, **background_choices}
+        try:
+            plan = plan_starting_grant(
+                cls_name, background, selections, registry=registry
+            )
+        except StartingPackageError:
+            continue
+        items = []
+        for item in plan.items:
+            name = registry.items[item.prototype_key].name
+            items.append(name if item.quantity == 1 else f"{name} (x{item.quantity})")
+        if plan.coins:
+            items.append(f"{plan.coins} coins")
+        options.append(
+            {
+                "desc": "; ".join(items) or "No starting equipment",
+                "goto": (_set_starting_equipment, {"selections": selections}),
+            }
+        )
+    if not options:
+        return (
+            "No valid starting-equipment choice fits this character.",
+            {"desc": "Return to review", "goto": "menunode_review"},
+        )
+    options.append(
+        {
+            "key": ("Back", "back", "b"),
+            "desc": "Return to review",
+            "goto": "menunode_review",
+        }
+    )
+    return "|wChoose Starting Equipment|n\n\nChoose one package combination:", options
+
+
+def _set_starting_equipment(
+    caller: Any,
+    raw_string: str = "",
+    selections: dict[str, tuple[str, ...]] | None = None,
+    **kwargs,
+):
+    """Save only a menu selection; item creation remains exclusively final commit."""
+    _char(caller).db.chargen_starting_selections = selections or {}
+    return "menunode_end"
+
+
 def menunode_end(caller: Any, **kwargs):
     """Finalise all choices and write canonical character attributes."""
     char = _char(caller)
+    from systems.room_roles import resolve_room_role
+
+    start_room = resolve_room_role("CHARACTER_START_ROOM").room
     # This persists ownership across disconnects; combat must never infer PC
     # status from transient session state.
     char.db.is_player_character = True
@@ -1629,6 +1706,30 @@ def menunode_end(caller: Any, **kwargs):
         set(bg_skill_profs + list(char.db.skill_proficiencies or []))
     )
 
+    # ITEM-07B is deliberately the last mutable chargen action.  The service
+    # reserves the exact, versioned plan and performs item/currency/equipment
+    # mutations in one transaction; revisiting earlier menu nodes creates none.
+    from systems.starting_grants import (StartingGrantError,
+                                         commit_starting_grant)
+
+    try:
+        plan = plan_starting_grant(
+            cls_name,
+            bg,
+            char.db.chargen_starting_selections or {},
+        )
+        commit_starting_grant(char, plan)
+    except (StartingPackageError, StartingGrantError) as err:
+        return (
+            f"Starting equipment could not be granted: {err}",
+            {"desc": "Return to review", "goto": "menunode_review"},
+        )
+
+    if char.location is not start_room and not char.move_to(
+        start_room, quiet=True, move_type="spawn", trigger_entry_hazard=False
+    ):
+        raise RuntimeError("The configured character start room rejected placement.")
+
     # Clean up all temporary chargen attributes.
     for attr in [
         "chargen_class",
@@ -1644,6 +1745,7 @@ def menunode_end(caller: Any, **kwargs):
         "chargen_bg_bonus_two_pts",
         "chargen_alignment",
         "chargen_from_review",
+        "chargen_starting_selections",
         "chargen_step",  # clears it — signals the contrib callback to puppet the char
     ]:
         char.attributes.remove(attr)
@@ -1656,6 +1758,7 @@ def menunode_end(caller: Any, **kwargs):
           Class: {cls_name}  |  Background: {bg}  |  Species: {species}
           Alignment: {alignment}
           HP: {char.stats.hp_max}  |  AC: {char.stats.armor_class}  |  Reaction: {char.stats.reaction_modifier:+d}
+          Starting equipment: {len(plan.items)} item type(s), {plan.coins} coins
 
         Entering the world now…
     """)

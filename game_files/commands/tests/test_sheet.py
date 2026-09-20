@@ -40,6 +40,8 @@ class TestStatCommands(EvenniaCommandTest):
         self.assertNotIn("Initiative:", output)
         self.assertIn("Next Level:", output)
         self.assertIn("300 XP (300 remaining)", output)
+        self.assertIn("Survival Meters:", output)
+        self.assertIn("no hunger, thirst, or intoxication", output)
 
     def test_skills_uses_canonical_skill_bonus(self):
         output = self.call(CmdSkills(), "")

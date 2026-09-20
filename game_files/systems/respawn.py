@@ -13,7 +13,6 @@ from typing import Any
 
 from django.conf import settings
 from evennia.utils import logger
-from evennia.utils.search import search_tag
 from systems.combat import handle_departure, is_fighting
 from systems.corpses import CorpseError, corpse_record
 from systems.injury import (
@@ -242,27 +241,13 @@ def _return_controller_to_ooc(character: Any) -> None:
 
 def _resolve_sanctuary() -> Any | None:
     """Resolve exactly one stable ``area:room_key`` setting, never a home."""
-    configured = getattr(settings, "COMBAT_RESPAWN_SANCTUARY", None)
-    if not isinstance(configured, str) or configured.count(":") != 1:
-        logger.log_err("COMBAT_RESPAWN_SANCTUARY must be one area:room_key string.")
-        return None
-    area, room_key = (part.strip().lower() for part in configured.split(":"))
-    if not area or not room_key:
-        logger.log_err("COMBAT_RESPAWN_SANCTUARY has an empty area or room key.")
-        return None
-    from systems.areas import AREA_TAG_CATEGORY, ROOM_KEY_CATEGORY
+    from systems.room_roles import RoomRoleError, resolve_room_role
 
-    matches = [
-        room
-        for room in search_tag(room_key, category=ROOM_KEY_CATEGORY)
-        if room.tags.has(area, category=AREA_TAG_CATEGORY)
-    ]
-    if len(matches) != 1:
-        logger.log_err(
-            f"COMBAT_RESPAWN_SANCTUARY '{configured}' resolved to {len(matches)} rooms."
-        )
+    try:
+        return resolve_room_role("COMBAT_RESPAWN_SANCTUARY").room
+    except RoomRoleError as err:
+        logger.log_err(str(err))
         return None
-    return matches[0]
 
 
 def _linkdead_pulses() -> int:

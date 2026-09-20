@@ -8,6 +8,7 @@ from typing import Any
 
 from evennia.objects.models import ObjectDB
 from systems.dice import roll
+from systems.doors import traversal_decision
 
 _FLEE_TOKEN = object()
 
@@ -43,7 +44,8 @@ def flee_exit_decision(actor: Any, exit_obj: Any) -> FleeExitDecision:
             actor, exit_obj, purpose="flee", allow_fighting=True
         )
         return FleeExitDecision(
-            navigation.status == "moved", exit_obj if navigation.status == "moved" else None,
+            navigation.status == "moved",
+            exit_obj if navigation.status == "moved" else None,
             navigation.reason or "invalid_route",
         )
     from typeclasses.exits import Exit
@@ -56,6 +58,8 @@ def flee_exit_decision(actor: Any, exit_obj: Any) -> FleeExitDecision:
         return FleeExitDecision(False, reason="invalid_route")
     if exit_obj.destination is None:
         return FleeExitDecision(False, reason="invalid_route")
+    if not traversal_decision(exit_obj).allowed:
+        return FleeExitDecision(False, reason="blocked_route")
     if not exit_obj.access(actor, "traverse", default=True):
         return FleeExitDecision(False, reason="blocked_route")
     return FleeExitDecision(True, exit_obj)

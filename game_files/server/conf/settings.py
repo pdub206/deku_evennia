@@ -64,7 +64,24 @@ GAME_PULSE_CADENCES = {
     "world_time": 60,
     "weather": 300,
     "resets": 60,
+    "actions": 1,
+    "objects": 60,
 }
+# ENV-01 starts at noon, year 1. Scale changes require a new version and
+# systems.world_clock.reconcile_clock() from the staff shell.
+GAME_CLOCK_EPOCH_MINUTE = 720
+GAME_CLOCK_REAL_SECONDS_PER_HOUR = 600
+GAME_CLOCK_SCALE_VERSION = 1
+
+# ENV-02's bounded temperate profile. Values are consumed only by weather.py.
+GAME_WEATHER_TRANSITION_TOKENS = 1
+GAME_WEATHER_RAIN_PERCEPTION_PENALTY = 2
+GAME_WEATHER_SEVERE_PERCEPTION_PENALTY = 5
+GAME_WEATHER_RAIN_TRAVEL_MULTIPLIER = 1.25
+GAME_WEATHER_STORM_TRAVEL_MULTIPLIER = 1.5
+
+# INTERACT-06's independently configurable delayed-interaction heartbeat.
+GAME_ACTION_AUDIT_LIMIT = 20
 # MAGIC-03 uses the one-minute recovery lane as its real-time clock. These
 # compressed durations represent one in-world hour per ten real minutes.
 MAGIC_SHORT_REST_RECOVERY_PULSES = 10
@@ -84,12 +101,22 @@ COMBAT_CONSIDER_WIN_RATE_BOUNDS = (0.10, 0.25, 0.55, 0.75, 0.90)
 # secret_settings.py for each deployed world; an unset/ambiguous value fails
 # closed for dead-character entry rather than guessing from a mutable home.
 COMBAT_RESPAWN_SANCTUARY = None
+# INTERACT-02C keeps these roles independent even when both reference one room.
+CHARACTER_START_ROOM = None
+RECALL_DESTINATION = None
+INTERACTION_INTERVAL_ACTIONS = 1
 COMBAT_LINKDEAD_MINUTES = 30
 
 # RULES-05 limits recursive carried objects independently of weight.  Builders
 # may override this per character/NPC with ``carry_item_limit`` when needed.
 CARRIED_ITEM_LIMIT = 100
 MAX_CONTAINER_NESTING = 20
+# ITEM-02 wallet and per-owner idempotency/audit policy.
+GAME_MAX_CURRENCY = 2_000_000_000
+GAME_CURRENCY_LEDGER_LIMIT = 100
+# ITEM-06 note limits, in characters after sanitization and normalization.
+NOTE_TITLE_MAX_LENGTH = 80
+NOTE_BODY_MAX_LENGTH = 2000
 # COMBAT-05 converts these policy durations to durable corpse-lane pulse
 # counts at creation. NPC prototypes may set ``corpse_decay_minutes``; PC
 # duration is deliberately global policy.

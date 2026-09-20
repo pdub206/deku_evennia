@@ -75,6 +75,123 @@ def as_text(raw: str) -> str:
     return text
 
 
+def as_extra_descriptions(raw: str) -> list[dict[str, Any]]:
+    """Parse and validate ordered extra-description records from JSON."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON list of extra descriptions.") from err
+    from systems.visibility import validate_extra_descriptions
+
+    return validate_extra_descriptions(value)
+
+
+def as_item_resource(raw: str) -> dict[str, Any]:
+    """Parse a bounded primitive finite-resource profile for items/prototypes."""
+    from systems.item_resources import validate_resource_profile
+
+    if len(raw) > 2000:
+        raise ValueError("resource profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON item resource profile.") from err
+    return validate_resource_profile(value)
+
+
+def as_food_profile(raw: str) -> dict[str, Any]:
+    """Parse ITEM-04A's bounded food portions and optional effect adapter."""
+    from systems.consumables import validate_food_profile
+
+    if len(raw) > 1000:
+        raise ValueError("food profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON food profile.") from err
+    return validate_food_profile(value)
+
+
+def as_liquid_profile(raw: str) -> dict[str, Any]:
+    """Parse ITEM-04A's liquid identity and fountain replenishment policy."""
+    from systems.consumables import validate_liquid_profile
+
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON liquid profile.") from err
+    return validate_liquid_profile(value)
+
+
+def as_equipment_modifiers(raw: str) -> dict[str, int]:
+    """Parse ITEM-08A's JSON modifier mapping; item context is checked on set."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON equipment modifier mapping.") from err
+    if not isinstance(value, dict):
+        raise ValueError("expected a JSON equipment modifier mapping.")
+    return value
+
+
+def as_equipment_capabilities(raw: str) -> list[str]:
+    """Parse ITEM-08B's categorical capability list; context is checked on set."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON equipment capability list.") from err
+    if not isinstance(value, list):
+        raise ValueError("expected a JSON equipment capability list.")
+    return value
+
+
+def as_magic_item(raw: str) -> dict[str, Any]:
+    """Parse a bounded primitive magic-item activation profile for items/prototypes."""
+    from systems.magic_items import validate_magic_item_profile
+
+    if len(raw) > 2000:
+        raise ValueError("magic item profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON magic item profile.") from err
+    from systems.magic_items import MagicItemError
+
+    try:
+        return validate_magic_item_profile(value)
+    except MagicItemError as err:
+        raise ValueError(str(err)) from err
+
+
+def as_key_kind(raw: str) -> str:
+    """A key identity INTERACT-01B can match against door and container locks."""
+    from systems.door_actions import DoorActionError, validate_key_kind
+
+    try:
+        return validate_key_kind(as_slug(raw))
+    except DoorActionError as err:
+        raise ValueError(str(err)) from err
+
+
+def as_note_title(raw: str) -> str:
+    """A bounded, markup-free single-line note title."""
+    from systems.notes import NoteError, sanitize_title
+
+    try:
+        return sanitize_title(raw)
+    except NoteError as err:
+        raise ValueError(str(err)) from err
+
+
+def as_decay_minutes(raw: str) -> int | None:
+    """Whole minutes until an item decays, or ``none`` for no decay."""
+    if raw.strip().lower() == "none":
+        return None
+    from systems.item_decay import MAX_DECAY_MINUTES
+
+    return as_int_range(1, MAX_DECAY_MINUTES)(raw)
+
+
 def as_slug(raw: str) -> str:
     """A lowercase identifier safe for dict keys, tags, and module filenames.
 
@@ -97,6 +214,36 @@ def as_nonneg_int(raw: str) -> int:
     if value < 0:
         raise ValueError("cannot be negative.")
     return value
+
+
+def as_on_off(raw: str) -> bool:
+    """Accept a builder-friendly boolean without Python truthiness surprises."""
+    value = raw.strip().lower()
+    if value not in {"on", "off"}:
+        raise ValueError("must be on or off.")
+    return value == "on"
+
+
+def as_optional_nonneg_int(raw: str) -> int | None:
+    """Accept a non-negative capacity or the explicit value ``none``."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_nonneg_int(raw)
+
+
+def as_float_range(minimum: float, maximum: float) -> Callable[[str], float]:
+    """Return a validator accepting a finite number in an inclusive range."""
+
+    def validate(raw: str) -> float:
+        try:
+            value = float(raw.strip())
+        except ValueError:
+            raise ValueError("expected a number.")
+        if not minimum <= value <= maximum:
+            raise ValueError(f"must be between {minimum:g} and {maximum:g}.")
+        return value
+
+    return validate
 
 
 def as_int_range(minimum: int, maximum: int) -> Callable[[str], int]:
@@ -162,6 +309,20 @@ def as_choice(*options: str) -> Callable[[str], str]:
         return value
 
     return validate
+
+
+def as_optional_slug(raw: str) -> str | None:
+    """Return a stable key or ``None`` for an explicit ``none`` value."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_slug(raw)
+
+
+def as_optional_dc(raw: str) -> int | None:
+    """Return an INTERACT-01A DC from 0 through 30, or explicit absence."""
+    if raw.strip().lower() == "none":
+        return None
+    return as_int_range(0, 30)(raw)
 
 
 def as_named_choice(*options: str) -> Callable[[str], str]:
@@ -262,7 +423,100 @@ ROOM_FIELDS: dict[str, Field] = {
         "the room's description (type 'desc' with no value for the editor)",
         target="desc",
     ),
+    "extra_descs": Field(
+        "attr",
+        as_extra_descriptions,
+        "ordered JSON keyword/description records with optional discovery_dc",
+    ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
+    "weather_profile": Field(
+        "weather_profile", as_choice("temperate"), "area weather profile (temperate)"
+    ),
+    "sector": Field(
+        "attr",
+        as_choice(
+            "inside",
+            "city",
+            "field",
+            "forest",
+            "hills",
+            "mountain",
+            "shallow_water",
+            "deep_water",
+            "air",
+        ),
+        "travel terrain and base movement cost",
+        target="sector",
+    ),
+    "no_combat": Field(
+        "room_policy", as_on_off, "whether new hostile actions are forbidden"
+    ),
+    "no_mobiles": Field(
+        "room_policy", as_on_off, "whether ordinary NPC movement is forbidden"
+    ),
+    "private": Field(
+        "room_policy", as_on_off, "hide remote inspection and default capacity to two"
+    ),
+    "occupant_capacity": Field(
+        "room_policy",
+        as_optional_nonneg_int,
+        "maximum characters admitted, or none for unlimited",
+    ),
+    "indoors": Field(
+        "room_environment", as_on_off, "whether daylight and weather stop at this room"
+    ),
+    "light": Field(
+        "room_environment",
+        as_choice("bright", "dim", "dark"),
+        "base ambient light: bright, dim, or dark",
+    ),
+    "safe_rest": Field(
+        "room_environment", as_on_off, "whether uninterrupted resting is safe here"
+    ),
+    "recovery_multiplier": Field(
+        "room_environment",
+        as_float_range(0, 3),
+        "natural recovery multiplier from 0 to 3",
+    ),
+    "entry_hazard": Field(
+        "room_environment", as_optional_slug, "registered entry hazard key, or none"
+    ),
+}
+
+EXIT_FIELDS: dict[str, Field] = {
+    "name": Field("key", as_text, "the exit's direction or display name"),
+    "desc": Field(
+        "attr",
+        as_text,
+        "the exit's description (type 'desc' with no value for the editor)",
+        target="desc",
+    ),
+    "door": Field("door", as_choice("on", "off"), "door state: on or off"),
+    "initial_state": Field(
+        "door",
+        as_choice("open", "closed", "locked"),
+        "state restored by area resets: open, closed, or locked",
+    ),
+    "key_kind": Field(
+        "door",
+        as_optional_slug,
+        "stable matching key kind, or none",
+    ),
+    "pickable": Field(
+        "door", as_choice("on", "off"), "whether this lock may be picked"
+    ),
+    "pick_dc": Field("door", as_optional_dc, "lock-picking DC from 0 to 30, or none"),
+    "hidden": Field(
+        "door", as_choice("on", "off"), "whether ordinary observers miss this exit"
+    ),
+    "discovery_dc": Field(
+        "door", as_optional_dc, "hidden-exit discovery DC from 0 to 30, or none"
+    ),
+    "pair_key": Field(
+        "door",
+        as_optional_slug,
+        "stable key shared by reciprocal synchronized exits, or none",
+    ),
 }
 
 # Item types supported by the builder. These follow the classic Diku/Circle/tbaMUD
@@ -367,8 +621,86 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
         "capacity": Field(
             "attr", as_weight, "max weight in pounds it can hold", target="capacity"
         ),
+        "transparent": Field(
+            "attr",
+            as_choice("on", "off"),
+            "whether contents remain visible while closed",
+            target="transparent",
+        ),
+        "door": Field("door", as_choice("on", "off"), "openable state: on or off"),
+        "initial_state": Field(
+            "door", as_choice("open", "closed", "locked"), "initial open state"
+        ),
+        "key_kind": Field(
+            "door", as_optional_slug, "stable matching key kind, or none"
+        ),
+        "pickable": Field(
+            "door", as_choice("on", "off"), "whether its lock is pickable"
+        ),
+        "pick_dc": Field(
+            "door", as_optional_dc, "lock-picking DC from 0 to 30, or none"
+        ),
+    },
+    "key": {
+        "key_kind": Field(
+            "attr", as_key_kind, "stable key identity matched by locks", "key_kind"
+        )
+    },
+    "note": {
+        "title": Field(
+            "attr",
+            as_note_title,
+            "plain-text title shown when the note is read",
+            target="note_title",
+        )
+    },
+    "food": {
+        "food": Field(
+            "attr",
+            as_food_profile,
+            "JSON food profile: version, portions, effect (or null)",
+            target="food_profile",
+        )
+    },
+    "drinkcon": {
+        "liquid": Field(
+            "attr",
+            as_liquid_profile,
+            "JSON liquid profile: version, liquid_key, inexhaustible (false)",
+            target="liquid_profile",
+        )
+    },
+    "fountain": {
+        "liquid": Field(
+            "attr",
+            as_liquid_profile,
+            "JSON liquid profile: version, liquid_key, inexhaustible",
+            target="liquid_profile",
+        )
+    },
+    "other": {
+        "tool_kind": Field(
+            "attr", as_choice("thieves_tools"), "supported tool identity: thieves_tools"
+        )
     },
 }
+
+for _magic_type in ("potion", "scroll", "wand", "staff"):
+    TYPE_FIELDS.setdefault(_magic_type, {})["magic"] = Field(
+        "attr",
+        as_magic_item,
+        "JSON magic activation profile: version, definition, uses",
+        target="magic_item",
+    )
+
+for _resource_type in ("light", "wand", "staff", "drinkcon", "fountain", "other"):
+    TYPE_FIELDS.setdefault(_resource_type, {})["resource"] = Field(
+        "attr",
+        as_item_resource,
+        "JSON finite-resource profile: kind, resource_key, current, maximum, recharge, recharge_amount, version",
+        target="item_resource",
+    )
+
 
 ITEM_FIELDS: dict[str, Field] = {
     "name": Field("key", as_text, "the item's name"),
@@ -377,6 +709,11 @@ ITEM_FIELDS: dict[str, Field] = {
         as_text,
         "the item's description (type 'desc' with no value for the editor)",
         target="desc",
+    ),
+    "extra_descs": Field(
+        "attr",
+        as_extra_descriptions,
+        "ordered JSON keyword/description records with optional discovery_dc",
     ),
     "weight": Field(
         "attr",
@@ -390,6 +727,36 @@ ITEM_FIELDS: dict[str, Field] = {
         as_choice_list(*WEAR_LOCATIONS),
         "comma-separated equipment slots where this can be worn",
         target="wear_locations",
+    ),
+    "equipment_modifiers": Field(
+        "attr",
+        as_equipment_modifiers,
+        "JSON bounded bonuses: ability/save/skill, speed, carry_capacity, passive_perception",
+        target="equipment_modifiers",
+    ),
+    "equipment_capabilities": Field(
+        "attr",
+        as_equipment_capabilities,
+        "JSON utility capabilities: terrain, light, tool, resistance, weather protection",
+        target="equipment_capabilities",
+    ),
+    "no_drop": Field(
+        "attr",
+        as_on_off,
+        "on/off: holders cannot drop, give, put, junk, or sell it",
+        target="no_drop",
+    ),
+    "account_bound": Field(
+        "attr",
+        as_on_off,
+        "on/off: binds to the first PC who gets it; never leaves their possession",
+        target="account_bound",
+    ),
+    "decay_minutes": Field(
+        "attr",
+        as_decay_minutes,
+        "whole minutes in the world before it decays, or none",
+        target="decay_minutes",
     ),
     "type": Field(
         "type",
@@ -590,6 +957,8 @@ def schema_for(obj) -> dict[str, Field] | None:
     """
     if inherits_from(obj, "evennia.objects.objects.DefaultRoom"):
         return ROOM_FIELDS
+    if inherits_from(obj, "evennia.objects.objects.DefaultExit"):
+        return EXIT_FIELDS
     if inherits_from(obj, "evennia.objects.objects.DefaultCharacter"):
         return NPC_FIELDS
     if inherits_from(obj, "typeclasses.objects.Item"):

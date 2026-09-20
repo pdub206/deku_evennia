@@ -6,7 +6,6 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from numbers import Real
 from typing import Any
 
 from systems.progression import CLASSES
@@ -298,23 +297,20 @@ class EquipmentHandler:
             for item in self.equipped_items
         )
 
-    def stat_modifier_sources(self) -> tuple[Mapping[str, Real], ...]:
-        """Return non-AC modifier mappings supplied by equipped items."""
-        sources: list[Mapping[str, Real]] = []
-        for item in self.equipped_items:
-            modifiers = item.db.stat_modifiers
-            if not isinstance(modifiers, Mapping):
-                continue
-            # Base AC, shields, and locational mitigation are deliberately typed
-            # rules. Generic equipment cannot create an unlimited additive AC stack.
-            filtered = {
-                name: value
-                for name, value in modifiers.items()
-                if name != "armor_class" and isinstance(value, Real)
-            }
-            if filtered:
-                sources.append(filtered)
-        return tuple(sources)
+    def stat_modifier_sources(self) -> tuple[Mapping[str, int], ...]:
+        """Return validated, ITEM-08A-capped equipped-item contributions."""
+        from systems.equipment_modifiers import (
+            combine_equipment_modifiers,
+            item_equipment_modifiers,
+        )
+
+        sources = tuple(
+            modifiers
+            for item in self.equipped_items
+            if (modifiers := item_equipment_modifiers(item))
+        )
+        combined = combine_equipment_modifiers(sources)
+        return (combined,) if combined else ()
 
     def mitigate_damage(
         self, amount: int, hit_location: str, damage_type: str
@@ -358,6 +354,10 @@ class EquipmentHandler:
         )
         percentage_reduction = math.floor(amount * percentage / 100)
         final = max(0, amount - percentage_reduction - flat)
+        from systems.equipment_capabilities import has_damage_resistance
+
+        if has_damage_resistance(self.owner, normalized_damage_type):
+            final //= 2
         return DamageMitigation(
             incoming=amount,
             final=final,

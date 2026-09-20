@@ -95,6 +95,11 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "self")
     if attacker.location is None or attacker.location != target.location:
         return AttackabilityDecision(False, "not_colocated")
+    from systems.room_policy import combat_decision
+
+    room_combat = combat_decision(attacker.location)
+    if not room_combat.allowed:
+        return AttackabilityDecision(False, room_combat.reason)
     from systems.mobile_policy import is_protected, may_enter_combat
 
     entry = may_enter_combat(attacker)

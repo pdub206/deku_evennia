@@ -185,6 +185,9 @@ def apply_damage(
         uses_death_saves=_uses_death_saves(owner),
     )
     final_hp = owner.stats.take_damage(amount)
+    from systems.action_queue import cancel_action
+
+    cancel_action(owner, reason="damage")
     next_record = InjuryRecord(
         prediction.state,
         prediction.successes,
@@ -289,6 +292,37 @@ def apply_healing(
     if emit_messages and reason == "recovered":
         _announce(owner, result)
     _refresh_combat_controls(owner, previous_hp, final_hp)
+    return result
+
+
+def apply_terminal_death(
+    owner: Any, *, source: Any | None = None, source_kind: str = "terminal"
+) -> InjuryResult:
+    """Apply an explicit terminal consequence through COMBAT-04 ownership."""
+    record = injury_record(owner)
+    previous_hp = owner.stats.hp_current
+    if _is_staff_immune(owner):
+        return _result(
+            False, previous_hp, previous_hp, record, "immune", previous=record
+        )
+    if record.state is InjuryState.DEAD:
+        return _result(False, previous_hp, previous_hp, record, "dead", previous=record)
+    try:
+        from systems.rewards import record_damage
+
+        record_damage(owner, source, source_kind=source_kind)
+    except Exception:
+        logger.log_trace(
+            f"Could not record terminal attribution for #{getattr(owner, 'id', '?')}."
+        )
+    owner.stats.set_hp(0)
+    dead = _dead(record)
+    _write(owner, dead, source=source)
+    result = _result(
+        True, previous_hp, 0, dead, "terminal_death", True, previous=record
+    )
+    _announce(owner, result)
+    _refresh_combat_controls(owner, previous_hp, 0)
     return result
 
 

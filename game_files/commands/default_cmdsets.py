@@ -16,31 +16,86 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
-from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
-                               CmdMobile, CmdNpcs, CmdRooms, CmdSpawn)
+from commands.building import (
+    CmdAreas,
+    CmdBuild,
+    CmdItems,
+    CmdLoadArea,
+    CmdMobile,
+    CmdNpcs,
+    CmdRooms,
+    CmdSpawn,
+)
 from commands.change import CmdChange
 from commands.checks import CmdCheck
-from commands.combat import (CmdAim, CmdAttack, CmdBackstab, CmdBash,
-                             CmdCombatPrompt, CmdCombatVerbose, CmdConsider,
-                             CmdHide, CmdKick, CmdSteadyAim, CmdWimpy)
+from commands.combat import (
+    CmdAim,
+    CmdAttack,
+    CmdBackstab,
+    CmdBash,
+    CmdCombatPrompt,
+    CmdCombatVerbose,
+    CmdConsider,
+    CmdHide,
+    CmdKick,
+    CmdSteadyAim,
+    CmdWimpy,
+)
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
+from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
+from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
-from commands.generic import (CmdAccess, CmdDrop, CmdFastHands, CmdGet,
-                              CmdGive, CmdHelp, CmdHome, CmdInventory, CmdJunk,
-                              CmdLook, CmdNick, CmdPose, CmdRemove, CmdSetDesc,
-                              CmdWear)
+from commands.generic import (
+    CmdAccess,
+    CmdActionQueue,
+    CmdCoins,
+    CmdCurrency,
+    CmdDrop,
+    CmdExamine,
+    CmdExits,
+    CmdFastHands,
+    CmdGet,
+    CmdGive,
+    CmdHelp,
+    CmdInventory,
+    CmdJunk,
+    CmdLook,
+    CmdNick,
+    CmdPose,
+    CmdPut,
+    CmdRecall,
+    CmdRemove,
+    CmdRoomRoles,
+    CmdSearch,
+    CmdSetDesc,
+    CmdWear,
+)
 from commands.injury import CmdInjury, CmdStabilize
+from commands.item_policy import CmdItemPolicy
+from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
+from commands.magic_items import CmdQuaff, CmdRecite, CmdUseDevice
+from commands.notes import CmdNoteAdmin, CmdRead, CmdWrite
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
+from commands.presentation import (
+    CmdAutoExits,
+    CmdBrief,
+    CmdCompact,
+    CmdPreferences,
+    CmdPrompt,
+)
 from commands.relationships import CmdOrder, CmdPet
 from commands.sheet import CmdSheet
+from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
+from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
+from commands.weather import CmdWeather
+from commands.world_time import CmdTime
 from evennia import default_cmds
-from evennia.contrib.rpg.character_creator.character_creator import \
-    ContribCmdIC
+from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -58,23 +113,60 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         """
         super().at_cmdset_creation()
         # General commands - overrides Evennia's defaults.
-        self.add(CmdHome)
+        self.add(CmdLight)
+        self.add(CmdExtinguish)
+        self.add(CmdRefill)
+        self.add(CmdEat)
+        self.add(CmdDrink)
+        self.add(CmdSip)
+        self.add(CmdTaste)
+        self.add(CmdPour)
+        self.add(CmdRead)
+        self.add(CmdWrite)
+        self.add(CmdTime)
+        self.add(CmdWeather)
+        self.add(CmdRecall)
         self.add(CmdLook)
+        self.add(CmdExits)
+        self.add(CmdExamine)
+        self.add(CmdSearch)
         self.add(CmdNick)
         self.add(CmdSetDesc)
         self.add(CmdSay)
         self.add(CmdPose)
         self.add(CmdInventory)
+        self.add(CmdList)
+        self.add(CmdValue)
+        self.add(CmdBuy)
+        self.add(CmdSell)
+        self.add(CmdCoins)
+        self.add(CmdCurrency)
         self.add(CmdGet)
+        self.add(CmdPut)
         self.add(CmdFastHands)
         self.add(CmdDrop)
         self.add(CmdGive)
         self.add(CmdWhisper)
         self.add(CmdJunk)
+        self.add(CmdItemPolicy)
+        self.add(CmdNoteAdmin)
+        self.add(CmdStartPackages)
         self.add(CmdWear)
         self.add(CmdRemove)
         self.add(CmdAccess)
+        self.add(CmdActionQueue)
+        self.add(CmdRoomRoles)
         self.add(CmdHelp)
+        self.add(CmdBrief)
+        self.add(CmdCompact)
+        self.add(CmdAutoExits)
+        self.add(CmdPrompt)
+        self.add(CmdPreferences)
+        self.add(CmdOpen)
+        self.add(CmdClose)
+        self.add(CmdLock)
+        self.add(CmdUnlock)
+        self.add(CmdPick)
         # Position system.
         self.add(CmdSit)
         self.add(CmdRest)
@@ -92,6 +184,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdCast)
         self.add(CmdSpells)
         self.add(CmdAbilities)
+        self.add(CmdQuaff)
+        self.add(CmdRecite)
+        self.add(CmdUseDevice)
         # Redraw a sticky prompt (e.g. the build editor's) on a bare Enter,
         # which otherwise runs no command and so wouldn't refresh it.
         self.add(CmdNoInput)

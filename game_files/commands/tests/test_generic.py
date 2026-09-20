@@ -8,14 +8,16 @@ Run from the game/ directory:
 from typing import Any
 from unittest.mock import patch
 
-from commands.generic import (CmdFastHands, CmdGet, CmdInventory, CmdJunk,
-                              CmdLook, CmdRemove, CmdWear)
+from commands.generic import (CmdExamine, CmdExits, CmdFastHands, CmdGet,
+                              CmdInventory, CmdJunk, CmdLook, CmdPut,
+                              CmdRemove, CmdSearch, CmdWear)
 from evennia import create_object
 from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import save_prototype, search_prototype
 from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from systems.corpses import create_corpse
+from systems.doors import configure_door
 from systems.equipment import WEAR_LOCATIONS
 
 
@@ -38,6 +40,41 @@ class TestInventory(EvenniaCommandTest):
         create_object("typeclasses.objects.Item", key="a rock", location=self.char1)
         self.char1.db.position = "sleeping"
         self.call(CmdInventory(), "", "You are asleep")
+
+
+class TestInspection(EvenniaCommandTest):
+    """Inspection surfaces expose only visible local public information."""
+
+    def test_exits_lists_direction_without_destination(self):
+        create_object(
+            "typeclasses.exits.Exit",
+            key="north",
+            location=self.room1,
+            destination=self.room2,
+        )
+
+        output = self.call(CmdExits(), "")
+
+        self.assertIn("north", output)
+        self.assertNotIn(self.room2.key, output)
+
+    def test_examine_item_shows_public_physical_fields(self):
+        item = create_object(
+            "typeclasses.objects.Item", key="a satchel", location=self.room1
+        )
+        item.db.desc = "A weathered leather satchel."
+        item.db.type = "container"
+        item.db.weight = 2.5
+
+        output = self.call(CmdExamine(), "satchel")
+
+        self.assertIn("weathered leather", output)
+        self.assertIn("Type: container", output)
+        self.assertIn("Weight: 2.5 lb", output)
+        self.assertIn("Container: closed", output)
+
+    def test_search_has_safe_failure_message(self):
+        self.call(CmdSearch(), "missing", "You find nothing hidden.")
 
 
 class TestFastHands(EvenniaCommandTest):
@@ -94,6 +131,106 @@ class TestCorpseCommands(EvenniaCommandTest):
             f"You take a gem from {corpse.key}.",
         )
         self.assertIs(gem.location, self.char1)
+
+
+class TestContainerCommands(EvenniaCommandTest):
+    """Container grammar shares state, capacity, and movement policy."""
+
+    def container(self, key="a satchel", *, location=None, capacity=20):
+        """Create one open ordinary container."""
+        container = create_object(
+            "typeclasses.objects.Item", key=key, location=location or self.char1
+        )
+        container.db.type = "container"
+        container.db.capacity = capacity
+        configure_door(container, initial_state="open")
+        return container
+
+    def test_put_and_get_accept_keyword_free_grammar(self):
+        satchel = self.container()
+        gem = create_object(
+            "typeclasses.objects.Item", key="a blue gem", location=self.char1
+        )
+
+        self.call(CmdPut(), "blue gem satchel", "You put a blue gem in a satchel.")
+        self.assertIs(gem.location, satchel)
+        self.call(CmdGet(), "blue gem satchel", "You take a blue gem from a satchel.")
+        self.assertIs(gem.location, self.char1)
+
+    def test_put_and_get_accept_explicit_keywords(self):
+        chest = self.container("a chest", location=self.room1)
+        token = create_object(
+            "typeclasses.objects.Item", key="a token", location=self.char1
+        )
+
+        self.call(CmdPut(), "token in chest", "You put a token in a chest.")
+        self.assertIs(token.location, chest)
+        self.call(CmdGet(), "token from chest", "You take a token from a chest.")
+
+        self.assertIs(token.location, self.char1)
+
+    def test_closed_transparent_container_can_be_seen_but_not_changed(self):
+        chest = self.container("a glass chest", location=self.room1)
+        gem = create_object("typeclasses.objects.Item", key="a gem", location=chest)
+        chest.db.transparent = "on"
+        configure_door(chest, initial_state="closed")
+
+        self.assertIn("a gem", self.call(CmdLook(), "in glass chest"))
+        self.call(
+            CmdGet(),
+            "gem glass chest",
+            "That container is closed or inaccessible.",
+        )
+        self.assertIs(gem.location, chest)
+
+    def test_put_all_excludes_destination_and_is_all_or_nothing(self):
+        pouch = self.container("a pouch", capacity=1)
+        light = create_object(
+            "typeclasses.objects.Item", key="a feather", location=self.char1
+        )
+        heavy = create_object(
+            "typeclasses.objects.Item", key="a rock", location=self.char1
+        )
+        light.db.weight = 1
+        heavy.db.weight = 1
+
+        self.call(CmdPut(), "all pouch", "That would exceed a pouch's capacity.")
+
+        self.assertIs(light.location, self.char1)
+        self.assertIs(heavy.location, self.char1)
+        self.assertIs(pouch.location, self.char1)
+
+    def test_put_all_excludes_a_nested_destinations_ancestors(self):
+        backpack = self.container("a backpack", capacity=20)
+        pouch = self.container("a pouch", capacity=10)
+        pouch.move_to(backpack, quiet=True)
+        token = create_object(
+            "typeclasses.objects.Item", key="a token", location=self.char1
+        )
+
+        self.call(CmdPut(), "all pouch")
+
+        self.assertIs(backpack.location, self.char1)
+        self.assertIs(pouch.location, backpack)
+        self.assertIs(token.location, pouch)
+
+    def test_direct_move_cannot_insert_into_closed_container(self):
+        chest = self.container("a chest")
+        configure_door(chest, initial_state="closed")
+        gem = create_object(
+            "typeclasses.objects.Item", key="a gem", location=self.char1
+        )
+
+        self.assertFalse(gem.move_to(chest, quiet=True))
+        self.assertIs(gem.location, self.char1)
+
+    def test_registered_in_character_cmdset(self):
+        from commands.default_cmdsets import CharacterCmdSet
+
+        cmdset = CharacterCmdSet()
+        cmdset.at_cmdset_creation()
+
+        self.assertTrue(any(isinstance(cmd, CmdPut) for cmd in cmdset.commands))
 
 
 class TestJunk(EvenniaCommandTest):

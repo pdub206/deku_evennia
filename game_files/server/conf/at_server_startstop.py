@@ -19,6 +19,7 @@ at_server_cold_stop()
 
 from systems.lifecycle import (ServerTransitionMode, prepare_server_transition,
                                recover_server_transition)
+from systems.starting_packages import log_starting_package_status
 
 
 def at_server_init():
@@ -33,7 +34,7 @@ def at_server_start():
     This is called every time the server starts up, regardless of
     how it was shut down.
     """
-    pass
+    log_starting_package_status()
 
 
 def at_server_stop():

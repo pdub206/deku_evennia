@@ -191,9 +191,7 @@ def spawn_mobile(
         trainer_profile = npc.attributes.get("trainer_profile")
         if trainer_profile is not None:
             set_trainer_profile(npc, trainer_profile)
-        if not npc.move_to(
-            room, quiet=True, move_type="mobile_spawn", capacity_actor=npc
-        ):
+        if not npc.move_to(room, quiet=True, move_type="spawn", capacity_actor=npc):
             _delete_partial(npc)
             return MobileSpawnResult("failed", "room_admission_denied")
         dispatch_specials(

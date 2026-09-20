@@ -15,6 +15,7 @@ from typing import Any
 
 from evennia.utils import logger
 from systems.action_policy import ActionCategory
+from systems.doors import traversal_decision
 from systems.encumbrance import character_load
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -50,36 +51,20 @@ ExitSelector = Callable[[tuple[Any, ...]], Any]
 
 
 def room_admission(actor: Any, destination: Any) -> NavigationOutcome:
-    """Apply the single fail-closed NPC room-admission seam.
-
-    ``no_mobiles``, ``forbid_mobiles``, ``private``, and ``mobile_capacity``
-    are intentionally compact extension attributes until ENV-01 owns a richer
-    room-flag catalogue.  Invalid values never grant admission.
-    """
+    """Adapt canonical mobile admission to MOB-04's navigation result."""
     from typeclasses.rooms import Room
+    from systems.room_policy import AdmissionMode, admission_decision
 
     if not isinstance(destination, Room) or getattr(destination, "id", None) is None:
         return NavigationOutcome("blocked", "invalid_destination")
-    values = {
-        name: destination.attributes.get(name)
-        for name in ("no_mobiles", "forbid_mobiles", "private", "mobile_capacity")
-    }
-    for name in ("no_mobiles", "forbid_mobiles", "private"):
-        if values[name] is not None and not isinstance(values[name], bool):
-            return NavigationOutcome("blocked", "malformed_admission")
-        if values[name] is True:
-            return NavigationOutcome("blocked", "room_forbidden")
-    capacity = values["mobile_capacity"]
-    if capacity is not None:
-        if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 0:
-            return NavigationOutcome("blocked", "malformed_admission")
-        occupants = sum(
-            1
-            for obj in destination.contents_get(content_type="character")
-            if obj is not actor
+    decision = admission_decision(actor, destination, mode=AdmissionMode.MOBILE)
+    if not decision.allowed:
+        reason = (
+            "malformed_admission"
+            if decision.reason == "malformed_policy"
+            else decision.reason
         )
-        if occupants >= capacity:
-            return NavigationOutcome("blocked", "room_full")
+        return NavigationOutcome("blocked", reason)
     return NavigationOutcome("moved")
 
 
@@ -122,6 +107,10 @@ def exit_eligibility(
         return NavigationOutcome("skipped", "overloaded")
     if not isinstance(exit_obj, Exit) or exit_obj.location is not source:
         return NavigationOutcome("no-route", "invalid_exit")
+    from systems.visibility import target_visibility
+
+    if not target_visibility(actor, exit_obj, source=source).visible:
+        return NavigationOutcome("blocked", "exit_blocked")
     destination = exit_obj.destination
     if (
         not isinstance(destination, Room)
@@ -129,12 +118,10 @@ def exit_eligibility(
         or getattr(destination, "id", None) is None
     ):
         return NavigationOutcome("no-route", "invalid_destination")
-    for name in ("closed", "hidden"):
-        value = exit_obj.attributes.get(name)
-        if value is not None and not isinstance(value, bool):
-            return NavigationOutcome("no-route", "malformed_exit")
-        if value:
-            return NavigationOutcome("blocked", "exit_blocked")
+    door = traversal_decision(exit_obj)
+    if not door.allowed:
+        reason = "malformed_exit" if door.reason == "invalid_door" else "exit_blocked"
+        return NavigationOutcome("blocked", reason)
     if not exit_obj.access(actor, "traverse", default=False):
         return NavigationOutcome("blocked", "exit_blocked")
     constrained = _resolve_area_constraint(actor, stay_in_area)
@@ -145,6 +132,11 @@ def exit_eligibility(
     admission = room_admission(actor, destination)
     if admission.status != "moved":
         return admission
+    from systems.travel import travel_decision
+
+    travel = travel_decision(actor, exit_obj)
+    if not travel.allowed:
+        return NavigationOutcome("blocked", travel.reason)
     return NavigationOutcome("moved", exit_id=exit_obj.id)
 
 
@@ -201,6 +193,11 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
     if decision.status != "moved":
         return decision
     source, destination = request.actor.location, exit_obj.destination
+    from systems.travel import travel_decision
+
+    travel = travel_decision(request.actor, exit_obj)
+    if not travel.allowed or travel.delay is None:
+        return NavigationOutcome("blocked", travel.reason)
     try:
         # Exit traversal, rather than a direct room move, preserves ordinary
         # departure, arrival, announcements, and future terrain hooks.
@@ -223,6 +220,9 @@ def execute_navigation(request: NavigationRequest, exit_obj: Any) -> NavigationO
         return NavigationOutcome("blocked", "traversal_denied")
     state["last_successful_token"] = request.token
     _write_state(request.actor, state)
+    from systems.mobiles import defer_mobile_until
+
+    defer_mobile_until(request.actor, request.token + travel.delay)
     return NavigationOutcome("moved", exit_id=exit_obj.id)
 
 
@@ -371,9 +371,12 @@ def _execute_wander(npc: Any, event: Any, data: Mapping[str, Any]) -> None:
 
 def register_mobile_behaviors() -> None:
     """Register code-owned MOB-04 behavior keys exactly once per reload."""
-    from systems.mobiles import (MobileActionDefinition,
-                                 MobileBehaviorDefinition, register_action,
-                                 register_behavior)
+    from systems.mobiles import (
+        MobileActionDefinition,
+        MobileBehaviorDefinition,
+        register_action,
+        register_behavior,
+    )
 
     try:
         register_action(MobileActionDefinition(WANDER_ACTION_KEY, _execute_wander))
@@ -450,8 +453,11 @@ def _shortest_first_exit(
 
 
 def _pursuit_target_allowed(actor: Any, target: Any) -> bool:
-    from systems.mobile_policy import (can_detect_remotely, is_protected,
-                                       may_enter_combat)
+    from systems.mobile_policy import (
+        can_detect_remotely,
+        is_protected,
+        may_enter_combat,
+    )
 
     if target is None or target.location is None or is_protected(target):
         return False

@@ -160,6 +160,7 @@ def _enter_build_mode(caller, target) -> None:
     ``commands.command._PromptPersistMixin`` (it reads ``ndb._prompt``), so it
     stays visible no matter what the builder types — we only arm it here.
     """
+    caller.cmdset.remove("commands.shop_building.ShopBuildModeCmdSet")
     caller.ndb._build_target = target
     caller.ndb._build_del_pending = None
     caller.ndb._prompt = _BUILD_PROMPT
@@ -168,6 +169,7 @@ def _enter_build_mode(caller, target) -> None:
 
 def _exit_build_mode(caller) -> None:
     """Remove the build cmdset, clear the context, and drop the edit prompt."""
+    caller.cmdset.remove("commands.shop_building.ShopBuildModeCmdSet")
     caller.cmdset.remove(BuildModeCmdSet)
     caller.ndb._build_target = None
     caller.ndb._build_del_pending = None
@@ -214,6 +216,29 @@ def _field_value(target, name: str, field) -> str:
         return target.key
     if field.kind == "type":
         return target.db.type or "|x(generic item)|n"
+    if field.kind == "door":
+        from systems.doors import door_field_value
+
+        value = door_field_value(target, field.target or name)
+        return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "room_policy":
+        from systems.room_policy import room_policy
+
+        value = getattr(room_policy(target), field.target or name)
+        if isinstance(value, bool):
+            value = "on" if value else "off"
+        return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "room_environment":
+        from systems.room_environment import room_environment
+
+        value = getattr(room_environment(target), field.target or name)
+        value = getattr(value, "value", value)
+        if isinstance(value, bool):
+            value = "on" if value else "off"
+        return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "weather_profile":
+        values = target.tags.get(category="weather_profile", return_list=True)
+        return _crop(values[0]) if len(values) == 1 else "|x(unset)|n"
     if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
@@ -242,6 +267,29 @@ def _render_show(target) -> str:
             lines.append(f"  |yexits|n    {joined}")
         else:
             lines.append("  |yexits|n    |x(none)|n")
+    if _is_prototype(target) and target.get("typeclass") == _NPC_TYPECLASS:
+        try:
+            from systems.mobile_specials import validate_mobile_specials
+
+            shop = next(
+                (
+                    entry["config"]
+                    for entry in validate_mobile_specials(
+                        target.get("mobile_specials", {"version": 1, "behaviors": []})
+                    )["behaviors"]
+                    if entry["key"] == "shopkeeper"
+                ),
+                None,
+            )
+            if shop is not None:
+                safe = {
+                    key: value for key, value in shop.items() if key != "access_lock"
+                }
+                safe["access"] = "configured"
+                lines.append(f"  |yshop definition|n {_crop(safe)}")
+                lines.append("  |yshop live stock|n |x(template; no live inventory)|n")
+        except Exception:
+            lines.append("  |yshop|n     |x(malformed or unavailable)|n")
     if (
         not _is_prototype(target)
         and getattr(getattr(target, "db", None), "is_player_character", None) is False
@@ -250,6 +298,24 @@ def _render_show(target) -> str:
             lines.append(f"  |ymobile|n   {mobile_compact_summary(target)}")
         except MobileDiagnosticError:
             lines.append("  |ymobile|n   |x(diagnostics unavailable)|n")
+        try:
+            from systems.mobile_specials import mobile_specials
+            from systems.shops import shop_snapshot
+
+            shop = next(
+                (
+                    entry["config"]
+                    for entry in mobile_specials(target)["behaviors"]
+                    if entry["key"] == "shopkeeper"
+                ),
+                None,
+            )
+            if shop is not None:
+                snapshot = shop_snapshot(target, shop)
+                lines.append(f"  |yshop definition|n {_crop(snapshot['definition'])}")
+                lines.append(f"  |yshop live stock|n {_crop(snapshot['live_stock'])}")
+        except Exception:
+            lines.append("  |yshop|n     |x(malformed or unavailable)|n")
     return "\n".join(lines) if lines else "  |x(nothing editable yet)|n"
 
 
@@ -267,7 +333,8 @@ def _render_fields(target) -> str:
 def _type_attr_names(item_type) -> list[str]:
     """Attribute/key names owned by an item type's extra fields (for clearing)."""
     return [
-        fld.target or fname for fname, fld in TYPE_FIELDS.get(item_type, {}).items()
+        "door_state" if fld.kind == "door" else fld.target or fname
+        for fname, fld in TYPE_FIELDS.get(item_type, {}).items()
     ]
 
 
@@ -283,6 +350,14 @@ def _set_item_type(item, value: str) -> None:
         return
     for attr in _type_attr_names(item.db.type):
         item.attributes.remove(attr)
+    for state_attr in (
+        "item_resource_state",
+        "magic_item_state",
+        "food_state",
+        "note_record",
+    ):
+        if item.attributes.has(state_attr):
+            item.attributes.remove(state_attr)
     item.db.type = new_type
 
 
@@ -322,6 +397,48 @@ def _apply_field(target, name: str, field, value) -> None:
                 else value
             )
             target[MOBILE_POLICY_ATTRIBUTE] = validate_mobile_policy(profile)
+        elif field.kind == "door":
+            from systems.doors import configured_door_record
+
+            record = configured_door_record(target.get("door_state"), name, value)
+            if record is None:
+                target.pop("door_state", None)
+            else:
+                target["door_state"] = record
+        elif field.target == "item_resource":
+            from systems.item_resources import validate_resource_profile
+
+            target[field.target] = validate_resource_profile(
+                value, target.get("type") or "item"
+            )
+        elif field.target == "food_profile":
+            from systems.consumables import validate_food_profile
+
+            target[field.target] = validate_food_profile(value)
+        elif field.target == "liquid_profile":
+            from systems.consumables import validate_liquid_profile
+
+            target[field.target] = validate_liquid_profile(value, target.get("type"))
+        elif field.target == "magic_item":
+            from systems.magic_items import validate_magic_item_profile
+
+            target[field.target] = validate_magic_item_profile(
+                value, target.get("type")
+            )
+        elif field.target == "equipment_modifiers":
+            from systems.equipment_modifiers import validate_equipment_modifiers
+
+            target[field.target] = validate_equipment_modifiers(
+                value, target.get("type"), target.get("wear_locations")
+            )
+        elif field.target == "equipment_capabilities":
+            from systems.equipment_capabilities import validate_equipment_capabilities
+
+            target[field.target] = validate_equipment_capabilities(
+                value, target.get("type"), target.get("wear_locations")
+            )
+        elif field.target == "decay_minutes" and value is None:
+            target.pop("decay_minutes", None)
         else:  # attr or a validated service profile
             target[field.target or name] = value
         save_prototype(target)  # templates persist on every change
@@ -331,11 +448,71 @@ def _apply_field(target, name: str, field, value) -> None:
     elif field.kind == "type":
         _set_item_type(target, value)
     elif field.kind == "attr":
-        target.attributes.add(field.target or name, value)
+        if field.target == "item_resource":
+            from systems.item_resources import set_resource_profile
+
+            set_resource_profile(target, value)
+        elif field.target == "food_profile":
+            from systems.consumables import set_food_profile
+
+            set_food_profile(target, value)
+        elif field.target == "liquid_profile":
+            from systems.consumables import set_liquid_profile
+
+            set_liquid_profile(target, value)
+        elif field.target == "magic_item":
+            from systems.magic_items import set_magic_item_profile
+
+            set_magic_item_profile(target, value)
+        elif field.target == "equipment_modifiers":
+            from systems.equipment_modifiers import validate_equipment_modifiers
+
+            target.attributes.add(
+                field.target,
+                validate_equipment_modifiers(
+                    value, target.db.type, target.db.wear_locations
+                ),
+            )
+        elif field.target == "equipment_capabilities":
+            from systems.equipment_capabilities import validate_equipment_capabilities
+
+            target.attributes.add(
+                field.target,
+                validate_equipment_capabilities(
+                    value, target.db.type, target.db.wear_locations
+                ),
+            )
+        elif field.target in ("no_drop", "account_bound"):
+            from systems.item_transfer import validate_flag_change
+
+            validate_flag_change(target, field.target, value)
+            target.attributes.add(field.target, value)
+        elif field.target == "decay_minutes":
+            from systems.item_decay import set_decay_policy
+
+            set_decay_policy(target, value)
+        else:
+            target.attributes.add(field.target or name, value)
+    elif field.kind == "door":
+        from systems.doors import configure_door_field
+
+        configure_door_field(target, name, value)
     elif field.kind == "trainer":
         from systems.training import set_trainer_profile
 
         set_trainer_profile(target, value)
+    elif field.kind == "room_policy":
+        from systems.room_policy import set_room_policy_value
+
+        set_room_policy_value(target, field.target or name, value)
+    elif field.kind == "room_environment":
+        from systems.room_environment import set_room_environment_value
+
+        set_room_environment_value(target, field.target or name, value)
+    elif field.kind == "weather_profile":
+        from systems.weather import set_weather_profile
+
+        set_weather_profile(target, value)
     elif field.kind == "policy":
         from systems.mobile_policy import set_mobile_policy_value
 
@@ -369,6 +546,9 @@ class CmdBuild(Command):
       edit new npc <name>     create an NPC template and spawn a copy here
       edit item <name>        edit an existing item template
       edit npc <name>         edit an existing NPC template
+      edit new shop <npc>     attach a shop to a live NPC by name/#dbref
+      edit shop <npc>         edit that NPC’s shop by name/#dbref
+      edit exit <direction>   edit an exit in your current room
       edit <object>           edit a live room, item, or NPC by name/#dbref
 
     Items are authored as |ytemplates|n (prototypes), then stamped into the world
@@ -420,6 +600,17 @@ class CmdBuild(Command):
             self._status()
             return
 
+        if lowered == "shop" or lowered.startswith("shop "):
+            from commands.shop_building import edit_shop
+
+            edit_shop(caller, arg[4:].strip())
+            return
+        if lowered == "new shop" or lowered.startswith("new shop "):
+            from commands.shop_building import edit_shop
+
+            edit_shop(caller, arg[8:].strip(), create=True)
+            return
+
         if lowered == "new" or lowered.startswith("new "):
             # Everything after "new" is an optional type keyword + name.
             self._create_new(arg[len("new") :].strip())
@@ -433,6 +624,10 @@ class CmdBuild(Command):
         if lowered == "npc" or lowered.startswith("npc "):
             # 'edit npc <name>' edits an existing NPC *prototype* (template).
             self._edit_npc_prototype(arg[len("npc") :].strip())
+            return
+
+        if lowered == "exit" or lowered.startswith("exit "):
+            self._edit_exit(arg[len("exit") :].strip())
             return
 
         if lowered == "here":
@@ -455,6 +650,32 @@ class CmdBuild(Command):
 
         _enter_build_mode(caller, target)
         caller.msg(_header(target) + "\n" + _render_show(target))
+
+    def _edit_exit(self, name: str) -> None:
+        """Bind one local exit without changing ``edit <direction>`` behavior."""
+        caller = self.caller
+        if not name:
+            caller.msg("Usage: edit exit <direction>")
+            return
+        location = caller.location
+        if location is None:
+            caller.msg("You are not in a room with exits to edit.")
+            return
+        normalized = name.casefold()
+        matches = [
+            exit_obj
+            for exit_obj in location.exits
+            if exit_obj.key.casefold() == normalized
+            or normalized in {alias.casefold() for alias in exit_obj.aliases.all()}
+        ]
+        if not matches:
+            caller.msg(f"No '{name}' exit here.")
+            return
+        if len(matches) > 1:
+            caller.msg(f"More than one local exit matches '{name}'.")
+            return
+        _enter_build_mode(caller, matches[0])
+        caller.msg(_header(matches[0]) + "\n" + _render_show(matches[0]))
 
     def _create_new(self, rest: str) -> None:
         """Dispatch ``edit new <room|item|npc> [<name>]`` to its creator.
@@ -691,6 +912,7 @@ class CmdBuild(Command):
                 "  |wedit item <name>|n     edit an existing item template\n"
                 "  |wedit new npc <name>|n  create a template and spawn an NPC here\n"
                 "  |wedit npc <name>|n      edit an existing NPC template\n"
+                "  |wedit exit <direction>|n edit one local exit/door\n"
                 "  |wedit <object>|n        edit a live room, item, or NPC by name/#dbref\n"
                 "Type |whelp build|n for the full verb list."
             )
@@ -1271,7 +1493,11 @@ class CmdBuildSet(_BuildCommand):
             caller.msg(f"Invalid value for '{name}': {err}")
             return
 
-        _apply_field(self.target, name, field, value)
+        try:
+            _apply_field(self.target, name, field, value)
+        except ValueError as err:
+            caller.msg(f"Invalid value for '{name}': {err}")
+            return
         caller.msg(f"Set |y{name}|n to: {value}")
         if field.kind == "type":
             # Changing the type reshapes the editable fields — show the new set.
@@ -1540,9 +1766,13 @@ class CmdBuildExport(_BuildCommand):
 
         try:
             path, rooms, exits = export_area(area)
+        except ValueError:
+            logger.log_trace()
+            caller.msg("Export failed validation; see the server log for details.")
+            return
         except OSError:
             logger.log_trace()
-            caller.msg("Export failed (could not write the file); see server log.")
+            caller.msg("Could not write the area file; see the server log for details.")
             return
 
         caller.msg(

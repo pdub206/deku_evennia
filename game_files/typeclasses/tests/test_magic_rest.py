@@ -8,13 +8,12 @@ from systems.magic_rest import (
     LONG_REST_SLEEP_PULSES,
     MAGIC_REST_ATTRIBUTE,
     MAGIC_REST_VERSION,
-    SAFE_REST_TAG,
-    SAFE_REST_TAG_CATEGORY,
     SHORT_REST_PULSES,
     advance_magic_rest,
     interrupt_magic_rest,
 )
 from systems.pulses import PulseEvent, PulseLane
+from systems.room_environment import set_room_environment_value
 
 
 class TestMagicRest(EvenniaTest):
@@ -27,7 +26,7 @@ class TestMagicRest(EvenniaTest):
         self.char1.db.hp_max_override = 10
         self.char1.db.hp_current = 10
         self.char1.db.position = "resting"
-        self.room1.tags.add(SAFE_REST_TAG, category=SAFE_REST_TAG_CATEGORY)
+        set_room_environment_value(self.room1, "safe_rest", True)
 
     @staticmethod
     def _event(sequence: int) -> PulseEvent:
@@ -105,7 +104,7 @@ class TestMagicRest(EvenniaTest):
 
     def test_untagged_room_cannot_complete_a_class_resource_rest(self):
         """Only builders' explicit safe-rest locations permit slot recovery."""
-        self.room1.tags.remove(SAFE_REST_TAG, category=SAFE_REST_TAG_CATEGORY)
+        set_room_environment_value(self.room1, "safe_rest", False)
         result = advance_magic_rest(self.char1, self._event(1))
 
         self.assertEqual(result.reason, "interrupted")

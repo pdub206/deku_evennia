@@ -11,7 +11,9 @@ creation commands.
 import time
 from collections.abc import Iterable, Mapping
 from typing import Any
+from uuid import uuid4
 
+from django.db import transaction
 from evennia.objects.objects import DefaultCharacter
 from systems.action_policy import ActionCategory, ActionPolicy, Position
 from systems.character_stats import CharacterStats
@@ -44,6 +46,22 @@ class Character(ObjectParent, DefaultCharacter):
     def at_object_creation(self) -> None:
         super().at_object_creation()
         self.db.position = "standing"
+
+    def move_to(self, destination: Any, **kwargs: Any) -> bool:
+        """Serialize room admission so simultaneous arrivals cannot overfill it."""
+        from typeclasses.rooms import Room
+
+        if kwargs.get("move_type") in {"traverse", "combat_flee"}:
+            kwargs.setdefault("arrival_id", uuid4().hex)
+
+        if (
+            isinstance(destination, Room)
+            and getattr(destination, "id", None) is not None
+        ):
+            with transaction.atomic():
+                Room.objects.select_for_update().get(id=destination.id)
+                return super().move_to(destination, **kwargs)
+        return super().move_to(destination, **kwargs)
 
     @property
     def stats(self) -> CharacterStats:
@@ -133,9 +151,12 @@ class Character(ObjectParent, DefaultCharacter):
         )
 
     def at_pre_move(self, destination, **kwargs) -> bool:
-        """Apply the shared movement policy to voluntary traversal only."""
+        """Apply action, load, and canonical room admission before movement."""
         move_type = kwargs.get("move_type")
         if move_type in {"traverse", "combat_flee"}:
+            if move_type == "traverse" and not kwargs.get("travel_authorized"):
+                self.msg("You must use an exit to travel there.")
+                return False
             decision = self.actions.check(ActionCategory.MOVE)
             if move_type == "combat_flee":
                 decision = None
@@ -147,16 +168,47 @@ class Character(ObjectParent, DefaultCharacter):
                     "You are too encumbered to move. Drop or give away some items."
                 )
                 return False
-        # TODO(INTERACT-03): Apply terrain cost and stats.movement_delay() when
-        # travel scheduling is introduced.
+        if destination is not None:
+            from systems.room_policy import AdmissionMode, admission_decision
+
+            modes = {
+                "traverse": AdmissionMode.NORMAL,
+                "combat_flee": AdmissionMode.NORMAL,
+                "mobile_navigation": AdmissionMode.MOBILE,
+                "follow": AdmissionMode.FOLLOW,
+                "recall": AdmissionMode.RECALL,
+                "teleport": AdmissionMode.FORCED,
+                "forced": AdmissionMode.FORCED,
+                "mobile_spawn": AdmissionMode.SPAWN,
+                "spawn": AdmissionMode.SPAWN,
+                "respawn": AdmissionMode.RESPAWN,
+                "builder": AdmissionMode.BUILDER,
+            }
+            mode = modes.get(move_type, AdmissionMode.NORMAL)
+            admission = admission_decision(self, destination, mode=mode)
+            if not admission.allowed:
+                if getattr(self.db, "is_player_character", None) is not False:
+                    self.msg("You cannot enter there right now.")
+                return False
         return True
 
     def at_post_move(
         self, source_location: Any | None, move_type: str = "move", **kwargs: Any
     ) -> None:
         """Repair combat immediately after any forced relocation or extraction."""
-        super().at_post_move(source_location, move_type=move_type, **kwargs)
+        if self.location is not None and self.location.access(self, "view"):
+            self.msg(
+                text=(
+                    self.at_look(self.location, arrival=True),
+                    {"type": "look", "arrival": True},
+                )
+            )
+        if source_location is not None and move_type != "recall":
+            from systems.action_queue import cancel_action
+
+            cancel_action(self, reason="movement")
         if source_location is not self.location:
+            self.ndb.visibility_discoveries = set()
             try:
                 from systems.magic_rest import interrupt_magic_rest
 
@@ -177,6 +229,24 @@ class Character(ObjectParent, DefaultCharacter):
                     self.location,
                     SpecialEvent("arrival", actor=self, target=self),
                 )
+                if move_type in {"traverse", "combat_flee"} or kwargs.get(
+                    "trigger_entry_hazard"
+                ):
+                    from systems.room_environment import trigger_entry_hazard
+
+                    arrival_id = kwargs.get("arrival_id") or uuid4().hex
+                    try:
+                        trigger_entry_hazard(self, self.location, arrival_id)
+                    except Exception:
+                        # Arrival is already committed. Invalid authored data or
+                        # a failing owner service must not roll movement back or
+                        # permit an automatic replay of a partial consequence.
+                        from evennia.utils import logger
+
+                        logger.log_trace(
+                            "Entry hazard failed after arrival for "
+                            f"object #{getattr(self, 'id', '?')}."
+                        )
             # Capture pursuit before combat removes the departing target from
             # its encounter. MOB-04 later revalidates every route and target.
             from systems.mobile_navigation import note_target_departure
@@ -185,6 +255,11 @@ class Character(ObjectParent, DefaultCharacter):
             note_target_departure(self, source_location)
             note_leader_moved(self, source_location)
             handle_departure(self)
+            if self.location is not None:
+                from systems.room_policy import combat_decision
+
+                if not combat_decision(self.location).allowed:
+                    handle_departure(self)
 
     def at_object_delete(self) -> bool | None:
         """Remove combat references before Evennia extracts this character."""

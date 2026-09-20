@@ -5,6 +5,11 @@ from unittest.mock import patch
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems.equipment import HIT_LOCATIONS
+from systems.equipment_modifiers import (
+    EquipmentModifierError,
+    combine_equipment_modifiers,
+    validate_equipment_modifiers,
+)
 
 
 class TestCharacterStats(EvenniaTest):
@@ -430,28 +435,80 @@ class TestCharacterStats(EvenniaTest):
             key="a quicksilver vest",
             location=self.char1,
             attributes=(
+                ("type", "worn"),
+                ("wear_locations", ["body"]),
                 ("worn_location", "body"),
                 (
-                    "stat_modifiers",
+                    "equipment_modifiers",
                     {
                         "ability:dexterity": 2,
-                        "armor_class": 1,
-                        "reaction": 1,
                         "speed": 5,
+                        "passive_perception": 1,
                     },
                 ),
             ),
         )
 
+        self.assertEqual(
+            self.char1.equipment.stat_modifier_sources(),
+            ({"ability:dexterity": 2, "speed": 5, "passive_perception": 1},),
+        )
         self.assertEqual(self.char1.stats.armor_class, 11)
-        self.assertEqual(self.char1.stats.reaction_modifier, 2)
+        self.assertEqual(self.char1.stats.reaction_modifier, 1)
         self.assertEqual(self.char1.stats.speed, 35)
+        self.assertEqual(self.char1.stats.passive_perception, 11)
 
         item.db.worn_location = None
 
         self.assertEqual(self.char1.stats.armor_class, 10)
         self.assertEqual(self.char1.stats.reaction_modifier, 0)
         self.assertEqual(self.char1.stats.speed, 30)
+
+    def test_equipment_modifier_registry_rejects_unsafe_profiles(self):
+        """Unknown, non-integral, wrong-kind, and wrong-slot profiles fail closed."""
+        valid = {"ability:strength": 2, "saving_throw:wisdom": -1}
+        self.assertEqual(validate_equipment_modifiers(valid, "worn", ["body"]), valid)
+        for profile, item_type, slots in (
+            ({"armor_class": 1}, "worn", ["body"]),
+            ({"ability:strength": True}, "worn", ["body"]),
+            ({"ability:strength": 1.5}, "worn", ["body"]),
+            ({"ability:strength": 6}, "worn", ["body"]),
+            ({"ability:strength": 1}, "potion", ["body"]),
+            ({"ability:strength": 1}, "worn", ["wield"]),
+        ):
+            with self.assertRaises(EquipmentModifierError, msg=profile):
+                validate_equipment_modifiers(profile, item_type, slots)
+
+    def test_equipment_modifier_stacking_is_bounded_and_separate_from_effects(self):
+        """Equipment uses its own caps; effects remain ordinary RULES sources."""
+        combined = combine_equipment_modifiers(
+            (
+                {"ability:strength": 2, "speed": 20},
+                {"ability:strength": 4, "speed": 20},
+                {"ability:strength": -3, "speed": -10},
+            )
+        )
+        self.assertEqual(combined["ability:strength"], 1)
+        self.assertEqual(combined["speed"], 30)
+
+        self.char1.db.stat_modifiers = {"speed": 10}
+        item = create_object(
+            "typeclasses.objects.Item",
+            key="swift boots",
+            location=self.char1,
+            attributes=(
+                ("type", "worn"),
+                ("wear_locations", ["feet"]),
+                ("worn_location", "feet"),
+                ("equipment_modifiers", {"speed": 30}),
+            ),
+        )
+        self.assertEqual(self.char1.stats.speed, 70)
+        item.db.equipment_modifiers = {"speed": True}
+        self.assertEqual(self.char1.stats.speed, 40)
+        self.assertIn(
+            "invalid equipment modifiers", item.ndb.equipment_modifier_diagnostic
+        )
 
     def test_effect_hook_recalculates_without_cached_values(self):
         with patch.object(

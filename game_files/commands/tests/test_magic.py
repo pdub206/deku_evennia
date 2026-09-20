@@ -11,17 +11,34 @@ from systems.combat import is_fighting, process_combat_pulse, start_fight
 from systems.dice import RollResult
 from systems.effects import EFFECT_REGISTRY, EffectDefinition, StackingPolicy
 from systems.injury import InjuryState, apply_damage, injury_record
-from systems.magic import (MAGIC_REGISTRY, AccessMode, ClassAccess, Damage,
-                           DiceExpression, MagicDefinition, MagicKind,
-                           PlayerHelp, RangeCategory, ResourceCost, Save,
-                           Targeting, TargetingMode, build_magic_registry)
-from systems.magic_actions import (cast_action, end_concentration,
-                                   grant_action, grant_spellbook_entry,
-                                   mark_preparation_window, prepare_action)
+from systems.magic import (
+    MAGIC_REGISTRY,
+    AccessMode,
+    ClassAccess,
+    Damage,
+    DiceExpression,
+    MagicDefinition,
+    MagicKind,
+    PlayerHelp,
+    RangeCategory,
+    ResourceCost,
+    Save,
+    Targeting,
+    TargetingMode,
+    build_magic_registry,
+)
+from systems.magic_actions import (
+    cast_action,
+    end_concentration,
+    grant_action,
+    grant_spellbook_entry,
+    mark_preparation_window,
+    prepare_action,
+)
 from systems.magic_resources import resource_current, restore_resource
-from systems.magic_rest import (MAGIC_REST_ATTRIBUTE, SAFE_REST_TAG,
-                                SAFE_REST_TAG_CATEGORY, advance_magic_rest)
+from systems.magic_rest import MAGIC_REST_ATTRIBUTE, advance_magic_rest
 from systems.pulses import PulseEvent, PulseLane
+from systems.room_environment import set_room_environment_value
 from systems.tactical_combat import consume_prone_action
 
 _WARD_EFFECT = EffectDefinition(
@@ -189,7 +206,7 @@ class TestMagicCommands(EvenniaCommandTest):
 
     def test_completed_spellcasting_interrupts_safe_rest_progress(self):
         """A committed spell cannot leave pre-cast rest credit intact."""
-        self.room1.tags.add(SAFE_REST_TAG, category=SAFE_REST_TAG_CATEGORY)
+        set_room_environment_value(self.room1, "safe_rest", True)
         self.char1.db.position = "resting"
         advance_magic_rest(self.char1, PulseEvent(60, PulseLane.RECOVERY, 1))
         with patch("systems.magic.MAGIC_REGISTRY", self.registry):

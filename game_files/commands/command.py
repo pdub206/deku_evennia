@@ -9,6 +9,7 @@ from evennia.commands.cmdhandler import CMD_NOINPUT
 from evennia.commands.command import Command as BaseCommand
 from evennia.commands.default.muxcommand import MuxCommand as BaseMuxCommand
 from systems.action_policy import ActionCategory
+from systems.presentation import active_prompt
 
 
 class _CommandHooksMixin:
@@ -56,18 +57,10 @@ class _CommandHooksMixin:
             super().at_post_cmd()
             caller = self.caller
             ndb = getattr(caller, "ndb", None)
-            prompt = (
-                ndb._prompt
-                if ndb is not None and ndb._prompt
-                else (
-                    ndb._combat_prompt
-                    if ndb is not None
-                    and ndb._combat_prompt
-                    and caller.sessions.count()
-                    else None
-                )
-            )
-            if prompt:
+            prompt = active_prompt(caller)
+            if prompt is not None and (
+                getattr(ndb, "_prompt", None) or caller.sessions.count()
+            ):
                 caller.msg(prompt=prompt)
         finally:
             if getattr(self.caller, "ndb", None) is not None:
@@ -127,16 +120,8 @@ class CmdNoInput(BaseCommand):
 
     def func(self):
         ndb = getattr(self.caller, "ndb", None)
-        prompt = (
-            ndb._prompt
-            if ndb is not None and ndb._prompt
-            else (
-                ndb._combat_prompt
-                if ndb is not None
-                and ndb._combat_prompt
-                and self.caller.sessions.count()
-                else None
-            )
-        )
-        if prompt:
+        prompt = active_prompt(self.caller)
+        if prompt is not None and (
+            getattr(ndb, "_prompt", None) or self.caller.sessions.count()
+        ):
             self.caller.msg(prompt=prompt)

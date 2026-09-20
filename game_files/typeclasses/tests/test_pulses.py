@@ -6,11 +6,22 @@ from django.test import override_settings
 from evennia import create_object
 from evennia.utils.containers import GlobalScriptContainer
 from evennia.utils.test_resources import EvenniaTest
-from systems.effects import (EFFECT_REGISTRY, EFFECTS_ATTRIBUTE,
-                             EffectDefinition, EffectMessage)
-from systems.pulses import (PULSE_LANES, PulseError, PulseEvent, PulseLane,
-                            advance_pulse_state, configured_cadences,
-                            initial_pulse_state, process_effect_pulse)
+from systems.effects import (
+    EFFECT_REGISTRY,
+    EFFECTS_ATTRIBUTE,
+    EffectDefinition,
+    EffectMessage,
+)
+from systems.pulses import (
+    PULSE_LANES,
+    PulseError,
+    PulseEvent,
+    PulseLane,
+    advance_pulse_state,
+    configured_cadences,
+    initial_pulse_state,
+    process_effect_pulse,
+)
 from typeclasses.scripts import GamePulseScript
 
 
@@ -66,6 +77,7 @@ class TestPulseState(EvenniaTest):
         with (
             patch.object(self.script, "at_combat_pulse") as combat,
             patch.object(self.script, "at_effects_pulse") as effects,
+            patch.object(self.script, "at_world_time_pulse"),
         ):
             for _ in range(6):
                 self.script.at_repeat()
@@ -96,6 +108,7 @@ class TestPulseState(EvenniaTest):
                 side_effect=RuntimeError("combat failed"),
             ),
             patch.object(self.script, "at_effects_pulse") as effects,
+            patch.object(self.script, "at_world_time_pulse"),
             patch("typeclasses.scripts.logger.log_trace") as log_trace,
         ):
             self.script.at_repeat()
@@ -111,6 +124,20 @@ class TestPulseState(EvenniaTest):
         with patch("typeclasses.scripts.process_resource_recovery_pulse") as recovery:
             self.script.at_recovery_pulse(event)
         recovery.assert_called_once_with(event)
+
+    @override_settings(GAME_PULSE_CADENCES={lane.value: 1 for lane in PULSE_LANES})
+    def test_ordinary_pulses_do_not_create_or_change_survival_state(self):
+        """ENV-03 keeps any legacy-looking survival attributes inert."""
+        self.char1.db.hunger = 17
+        self.char1.db.thirst = 23
+        self.char1.db.intoxication = 4
+
+        self.script.at_repeat()
+
+        self.assertEqual(self.char1.db.hunger, 17)
+        self.assertEqual(self.char1.db.thirst, 23)
+        self.assertEqual(self.char1.db.intoxication, 4)
+        self.assertIsNone(self.char2.attributes.get("survival_state"))
 
     def test_persisted_state_reconstructs_without_replaying_a_token(self):
         cadences = {lane: 1 for lane in PULSE_LANES}

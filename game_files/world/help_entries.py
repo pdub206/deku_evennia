@@ -26,6 +26,326 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "lights",
+        "aliases": ["light", "extinguish", "lamps", "fuel"],
+        "category": "General",
+        "text": """Use light <item> to light a lamp carried directly by you,
+        including equipped lamps. It needs fuel and illuminates your room
+        brightly. It spends one fuel unit per objects pulse (one real minute
+        by default). Use extinguish <item> to stop fuel use. Empty lamps go
+        out automatically. Dropping, giving, or putting a lamp away extinguishes
+        it. A lamp inside a container cannot illuminate the room. You can light
+        a carried lamp in darkness. Sleep and other action restrictions apply.
+        Fuel use pauses while the server is stopped.""",
+    },
+    {
+        "key": "refill",
+        "aliases": ["replenishment", "charges", "recharge"],
+        "category": "General",
+        "text": """Use refill <target> from <source> with two directly carried,
+        accessible vessels. Compatible mundane liquid or fuel transfers in
+        whole units, up to what the target can hold. This spends the source's
+        units; empty sources, full targets, incompatible resources, and items
+        without a refill policy cannot transfer. Wands and staves cannot be
+        refilled by players. Some devices regain an authored number of charges
+        at dawn (06:00), once per world day, up to their maximum. Missed days
+        never accumulate. Buying a device does not recharge it. Drink/pour and
+        magical activation are documented by their own item features.""",
+    },
+    {
+        "key": "notes",
+        "aliases": ["read", "write", "writing", "pen", "pens"],
+        "category": "General",
+        "text": """Notes are items you can write on and read.
+
+          |wread <note>|n              read a note you carry or can see
+          |wwrite <note> = <text>|n    replace what a note says
+
+        To write, carry the note and a pen directly, not inside a bag. You
+        must be able to act (not asleep or fighting). Writing replaces the
+        whole note; there is no appending. Type |w||/|n in your text to start a
+        new line. Colour codes, links, and other markup are removed, so notes
+        are always plain text. Text over the length limit (2000 characters by
+        default) is refused rather than cut short, and if writing fails the
+        note keeps its old text.
+
+        Reading needs enough light to see. Each note shows the name of the
+        last person who wrote on it, as they were named when they wrote. You
+        cannot remove or change that. Some notes are locked against reading
+        or writing. Scrolls are recited, not read; see |whelp magic items|n.""",
+    },
+    {
+        "key": "magic items",
+        "aliases": ["quaff", "recite", "potions", "scrolls", "wands", "staves"],
+        "category": "Magic",
+        "text": """Some items hold magic you can release without knowing the
+        spell yourself. Carry the item directly, stand somewhere you can act,
+        and use the command its kind answers to:
+
+          |wquaff <potion> [on <target>]|n     drink one portion
+          |wrecite <scroll> [on <target>]|n    read a scroll aloud
+          |wuse <wand|staff> [on <target>]|n   spend one charge
+
+        Name a target only when the magic can affect someone else; with no
+        target the magic affects you if it is able to. Targeting, saves, attack
+        rolls, healing, damage, and concentration follow the same rules as the
+        spell itself, so a bottled concentration spell still breaks your other
+        concentration.
+
+        A potion loses one portion per drink and the empty bottle disappears.
+        A scroll is used up the first time it works. Wands and staves spend one
+        charge and stop working at zero until they recharge; see |whelp refill|n.
+        Nothing is spent when the magic is refused or fails — a wrong target,
+        an unknown spell, or an interrupted action costs you nothing.
+
+        Magic items are a noncombat action in this release: you cannot use them
+        while fighting. A magic item uses your own level and aptitude for its
+        potency.
+
+        # subtopics
+
+        ## Access
+
+        Some items can be used by anyone. Others are bound to their magic and
+        only work for someone who already knows that spell or ability — you are
+        told plainly when an item refuses you. There is no identification,
+        attunement, command-word guessing, or spell copying in this release.
+
+        ## Released items
+
+          |wPotion of Healing|n (quaff, anyone) — restores health to you or a
+          creature you name. SRD 5.2.1 Magic Items: Potion of Healing.
+          |wPotion of Blurring|n (quaff, anyone) — blurs your outline while you
+          concentrate. Alpha adaptation of SRD 5.2.1 Spell Descriptions: Blur.
+          |wSpell Scroll of Magic Missile|n (recite, must know Magic Missile) —
+          SRD 5.2.1 Magic Items: Spell Scroll.
+          |wWand of Magic Missiles|n (use, anyone) — SRD 5.2.1 Magic Items: Wand
+          of Magic Missiles.
+          |wStaff of Healing|n (use, must know Healing Word) — SRD 5.2.1 Magic
+          Items: Staff of Healing.""",
+    },
+    {
+        "key": "consumables",
+        "aliases": ["food", "drink", "eating", "drinking", "survival"],
+        "category": "General",
+        "text": """Consumables have finite portions, servings, charges, or other
+        stated uses. A successful use spends only the amount described by that
+        item's rules and may apply its registered effect. Use |weat <food>|n for
+        one carried food portion, |wdrink|n or |wsip <source>|n for one serving,
+        and |wtaste <source>|n to learn a liquid's taste without spending it.
+        Use |wpour <source> into <container>|n to move servings that fit, or
+        |wpour <source> into out|n to discard them. Fountains are room fixtures:
+        you may drink or taste from them but cannot carry or pour them.
+
+        This game deliberately has no hunger, thirst, or intoxication meters.
+        Characters receive no passive decay, warnings, penalties, or death from
+        not eating or drinking. Food and water remain useful finite supplies and
+        role-play objects; they do not need to be consumed to maintain a hidden
+        character stat. Poison, spoilage, addiction, withdrawal, and disease are
+        also outside this release's consumable rules.""",
+    },
+    {
+        "key": "building magic items",
+        "aliases": ["magic item profiles", "building potions", "building wands"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """Set an item's type to potion, scroll, wand, or staff, then
+        set |wmagic|n to a JSON activation profile, for example:
+        {"version":1,"definition":"potion.healing","uses":2}
+
+        |wdefinition|n must name a released magic-item definition and its item
+        type must match the item's type. The definition — not authored data —
+        owns the magic action, targeting mode, activation command, access rule,
+        and consumption mode, so content can never point an item at arbitrary
+        magic or an arbitrary command. Released definitions are listed in
+        |whelp magic items|n.
+
+        |wuses|n is authored portions, from 1 to 20, for a potion; exactly 1 for
+        a scroll; and exactly 0 for a wand or staff, whose units live in the
+        ITEM-05B charge |wresource|n profile instead (see |whelp building item
+        resources|n). Initial uses seed new copies only.
+
+        Runtime magic_item_state stores remaining uses and permanent activation
+        receipts. Re-authoring a profile preserves what has been spent and
+        clamps remaining uses downward; raising uses adds nothing to an existing
+        item. Changing an item's type clears both the profile and its state.
+        A potion or scroll is deleted in the same transaction as its last
+        successful use. A wand or staff stays at zero charges.
+
+        Malformed profiles or state deny activation on that one item only;
+        inspect and repair them in the staff shell without removing receipts.
+        Profiles and prototypes contain only authored primitives — never Python,
+        commands, or callables.""",
+    },
+    {
+        "key": "building starting packages",
+        "aliases": ["starting packages", "starting equipment"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """Starting equipment comes from one registry. Packages are
+        written by hand in |wworld/starting_package_data.py|n (CLASS_PACKAGES
+        and BACKGROUND_PACKAGES, keyed by class or background name). Items are
+        module prototypes in |wworld/prototypes.py|n. Chargen text is generated
+        from these files; there is no other equipment source. Edit the files,
+        sync, and reload, then run |wstartpackages|n to see the result.
+
+        # subtopics
+
+        ## Packages
+
+        Every package needs |wsrd_reference|n (starting "SRD 5.2.1 ") and may
+        have |wadaptation|n text explaining a MUD change. |witems|n are always
+        granted: each entry has |wprototype|n, |wquantity|n (1-100, default 1),
+        and optional |wequip|n, a list of wear locations to fill with that many
+        copies. |wcoins|n (0-100000) is always granted. |wchoices|n is a list
+        of {key, count, options}; the player picks |wcount|n distinct options.
+        Each option has a key (shown as its capital letter), items, coins, and
+        may hold one more level of choices. Keys are lowercase letters,
+        digits, and underscores. An option must grant something.
+
+        ITEM-07B will pass selections as choice paths, such as
+        class.equipment = (a,) or background.equipment.a.gaming_set = (dice,).
+
+        ## Prototypes
+
+        Each referenced prototype must be defined in world/prototypes.py (not
+        only in the database), use typeclass typeclasses.objects.Item, and set
+        key, weight, value, type, no_drop, account_bound, and srd_reference.
+        Every other field must be one the item builder offers for that type,
+        stored exactly as the builder would store it (for example weight 3.0
+        and wear_locations ["body"]). Callables and $protfuncs are refused so
+        weights and names stay fixed. Money-type prototypes are refused; use
+        coins instead. Prototype parents are allowed.
+
+        ## Validation failures
+
+        |wstartpackages|n lists each problem. The registry is complete only
+        when there are none; until then chargen shows "Not yet available" and
+        no package can be granted. Problems include:
+          - a selectable class or background with no package, or a package for
+            one that is not selectable in this release;
+          - unknown fields, bad keys, out-of-range quantity/coins/count, a
+            choice with fewer than two options, nesting beyond one level, or
+            the same prototype listed twice in one item list;
+          - a prototype that is missing, exists only in the database, is
+            shadowed by a database copy with the same key, cannot be spawned,
+            or fails a builder field rule;
+          - equipping more copies than the quantity, a location the item
+            cannot be worn at, two items equipping the same location in any
+            class + background combination, or auto-equipping armor the class
+            is not trained in;
+          - a class + background pair where no choice combination fits the
+            weakest character chargen can make (Strength 3; 45 lb and the
+            carried item limit), or where coins exceed the wallet maximum.
+        Use |wstartpackages <name>|n to preview one package and
+        |wstartpackages/check|n to revalidate after fixing database prototypes.
+        Bump STARTING_PACKAGE_VERSION when you change published packages.""",
+    },
+    {
+        "key": "starting equipment",
+        "aliases": ["starting gear", "starting package"],
+        "category": "Character",
+        "locks": "read:all()",
+        "text": """At the end of character creation, choose one of the listed
+        starting-equipment combinations for your class and background. The
+        choice shows every item and coin you will receive. Once you enter the
+        world, that package is final: it is not changed if the game's starting
+        equipment is updated later. Use |winventory|n and |wcoins|n to review
+        what you received.""",
+    },
+    {
+        "key": "building item resources",
+        "aliases": ["building lights", "building charges", "resource profiles"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """In the item editor set resource to a JSON profile, for example:
+        {"version":1,"kind":"fuel","resource_key":"lamp_oil","current":5,
+         "maximum":10,"recharge":"refill","recharge_amount":0}
+        Light uses fuel; wand/staff use charges; drinkcon/fountain use liquid;
+        other may hold mundane fuel/liquid. resource_key must be a lowercase
+        identifier and match exactly for refill. Units range from 0 to 10000,
+        with current no greater than maximum. Policies are none, refill for
+        mundane resources, or dawn for charges. recharge_amount is 0 except
+        dawn, where it is 1 through maximum. Lights have fixed Bright room light.
+        Profiles/prototypes contain only authored data. Runtime item_resource_state
+        stores units, lit ownership, pulse/day tokens, and permanent operation
+        receipts. Editing an existing profile preserves spent units; reducing
+        maximum clamps current and increasing it adds no units. Initial current
+        seeds new copies only. Changing compatibility requires clearing the
+        resource first. Malformed profiles/state are isolated, supply no light,
+        and do not refill/recharge; inspect and repair in the staff shell without
+        removing replay receipts. Type changes clear both profile and state.
+        There is no player charge refill and no shop recharge. Resource profiles
+        never create hunger, thirst, or intoxication meters; do not author hidden
+        survival values for food, drink, or any other item. For |wfood|n, also
+        set |wfood|n to {"version":1,"portions":2,"effect":null}. For a
+        |wdrinkcon|n or |wfountain|n, set |wliquid|n to
+        {"version":1,"liquid_key":"water","inexhaustible":false}; only
+        fountains may be inexhaustible, and this key must match resource_key.
+        Liquid keys and optional effects are code-owned; builders cannot add
+        markup or callbacks.""",
+    },
+    {
+        "key": "time",
+        "aliases": ["calendar", "daylight", "world clock"],
+        "category": "General",
+        "text": """Use time to see the world date and time, even while sleeping.
+        Each year has twelve 30-day months. Sunrise is at 06:00 and sunset at
+        18:00. Outdoors, daylight improves visibility; indoors you need the
+        room's lighting or an active light. By default one world hour takes
+        ten real minutes. Time pauses while the server is stopped.
+        Shop opening hours follow this shared clock.""",
+    },
+    {
+        "key": "weather",
+        "aliases": ["rain", "storm", "fog", "conditions"],
+        "category": "General",
+        "text": """Use |wweather|n outdoors to check local conditions. Clear and
+        cloudy weather do not affect you. Rain makes Perception and travel a
+        little harder; fog makes Perception harder and prevents looking through
+        an exit; storms combine the severe travel and Perception penalties with
+        that directional limit. Equipped weather-protection gear cancels the
+        travel and Perception penalties, but not the weather itself. Indoors,
+        you cannot judge conditions directly. Weather changes only while the
+        world is running; it never harms you, extinguishes lights, or changes
+        combat.""",
+    },
+    {
+        "key": "world clock administration",
+        "aliases": ["clock repair", "clock scale"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """The global game_pulse Script stores the versioned world_clock
+        Attribute: minute, epoch, scale, scale_version, step, and last_token.
+        Malformed state stops clock work rather than resetting time. Inspect and
+        repair it through the staff Evennia shell, preserving minute and token.
+        To change scale/cadence, set GAME_CLOCK_REAL_SECONDS_PER_HOUR and increase
+        GAME_CLOCK_SCALE_VERSION, reload, then call
+        systems.world_clock.reconcile_clock(). Steps must be whole minutes.
+        GAME_CLOCK_EPOCH_MINUTE seeds new clocks; reconciliation keeps current
+        time. Boundary consumers register code callbacks for hour/day/dawn/dusk
+        with stable minute/day:event identities. Delivery is at most once:
+        a crash can skip a consumer, and missed days are never caught up.
+        ITEM-05B and AREA-03 register their recharge/reset consumers here.""",
+    },
+    {
+        "key": "doors",
+        "aliases": ["door", "keys", "locks", "picking"],
+        "category": "General",
+        "text": """
+            Use |wopen <target>|n and |wclose <target>|n on a visible door or
+            openable container. |wlock <target>|n and |wunlock <target>|n need
+            a matching key carried directly in your inventory. Keys are reusable;
+            one in another container or on the ground does not count.
+
+            Use |wpick <target>|n on a locked, pickable target while directly
+            carrying thieves' tools. Picking makes one Dexterity check using
+            your thieves' tools proficiency. A failed attempt leaves the lock
+            unchanged. Hidden, inaccessible, and ambiguous targets cannot be
+            manipulated.
+        """,
+    },
+    {
         "key": "checks",
         "aliases": ["ability checks", "skill checks", "advantage", "dc"],
         "category": "Character",
@@ -843,7 +1163,10 @@ HELP_ENTRY_DICTS = [
 
             2. |yChoose Your Origin|n — Your origin has two parts:
                - Background: represents your pre-adventuring occupation and gives
-                 skill proficiencies, a tool proficiency, a feat, and starting gear.
+                 skill proficiencies, a tool proficiency, and a feat.
+               Each class and background detail page also lists its starting
+               equipment options, or "Not yet available" until staff finish
+               the starting packages.
                - Species: your ancestral heritage, determining size and speed.
                - Languages: your character automatically knows Common plus 2 more.
 
@@ -935,6 +1258,13 @@ HELP_ENTRY_DICTS = [
             A completed Short Rest restores only resources that say they recover
             on a Short Rest; a completed Long Rest restores both short- and
             long-rest resources. Only released class resources use this system.
+
+            ## Survival Meters
+
+            There are no hunger, thirst, or intoxication meters. The |wscore|n
+            display intentionally has no food or water requirement to maintain,
+            and ordinary world pulses do not create passive survival penalties.
+            See |whelp consumables|n for finite food, drink, and magic-item use.
 
             ## Identity
 
@@ -1066,6 +1396,26 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "display preferences",
+        "aliases": ["preferences", "prefs", "brief", "compact", "autoexits", "prompt"],
+        "category": "General",
+        "text": """
+            Use |wpreferences|n (or |wprefs|n) to review your saved display
+            settings. Each individual command accepts |won|n or |woff|n, or no
+            argument to query its current value.
+
+            |wbrief|n hides room descriptions when you arrive, while explicit
+            |wlook|n always shows them. |wcompact|n removes optional blank lines.
+            |wautoexits|n controls exit summaries on room displays. |wprompt|n
+            controls the fixed ordinary input prompt. Combat and builder-editor
+            prompts have their own settings and take priority when active.
+
+            Defaults are brief off, compact off, autoexits on, and prompt on.
+            These settings change presentation only, never what your character
+            can see or do.
+        """,
+    },
+    {
         "key": "combat prompt",
         "aliases": ["combatprompt", "health"],
         "category": "Combat",
@@ -1131,14 +1481,46 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "coins",
+        "aliases": ["currency", "money", "wealth", "give coins", "drop coins"],
+        "category": "Items",
+        "text": """
+            Use |wcoins|n or |wwealth|n to see the coins in your wallet. Wallet
+            coins have no weight. Use |wgive <amount> coins <character>|n to
+            pay a visible character in your room, or |wdrop <amount> coins|n
+            to make a physical money pile. Pick a pile up with |wget <pile>|n.
+
+            Give an ordinary item with |wgive <item> <character>|n. No equals
+            sign or extra |wto|n word is needed. Loot corpse currency with
+            |wget coins <corpse>|n; |wget all <corpse>|n also takes its coins.
+            NPC corpse coins are public, while player corpse coins follow the
+            same owner-only protection as the corpse's items.
+        """,
+    },
+    {
+        "key": "currency administration",
+        "aliases": ["currency inspect", "currency grant", "currency repair"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wcurrency/inspect <target>|n to view a wallet and its bounded
+            audit count. Staff corrections use
+            |wcurrency/grant <amount> <target> <source> <reason>|n,
+            |wcurrency/remove ...|n, or |wcurrency/repair ...|n. Amounts must
+            be bounded whole numbers. Source must be a stable unique identity;
+            repeating it safely returns the original transaction result.
+        """,
+    },
+    {
         "key": "corpses",
         "aliases": ["corpse", "loot", "looting"],
         "category": "Combat",
         "text": """
             When a character dies, their possessions remain in a corpse in the
             room. Use |wlook in <corpse>|n to inspect its visible contents and
-            |wget <item> from <corpse>|n or |wget all from <corpse>|n to take
-            items. If you cannot carry every item, |wget all|n takes what it
+            |wget <item> <corpse>|n, |wget coins <corpse>|n, or
+            |wget all <corpse>|n to take assets. If you cannot carry every item,
+            |wget all|n takes what it
             can and tells you what remains.
 
             NPC corpses can be looted by anyone. A player character's corpse
@@ -1392,7 +1774,140 @@ HELP_ENTRY_DICTS = [
 
             Junking destroys only that particular item. It cannot be recovered,
             but its underlying template remains in the game and builders can
-            spawn new copies from it.
+            spawn new copies from it. Empty a container before junking it.
+            No-drop and account-bound items cannot be junked (see
+            |whelp item restrictions|n).
+        """,
+    },
+    {
+        "key": "item restrictions",
+        "aliases": ["no drop", "no_drop", "bound items", "account bound", "decay"],
+        "category": "Items",
+        "text": """
+            Some items restrict where they can go.
+
+            A |wno-drop|n item stays with whoever carries it. You cannot drop,
+            give, put, junk, or sell it. If you die, it goes into your corpse
+            like everything else.
+
+            An |waccount-bound|n item belongs to the first player character
+            who picks it up or receives it, and to nobody else, ever. It can
+            only be carried by its owner or kept in containers they carry.
+            It cannot be dropped, given, junked, or sold, and it never goes
+            into your corpse: you keep it through death and respawn, though it
+            is no longer worn or wielded. Nobody else can pick it up.
+
+            Some items |wdecay|n. After a set time they crumble away, and you
+            (or the room) see one message. Anything inside spills out into
+            wherever the item was, still in its own containers. A worn item is
+            removed first. The timer runs whether or not the item is carried,
+            but it pauses while you are logged out of the world and never
+            counts time the server was down. Keys, coins, and account-bound
+            items never decay.
+        """,
+    },
+    {
+        "key": "building item policy",
+        "aliases": ["decay_minutes", "account_bound fields", "no_drop fields"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Items and item templates share three policy fields:
+
+              |wset no_drop on|n         holders cannot drop, give, put, junk,
+                                      or sell it; death still moves it
+              |wset account_bound on|n   binds to the first PC who gets it
+              |wset decay_minutes 30|n   decays after 30 in-world minutes
+              |wset decay_minutes none|n  never decays
+
+            An account-bound item records its owner once and can then exist
+            only in that PC's carried tree. Rooms, containers, and resets may
+            hold it unbound. NPCs, shop stock, and corpses never may. A live
+            item that is already bound cannot have the flag cleared. Staff use
+            |witempolicy/unbind|n instead. Money cannot be account-bound.
+
+            Decay counts one objects pulse (one real minute by default) while
+            the item is in a room or carried/contained there. Setting or
+            clearing |wdecay_minutes|n on a live item starts a fresh timer. On
+            expiry, direct contents spill into the item's parent in name order,
+            keeping their own containers and timers, and only the item itself
+            is deleted. Keys, money, and bound items never decay. Corpses keep
+            their own separate timer.
+
+            A |wkey|n item's |wkey_kind|n must be a stable identity (lowercase
+            letters, digits, and underscores) matching the door or container
+            lock it opens. Keys are ordinary reusable items. Only keys you
+            carry directly count; there is no key ring.
+        """,
+    },
+    {
+        "key": "building notes",
+        "aliases": ["note title", "note building", "pen building"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Set |wtype note|n to make an item writable and readable, and
+            |wtype pen|n for something players can write with. Pens have no
+            ink or other fields.
+
+              |wset title A Crumpled Letter|n   title shown when read
+
+            The title is plain text on one line, up to 80 characters by
+            default (|wNOTE_TITLE_MAX_LENGTH|n); markup is stripped. Without a
+            title, the item's name is shown. The body can only be written by
+            players with |wwrite|n (|wNOTE_BODY_MAX_LENGTH|n, 2000 by default)
+            and is never copied into a template. Changing a note's type clears
+            its writing.
+
+            Optional locks: |wread|n controls who can read it and |wwrite|n who
+            can write on it, e.g. |wlock letter = write:perm(Builder)|n. The
+            normal |wview|n and |winteract|n locks also apply.
+        """,
+    },
+    {
+        "key": "note administration",
+        "aliases": ["noteadmin", "noteadmin/delete"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            |wnoteadmin <note>|n shows the last writer's character and account
+            ids, their name at the time and now, the write time, the revision,
+            and the body shown escaped (markup appears as text).
+
+            |wnoteadmin/delete <note> = <reason>|n deletes an abusive note.
+            The reason and the full authorship record go to the server log.
+            A note holding other objects must be emptied first.
+
+            Players cannot set or clear authorship, and there is no player
+            erase. Rewriting a note records the new writer.
+        """,
+    },
+    {
+        "key": "item policy administration",
+        "aliases": ["itempolicy/move", "itempolicy/unbind", "itempolicy/decay"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            |witempolicy <item>|n shows an item's raw no_drop, account_bound,
+            binding, decay policy, decay record, quarantine state, and recent
+            audit entries.
+
+            Repairs require a reason and are recorded on the item and in the
+            server log:
+
+              |witempolicy/move <item> = <destination>, <reason>|n
+                  relocate past transfer and capacity rules (a bound item
+                  moved into another PC's inventory while unbound binds to
+                  them)
+              |witempolicy/unbind <item> = <reason>|n
+                  clear the owner so the next PC grant binds it afresh
+              |witempolicy/decay <item> = <reason>|n
+                  clear a malformed or quarantined decay record and restart
+                  the authored timer
+
+            A malformed decay record quarantines only that item. Other items
+            keep decaying. Malformed flags or bindings block that item's
+            transfers until repaired.
         """,
     },
     {
@@ -1474,6 +1989,7 @@ HELP_ENTRY_DICTS = [
               edit new npc <name>     create a template and spawn an NPC here
               edit item <name>        edit an existing item template
               edit npc <name>         edit an existing NPC template
+              edit exit <direction>   edit an exit in your current room
               edit <object>           edit a live room, item, or NPC by name/#dbref
 
             You must have |wBuilder|n permission.  The classic builder commands
@@ -1527,6 +2043,23 @@ HELP_ENTRY_DICTS = [
             |wedit <direction>|n — editing an exit jumps you to the room it
             leads to — or walk there and |wedit here|n.
 
+            Use |wedit exit <direction>|n when you mean the exit itself. Use
+            |wset door on|n before its other door fields. |winitial_state|n is
+            open, closed, or locked and is what a later area reset restores;
+            live state is deliberately not exported. |wkey_kind|n names the
+            reusable key identity used by |wlock|n and |wunlock|n. |wpickable|n
+            and |wpick_dc|n configure |wpick|n; |whidden|n and
+            |wdiscovery_dc|n configure later perception. DCs range from 0 to
+            30, or use |wnone|n where allowed.
+
+            To make two reciprocal exits one logical door, give both the same
+            |wpair_key|n. Configure the first side completely before assigning
+            the key, then configure the reciprocal side identically. Once
+            paired, changing either side synchronizes both. A missing,
+            ambiguous, or divergent peer fails closed until repaired. One-way
+            doors use |wpair_key none|n. AREA-03 will schedule resets; the
+            current builder only records and validates their initial state.
+
             ## Items
 
             Items are authored as |ytemplates|n (prototypes) and then stamped into
@@ -1548,6 +2081,9 @@ HELP_ENTRY_DICTS = [
               |wvalue|n     worth in coins
               |wwear_locations|n  comma-separated equipment slots, such as
                               |whead|n or |wleft wrist, right wrist|n
+              |wno_drop|n   on/off; see |whelp building item policy|n
+              |waccount_bound|n  on/off; see |whelp building item policy|n
+              |wdecay_minutes|n  minutes until it decays, or |wnone|n
 
             Changes to a template persist immediately and apply to copies spawned
             afterwards.  To customise one existing copy in the world, |wedit|n it
@@ -1575,8 +2111,10 @@ HELP_ENTRY_DICTS = [
               |wset type armor|n      adds |wbase_ac|n, armor |wsubtype|n,
                                   |wmitigation_flat|n, |wmitigation_percent|n,
                                   and |wmitigation_types|n
-              |wset type container|n  adds |wcapacity|n (max weight it can hold)
-              |wset type none|n       back to a plain item (drops those fields)
+              |wset type container|n  adds |wcapacity|n (max contained weight),
+                                  |wtransparent|n, and door/open/lock state fields
+              |wset type note|n       adds |wtitle|n (see |whelp building notes|n)
+              |wset type none|n      back to a plain item (drops those fields)
 
             Armor mitigation protects the hit location implied by
             |wwear_locations|n; there is no separate coverage field. Mitigation
@@ -1725,6 +2263,382 @@ HELP_ENTRY_DICTS = [
             them from active effect storage.
 
             You must have |wBuilder|n permission or higher.
+        """,
+    },
+    {
+        "key": "room restrictions",
+        "aliases": ["private rooms", "room capacity", "safe rooms"],
+        "category": "General",
+        "text": """
+            Some rooms restrict entry when they are full, keep roaming creatures
+            out, or prevent combat and other harmful actions. A private room also
+            hides its interior from adjacent-room inspection. These restrictions
+            are properties of the room, not invitations or ownership: if entry is
+            denied, choose another route or wait for space.
+
+            Being placed in a no-combat room ends an existing fight, but does not
+            heal you, remove prior effects, or protect you from environmental
+            hazards.
+        """,
+    },
+    {
+        "key": "room policy building",
+        "aliases": ["room policy", "no_combat", "no_mobiles", "occupant_capacity"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            While editing a room, use |wset no_combat on/off|n,
+            |wset no_mobiles on/off|n, |wset private on/off|n, and
+            |wset occupant_capacity <number/none>|n. Capacity counts both player
+            and non-player Characters. Private rooms hide remote inspection and
+            default to capacity two unless a smaller explicit limit is set.
+
+            Normal movement, mobile navigation, following, and recall obey room
+            policy. The teleport/forced, spawn, respawn, and builder-placement
+            services own named bypasses and must audit their use; room policy does
+            not itself validate their destinations. Malformed policy remains
+            visible in builder diagnostics and denies affected operations.
+        """,
+    },
+    {
+        "key": "room environments",
+        "aliases": ["dangerous rooms", "room light", "safe rest"],
+        "category": "General",
+        "text": """
+            Rooms may be indoors or outdoors, bright, dim, or dark, and may
+            alter natural recovery. Some clearly dangerous rooms cause a
+            consequence when you voluntarily enter them. Forced placement,
+            spawning, respawning, and recall do not normally trigger entry
+            hazards. A safe resting place permits uninterrupted Short and Long
+            Rest progress; it does not prevent combat or environmental harm.
+        """,
+    },
+    {
+        "key": "room environment building",
+        "aliases": ["indoors", "room light building", "entry_hazard"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            While editing a room, set |windoors on/off|n, |wlight
+            bright/dim/dark|n, |wsafe_rest on/off|n, |wrecovery_multiplier
+            <0..3>|n, and |wentry_hazard <registered-key/none>|n. Sector never
+            implies indoors. Entry hazards are code-registered definitions and
+            cannot contain commands, scripts, or Python paths. Area export
+            stores the complete validated environment record deterministically.
+        """,
+    },
+    {
+        "key": "recall",
+        "aliases": ["home", "return home"],
+        "category": "General",
+        "text": """
+            Use |wrecall|n (or |whome|n) while standing, conscious, and outside
+            combat to begin returning to the world's recall destination. Recall
+            takes one interaction interval and costs no coins or items. Moving,
+            taking damage, entering combat, disconnecting, or a full server
+            restart cancels it. Some rooms forbid recall, and a full destination
+            may prevent arrival. Recall never uses your object's mutable home.
+        """,
+    },
+    {
+        "key": "room role configuration",
+        "aliases": ["roomroles", "start room", "recall destination"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Configure |wCHARACTER_START_ROOM|n, |wCOMBAT_RESPAWN_SANCTUARY|n,
+            and |wRECALL_DESTINATION|n as independent |warea:room_key|n strings
+            in secret settings. They may intentionally name the same room, but
+            each reference must resolve to exactly one Room. Use |wroomroles|n
+            to validate all three. Add a |wrecall:false()|n room lock to forbid
+            starting or completing recall from that room.
+        """,
+    },
+    {
+        "key": "delayed actions",
+        "aliases": ["action delay", "action queue"],
+        "category": "General",
+        "text": """
+            Some noncombat interactions take time. The command tells you when
+            an action begins and its owning system reports completion or
+            cancellation. Starting a conflicting action may be denied or may
+            replace the earlier action when that interaction explicitly allows
+            replacement. Disconnecting normally cancels delayed actions; a hot
+            reload preserves only actions whose rules say it is safe, and a
+            full server restart cancels all player interactions.
+        """,
+    },
+    {
+        "key": "action queue administration",
+        "aliases": ["actionqueue", "actions administration"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wactionqueue [character]|n to inspect one active durable action
+            and its bounded audit count. Use |wactionqueue/cancel <character>|n
+            for an ordinary reservation-aware cancellation. Use
+            |wactionqueue/repair <character>|n only for malformed or quarantined
+            state; repair clears state without guessing how to mutate an unknown
+            reservation. These commands require Builder permission.
+        """,
+    },
+    {
+        "key": "travel",
+        "aliases": ["movement", "terrain", "sectors"],
+        "category": "General",
+        "text": """
+            Moving through an exit takes time. Your Speed and the destination's
+            terrain determine the delay: roads and indoor spaces are quickest,
+            while forests, hills, mountains, and water take longer. You remain
+            in your current room until travel completes, and a route that becomes
+            blocked before then is cancelled.
+
+            Deep water requires a functional boat carried directly in your
+            inventory or the ability to swim. Air requires the ability to fly.
+            Being unable to move or carrying too much prevents travel rather
+            than merely making it slower. Travel does not spend movement points
+            or cause exhaustion.
+        """,
+    },
+    {
+        "key": "visibility",
+        "aliases": ["light", "darkness", "hidden details", "search"],
+        "category": "General",
+        "text": """
+            Light affects what you can inspect. Normal sight cannot inspect a
+            dark room without a light; darkvision works only in your current
+            room and does not see through a dark exit. Dim light and severe
+            weather may make Perception more difficult.
+
+            Hidden exits and descriptive details can be noticed by passive
+            Perception. Use |wsearch|n or |wsearch <direction or keyword>|n to
+            make an active Wisdom (Perception) check. A discovery is personal
+            and lasts only until you leave the room. Searching does not reveal
+            failures or hidden details belonging to somebody else.
+        """,
+    },
+    {
+        "key": "containers",
+        "aliases": ["put", "get from", "container"],
+        "category": "Items",
+        "text": """
+            Use |wput <item> [in] <container>|n and
+            |wget <item> [from] <container>|n. The |win|n and |wfrom|n words
+            are optional, so |wput gem satchel|n and |wget gem satchel|n work.
+            Use |wall|n instead of an item name for a batch; ordinary container
+            batches succeed completely or do not move anything. |wget all|n
+            picks up all eligible loose room items.
+
+            Containers must be open to add or remove contents. A transparent
+            closed container can be looked into, but cannot be changed. Filled
+            containers retain their contents and their total weight counts
+            against carrying and container capacity. Containers cannot be put
+            inside themselves or nested beyond the configured safe depth.
+            Corpses are special withdrawal-only containers; their bulk looting
+            may leave behind individual items you cannot carry.
+        """,
+    },
+    {
+        "key": "inspection",
+        "aliases": ["exits", "examine", "look in", "look direction"],
+        "category": "General",
+        "text": """
+            Use |wexits|n to list visible directions and whether visible doors
+            are open or closed. |wlook <direction>|n describes an exit and may
+            show the adjacent room when light, access, and privacy permit.
+            |wlook in <container>|n lists only its visible top-level contents.
+            Closed opaque containers reveal nothing; transparent ones remain
+            visible but cannot have contents added or removed.
+
+            |wexamine <target>|n shows a visible local target's description and
+            public physical details. It never reveals inventories, exact combat
+            statistics, hidden opponents, or other private state.
+        """,
+    },
+    {
+        "key": "visibility building",
+        "aliases": ["discovery dc", "extra descriptions"],
+        "category": "Building",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Exit |whidden|n and |wdiscovery_dc|n fields control observer-specific
+            discovery; DCs range from 0 through 30. Room and item
+            |wextra_descs|n accept an ordered JSON list. Each record contains
+            unique |wkeywords|n, descriptive |wdescription|n text, and an
+            optional |wdiscovery_dc|n. Extra descriptions cannot run commands,
+            scripts, locks, or grant items.
+        """,
+    },
+    {
+        "key": "shop building",
+        "aliases": ["shop profiles", "shop stock", "shop scheduling"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Attach a shop to a live NPC with |wedit new shop <npc>|n.
+            Edit it later with |wedit shop <npc>|n. Names, keywords, and #dbrefs
+            use the same object search as the other build commands.
+            Use |wfields|n, |wshow|n,
+            |wset <field> <value>|n, and |wdone|n just as in the other editors.
+            Shops attach to that exact NPC, not its template. |wdel|n twice
+            detaches the shop while preserving the NPC, inventory, and coins.
+            Lists and stock use JSON; for example:
+              set accepted_kinds ["weapon", "armor"]
+              set stock [{"prototype_key": "iron_blade", "target_quantity": 2}]
+            Numeric fields take whole numbers. Editing wallet_opening_balance
+            never refills an existing wallet; use audited currency staff tools.
+
+            NPC shops may also be assigned through the |wspecials|n field with one
+            |wshopkeeper|n behavior. Its version-1 configuration names a stable
+            profile key, a |wshop:...|n access lock, accepted item kinds, integer
+            buy/sell percentages from 0 through 1000, distinct open/close hours
+            from 0 through 23, an opening wallet balance, and ordered stock
+            entries containing an item prototype key and target quantity.
+
+            Authored stock is made from real carried item copies. Each copy keeps
+            durable profile and stock-entry provenance. Player-sold items are real
+            inventory but have no authored provenance and are never replenished.
+            On the first eligible world-time event each day, every authored entry
+            is topped up to its target through normal carrying-capacity checks.
+            Repeated events and reloads cannot duplicate stock; missed days do not
+            catch up. AREA resets use this same idempotent adapter.
+
+            While editing a live shop NPC, |wshow|n displays its safe definition
+            separately from actual and authored live quantities. Private lock text
+            is never included in that view. A purchased authored item loses
+            shop provenance, so selling it back cannot count as authored stock.
+
+            Until ENV-01 supplies a world clock, requests use GAME_SHOP_HOUR
+            (default noon); schedule/reset adapters are invoked by their future
+            milestones. Creating a shop does not immediately spawn stock.
+            Place actual item copies on the NPC for immediate trading.
+        """,
+    },
+    {
+        "key": "shop transactions",
+        "aliases": ["shop diagnostics", "trade diagnostics"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Use |wedit shop <npc>|n then |wtransactions|n to see the last
+            twenty attempts, including transaction identity, actor/item dbrefs,
+            operation, price, success, and a safe failure reason. The currency
+            audit ledger records both sides of committed payments.
+
+            Each service attempt has a stable identity. Permanent actor receipts
+            prevent financial replay across reloads or currency-ledger pruning.
+            Reusing an identity for a different item/shop/operation is rejected.
+            Failed attempts also retain their outcome; a fresh attempt gets a new
+            identity. Messages are attempted once after commit; disconnected
+            clients or failed delivery never cause the trade to execute again.
+        """,
+    },
+    {
+        "key": "shops",
+        "aliases": ["shopping", "trade"],
+        "category": "Shops",
+        "text": """
+            Shopkeepers trade actual carried items using finite coin wallets.
+            Use list, value, buy, and sell in their room. With one visible open
+            shop, omit the shopkeeper. When several qualify, use the NPC's name
+            or keywords: list merchant, value blade at merchant,
+            buy blade from merchant, sell blade to merchant.
+
+            Buy prices round up; sale prices round down. Both are at least one
+            coin for a positive-value accepted item. A quote does not reserve a
+            price, item, or coins. Closed, dead, fighting, inaccessible, or unseen
+            shopkeepers cannot trade. You and the shop must have room to carry
+            the item and enough wallet space to receive payment.
+
+            Shops refuse money piles, corpses, filled containers, equipped items,
+            zero-value items, no-drop or account-bound items, and unaccepted item
+            kinds. They do not offer credit, haggling, identification, repairs,
+            bulk trades, remote trades, or guaranteed buyback.
+        """,
+    },
+    {
+        "key": "list",
+        "aliases": ["shop list"],
+        "category": "Shops",
+        "text": """
+            Usage: list [shopkeeper]
+            Shows visible actual stock, quantity, and final buy price in coins.
+            Omit the shopkeeper when only one visible open shop qualifies.
+            With several shops, use a name or keyword: list merchant.
+            See help shops for trading rules.
+        """,
+    },
+    {
+        "key": "value",
+        "aliases": ["shop value", "appraise"],
+        "category": "Shops",
+        "text": """
+            Usage: value <item> [at shopkeeper]
+            Quotes what a shop would pay for one eligible carried item, rounding
+            down with a minimum of one coin. This does not reserve a sale or
+            guarantee funds. Omit at shopkeeper with one visible open shop;
+            otherwise use its name or keywords. See help shops.
+        """,
+    },
+    {
+        "key": "buy",
+        "aliases": ["shop buy", "purchase"],
+        "category": "Shops",
+        "text": """
+            Usage: buy <item> [from shopkeeper]
+            Buys one actual visible stock item at the current price, rounded up.
+            Coins and the item transfer together after all checks succeed.
+            Omit from shopkeeper with one visible open shop; otherwise use its
+            name or keywords. You need enough coins and carrying capacity.
+            Bulk buy all is unsupported. See help shops.
+        """,
+    },
+    {
+        "key": "sell",
+        "aliases": ["shop sell"],
+        "category": "Shops",
+        "text": """
+            Usage: sell <item> [to shopkeeper]
+            Sells one eligible carried item at the current price, rounded down.
+            Remove equipped items first. The shop must accept its kind and have
+            enough coins and carrying capacity. Omit to shopkeeper with one
+            visible open shop; otherwise use its name or keywords.
+            Bulk sell all is unsupported. See help shops for exclusions.
+        """,
+    },
+    {
+        "key": "equipment bonuses",
+        "aliases": ["equipment modifiers", "magic equipment"],
+        "category": "Equipment",
+        "text": """
+            Some equipped items can improve or hinder an ability, saving throw,
+            skill, speed, carrying capacity, or passive Perception. Only worn
+            equipment applies these bonuses; carrying an item is not enough.
+
+            For an ability, saving throw, skill, or passive Perception, use the
+            best bonus and the worst penalty among your equipment. Speed and
+            carrying-capacity bonuses and penalties combine, within the game's
+            equipment limits. Armor Class and armor damage protection follow
+            their own equipment rules rather than these bonuses.
+        """,
+    },
+    {
+        "key": "equipment capabilities",
+        "aliases": ["utility equipment", "equipment utility"],
+        "category": "Equipment",
+        "text": """
+            Some items provide a specific utility capability when carried or
+            equipped, as stated in the item's description. Capabilities do not
+            stack: carrying two boats, lights, or copies of the same protective
+            gear is no better than one.
+
+            A boat can meet water-travel requirements, and equipped swim or
+            flight gear can meet its stated terrain requirement. Tools must be
+            carried for the action that calls for them, but owning a tool never
+            makes you proficient with it. Equipped resistance gear halves that
+            damage after armor has protected the struck location. Weather gear
+            only protects against travel and perception penalties from severe
+            weather; it is not a general defense or social bonus.
         """,
     },
     {

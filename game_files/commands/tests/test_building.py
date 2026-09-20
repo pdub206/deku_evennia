@@ -37,7 +37,10 @@ from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import build_area_data, export_area, load_area_data
+from systems.doors import DoorError, configure_door, door_state, transition_door
 from systems.mob_spawning import mobile_spawn_identity
+from systems.room_environment import ROOM_ENVIRONMENT_ATTRIBUTE, room_environment
+from systems.room_policy import ROOM_POLICY_ATTRIBUTE, room_policy
 from world.build_schema import ITEM_TYPES, schema_for_prototype
 
 
@@ -75,6 +78,8 @@ class TestBuildEditing(EvenniaCommandTest):
 
     def setUp(self):
         super().setUp()
+        self.addCleanup(self.room1.attributes.remove, ROOM_POLICY_ATTRIBUTE)
+        self.addCleanup(self.room1.attributes.remove, ROOM_ENVIRONMENT_ATTRIBUTE)
         self.char1.permissions.add("Builder")
         # Enter the editing context bound to room1.
         self.call(CmdBuild(), "here")
@@ -87,8 +92,53 @@ class TestBuildEditing(EvenniaCommandTest):
 
     def test_fields_lists_room_fields(self):
         out = self.call(CmdBuildFields(), "")
-        for field_name in ("name", "desc", "area"):
+        for field_name in (
+            "name",
+            "desc",
+            "area",
+            "no_combat",
+            "no_mobiles",
+            "private",
+            "occupant_capacity",
+            "indoors",
+            "light",
+            "safe_rest",
+            "recovery_multiplier",
+            "entry_hazard",
+        ):
             self.assertIn(field_name, out)
+
+    def test_set_room_policy_fields_validates_one_canonical_record(self):
+        self.call(CmdBuildSet(), "no_combat on")
+        self.call(CmdBuildSet(), "no_mobiles on")
+        self.call(CmdBuildSet(), "private on")
+        self.call(CmdBuildSet(), "occupant_capacity 1")
+        policy = room_policy(self.room1)
+        self.assertTrue(policy.no_combat)
+        self.assertTrue(policy.no_mobiles)
+        self.assertTrue(policy.private)
+        self.assertEqual(policy.occupant_capacity, 1)
+        self.call(
+            CmdBuildSet(),
+            "occupant_capacity -1",
+            "Invalid value for 'occupant_capacity'",
+        )
+
+    def test_set_room_environment_fields_validates_one_canonical_record(self):
+        self.call(CmdBuildSet(), "indoors on")
+        self.call(CmdBuildSet(), "light dim")
+        self.call(CmdBuildSet(), "safe_rest on")
+        self.call(CmdBuildSet(), "recovery_multiplier 1.5")
+        environment = room_environment(self.room1)
+        self.assertTrue(environment.indoors)
+        self.assertEqual(environment.light.value, "dim")
+        self.assertTrue(environment.safe_rest)
+        self.assertEqual(environment.recovery_multiplier, 1.5)
+        self.call(
+            CmdBuildSet(),
+            "recovery_multiplier 3.1",
+            "Invalid value for 'recovery_multiplier'",
+        )
 
     def test_unknown_field_rejected(self):
         self.call(CmdBuildSet(), "bogus whatever", "Unknown field 'bogus'")
@@ -187,6 +237,18 @@ class TestAreaRoundTrip(EvenniaCommandTest):
         north_exits = [ex for ex in second["room"].exits if ex.key == "north"]
         self.assertEqual(len(north_exits), 1)
 
+    def test_sector_builder_validation_and_roundtrip(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildSet(), "sector mountain", "Set sector to: mountain")
+        self.call(CmdBuildSet(), "sector swamp", "Invalid value")
+        self.call(CmdBuildArea(), "sectorarea")
+
+        rooms, exits = build_area_data("sectorarea")
+        loaded = load_area_data("sectorimport", rooms, exits)
+
+        self.assertEqual(loaded["room"].db.sector, "mountain")
+
 
 class TestAreaExportFile(EvenniaCommandTest):
     """export_area writes a valid, importable area module."""
@@ -224,6 +286,109 @@ class TestEditExitRedirect(EvenniaCommandTest):
         target = self.char1.ndb._build_target
         self.assertEqual(target.key, "Armory")
         self.assertIsNone(target.destination)  # it's the room, not the exit
+
+    def test_edit_exit_opens_validated_door_fields(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+
+        self.call(CmdBuild(), "exit north")
+        self.assertEqual(self.char1.ndb._build_target.key, "north")
+        fields = self.call(CmdBuildFields(), "")
+        for name in (
+            "door",
+            "initial_state",
+            "key_kind",
+            "pickable",
+            "pick_dc",
+            "hidden",
+            "discovery_dc",
+            "pair_key",
+        ):
+            self.assertIn(name, fields)
+
+        self.call(CmdBuildSet(), "door on")
+        self.call(CmdBuildSet(), "initial_state locked")
+        self.call(CmdBuildSet(), "key_kind iron_key")
+        self.call(CmdBuildSet(), "pickable on")
+        self.call(CmdBuildSet(), "pick_dc 17")
+        state = door_state(self.char1.ndb._build_target)
+        self.assertTrue(state.locked)
+        self.assertEqual(state.key_kind, "iron_key")
+        self.assertEqual(state.pick_dc, 17)
+
+    def test_door_fields_require_door_on(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildDig(), "north = Armory")
+        self.call(CmdBuild(), "exit north")
+
+        output = self.call(CmdBuildSet(), "hidden on")
+
+        self.assertIn("Set door on", output)
+        self.assertIsNone(door_state(self.char1.ndb._build_target))
+
+
+class TestDoorAreaRoundTrip(EvenniaCommandTest):
+    """Authored door configuration round-trips without exporting live state."""
+
+    def setUp(self):
+        super().setUp()
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "doorarea")
+        self.call(CmdBuildDig(), "north = Gatehouse")
+        self.north = next(ex for ex in self.room1.exits if ex.key == "north")
+        self.south = next(
+            ex for ex in self.north.destination.exits if ex.key == "south"
+        )
+        config = {
+            "initial_state": "locked",
+            "key_kind": "gate_key",
+            "pickable": True,
+            "pick_dc": 14,
+            "hidden": False,
+            "pair_key": "main_gate",
+        }
+        configure_door(self.north, **config)
+        configure_door(self.south, **config)
+
+    def test_roundtrip_restores_initial_pair_state(self):
+        transition_door(
+            self.north, open=True, locked=False, state_id="test:temporary-open"
+        )
+        rooms, exits = build_area_data("doorarea")
+        door_entries = [attrs["door_state"] for *_edge, attrs in exits]
+        self.assertEqual(len(door_entries), 2)
+        self.assertTrue(all(data["initial_state"] == "locked" for data in door_entries))
+        self.assertTrue(all("open" not in data for data in door_entries))
+
+        loaded = load_area_data("imported_doors", rooms, exits)
+        new_north = next(ex for ex in loaded["room"].exits if ex.key == "north")
+        new_south = next(ex for ex in loaded["gatehouse"].exits if ex.key == "south")
+        self.assertTrue(door_state(new_north).locked)
+        self.assertEqual(door_state(new_north), door_state(new_south))
+
+        load_area_data("imported_doors", rooms, exits)
+        self.assertEqual(
+            len([ex for ex in loaded["room"].exits if ex.key == "north"]), 1
+        )
+
+    def test_invalid_pair_fails_before_creating_area(self):
+        rooms, exits = build_area_data("doorarea")
+        invalid = [entry for entry in exits if entry[1] == "north"]
+
+        with self.assertRaises(DoorError):
+            load_area_data("invalid_doors", rooms, invalid)
+
+        self.assertEqual(
+            [
+                room
+                for room in self.room1.__class__.objects.all()
+                if room.tags.has("invalid_doors", category="area")
+            ],
+            [],
+        )
 
 
 class TestRoomListing(EvenniaCommandTest):
@@ -346,6 +511,42 @@ class TestEditNewItem(EvenniaCommandTest):
         )
         self.assertEqual(
             _proto("bracelet")["wear_locations"], ["left wrist", "right wrist"]
+        )
+
+    def test_equipment_modifiers_validate_and_persist_to_prototype(self):
+        """ITEM-08A profiles use the same builder schema as spawned item data."""
+        self.call(CmdBuild(), "new item Swift Boots")
+        self.call(CmdBuildSet(), "type worn")
+        self.call(CmdBuildSet(), "wear_locations feet")
+        self.call(CmdBuildSet(), 'equipment_modifiers {"speed": 5}')
+
+        self.assertEqual(
+            self.char1.ndb._build_target["equipment_modifiers"], {"speed": 5}
+        )
+        self.assertEqual(_proto("swift_boots")["equipment_modifiers"], {"speed": 5})
+        self.call(
+            CmdBuildSet(),
+            'equipment_modifiers {"armor_class": 1}',
+            "Invalid value for 'equipment_modifiers'",
+        )
+
+    def test_equipment_capabilities_validate_and_persist_to_prototype(self):
+        """ITEM-08B profiles share the spawned-item and prototype schema."""
+        self.call(CmdBuild(), "new item Pick Set")
+        self.call(CmdBuildSet(), "type other")
+        self.call(CmdBuildSet(), 'equipment_capabilities ["tool:thieves_tools"]')
+
+        self.assertEqual(
+            self.char1.ndb._build_target["equipment_capabilities"],
+            ["tool:thieves_tools"],
+        )
+        self.assertEqual(
+            _proto("pick_set")["equipment_capabilities"], ["tool:thieves_tools"]
+        )
+        self.call(
+            CmdBuildSet(),
+            'equipment_capabilities ["resistance:fire"]',
+            "Invalid value for 'equipment_capabilities'",
         )
 
     def test_invalid_wear_location_rejected(self):
@@ -529,11 +730,24 @@ class TestItemType(EvenniaCommandTest):
                 self.assertEqual(self.proto["type"], item_type)
 
     def test_classification_only_type_has_shared_fields(self):
-        self.call(CmdBuildSet(), "type wand")
+        self.call(CmdBuildSet(), "type furniture")
         fields = set(schema_for_prototype(self.proto))
         self.assertEqual(
             fields,
-            {"name", "desc", "weight", "value", "wear_locations", "type"},
+            {
+                "name",
+                "desc",
+                "extra_descs",
+                "weight",
+                "value",
+                "wear_locations",
+                "equipment_modifiers",
+                "equipment_capabilities",
+                "no_drop",
+                "account_bound",
+                "decay_minutes",
+                "type",
+            },
         )
 
     def test_set_type_none_reverts_to_generic(self):

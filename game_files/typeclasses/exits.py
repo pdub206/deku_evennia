@@ -34,7 +34,19 @@ class Exit(ObjectParent, DefaultExit):
     exit_command = ExitCommand
 
     def at_traverse(self, traversing_object, target_location, **kwargs) -> None:
-        """Reject direct exit traversal once, before Evennia handles movement."""
+        """Reject unavailable doors before Evennia handles ordinary movement."""
+        from systems.visibility import target_visibility
+
+        if not target_visibility(traversing_object, self).visible:
+            traversing_object.msg("You cannot go that way.")
+            return False
+        from systems.doors import traversal_decision
+
+        door = traversal_decision(self)
+        if not door.allowed:
+            if not kwargs.get("mobile_navigation"):
+                traversing_object.msg(door.message)
+            return False
         if kwargs.get("combat_flee"):
             from systems.combat_movement import combat_flee_active
 
@@ -57,6 +69,20 @@ class Exit(ObjectParent, DefaultExit):
             # ordinary traversal mode so action, encumbrance, and room hooks
             # receive exactly the same contract as player travel.
             return traversing_object.move_to(
-                target_location, move_type="traverse", use_destination=False
+                target_location,
+                move_type="traverse",
+                use_destination=False,
+                travel_authorized=True,
             )
-        super().at_traverse(traversing_object, target_location, **kwargs)
+        if kwargs.get("travel_execution"):
+            return traversing_object.move_to(
+                target_location, move_type="traverse", travel_authorized=True
+            )
+        from systems.travel import denial_message, schedule_travel
+
+        result = schedule_travel(traversing_object, self)
+        if result.status.value in {"queued", "replaced"}:
+            traversing_object.msg(f"You begin traveling {self.key}.")
+        else:
+            traversing_object.msg(denial_message(result.reason))
+        return result.status.value in {"queued", "replaced"}

@@ -159,6 +159,11 @@ def mobile_specials(npc: Any) -> dict[str, Any]:
 def set_mobile_specials(npc: Any, raw: Any) -> dict[str, Any]:
     """Persist a detached validated assignment for this one live NPC."""
     normalized = validate_mobile_specials(raw)
+    for entry in normalized["behaviors"]:
+        if entry["key"] == "shopkeeper":
+            from systems.shops import initialize_shopkeeper
+
+            entry["config"] = initialize_shopkeeper(npc, entry["config"])
     npc.attributes.add(MOBILE_SPECIALS_ATTRIBUTE, normalized)
     return deepcopy(normalized)
 
@@ -306,7 +311,8 @@ def _validate_entry(entry: Any) -> tuple[str, dict[str, Any]]:
 def _primitive_copy(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    if isinstance(value, list):
+    # Evennia's Attribute serializer may restore nested lists as tuples.
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return [_primitive_copy(item) for item in value]
     if isinstance(value, Mapping) and all(
         isinstance(key, str) and key for key in value
@@ -472,6 +478,30 @@ def _unavailable_adapter(
     return SpecialOutcome("deferred", "dependency_unavailable")
 
 
+def _shopkeeper(
+    npc: Any, event: SpecialEvent, config: Mapping[str, Any]
+) -> SpecialOutcome:
+    """Delegate shop service/schedule events to ITEM-03A without parallel rules."""
+    from systems.shops import process_shop_schedule, shop_availability
+
+    if event.service == "schedule" or event.hook == "reset":
+        if "day" not in event.data or "hour" not in event.data:
+            return SpecialOutcome("deferred", "dependency_unavailable")
+        result = process_shop_schedule(
+            npc, config, day=event.data.get("day"), hour=event.data.get("hour")
+        )
+        status = (
+            "acted" if result.status == "restocked" and result.created else "declined"
+        )
+        return SpecialOutcome(status, result.reason or result.status)
+    availability = shop_availability(npc, event.actor, config, event.data.get("hour"))
+    return (
+        SpecialOutcome("declined", "available")
+        if availability.available
+        else SpecialOutcome("blocked", availability.reason)
+    )
+
+
 def _register_builtin_specials() -> None:
     register_special(
         MobileSpecialDefinition(
@@ -505,7 +535,18 @@ def _register_builtin_specials() -> None:
             validate_config=_trigger_config,
         )
     )
-    for key in ("shopkeeper", "trainer", "caster", "healer"):
+    from systems.shops import validate_shop_profile
+
+    register_special(
+        MobileSpecialDefinition(
+            "shopkeeper",
+            frozenset({"service", "reset"}),
+            10,
+            _shopkeeper,
+            validate_config=validate_shop_profile,
+        )
+    )
+    for key in ("trainer", "caster", "healer"):
         register_special(
             MobileSpecialDefinition(
                 key,

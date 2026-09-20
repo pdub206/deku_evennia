@@ -509,6 +509,8 @@ STANDARD_ARRAY_BY_CLASS: dict[str, dict[str, int]] = {
 # ability_options – three abilities from which the player distributes bonuses
 #   (+2 to one and +1 to another, OR +1 to all three).
 # feat – the background feat (not yet enforced mechanically; stored for reference).
+# Starting equipment lives only in the ITEM-07A registry
+# (systems.starting_packages, authored in world.starting_package_data).
 
 BACKGROUNDS: dict[str, dict] = {
     "Acolyte": {
@@ -520,7 +522,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Insight", "Religion"],
         "tool_proficiency": "Calligrapher's Supplies",
         "feat": "Magic Initiate (Cleric)",
-        "equipment": "Calligrapher's Supplies, Book (prayers), Holy Symbol, Parchment, Robe, 8 GP",
     },
     "Artisan": {
         "description": (
@@ -531,7 +532,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Investigation", "Persuasion"],
         "tool_proficiency": "Artisan's Tools (one kind)",
         "feat": "Crafter",
-        "equipment": "Artisan's Tools (one kind), 2 Pouches, Traveler's Clothes, 32 GP",
     },
     "Charlatan": {
         "description": (
@@ -542,7 +542,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Deception", "Sleight of Hand"],
         "tool_proficiency": "Forgery Kit",
         "feat": "Skilled",
-        "equipment": "Forgery Kit, Costume, Fine Clothes, 15 GP",
     },
     "Criminal": {
         "description": (
@@ -554,7 +553,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Sleight of Hand", "Stealth"],
         "tool_proficiency": "Thieves' Tools",
         "feat": "Alert",
-        "equipment": "Thieves' Tools, Crowbar, 2 Daggers, Traveler's Clothes, 16 GP",
     },
     "Entertainer": {
         "description": (
@@ -565,7 +563,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Acrobatics", "Performance"],
         "tool_proficiency": "Musical Instrument (one kind)",
         "feat": "Musician",
-        "equipment": "Musical Instrument (one kind), 2 Costumes, Mirror, Perfume, Traveler's Clothes, 11 GP",
     },
     "Farmer": {
         "description": (
@@ -576,7 +573,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Animal Handling", "Nature"],
         "tool_proficiency": "Carpenter's Tools",
         "feat": "Tough",
-        "equipment": "Carpenter's Tools, Healer's Kit, Iron Pot, Shovel, Traveler's Clothes, 30 GP",
     },
     "Guard": {
         "description": (
@@ -587,7 +583,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Athletics", "Perception"],
         "tool_proficiency": "Gaming Set (one kind)",
         "feat": "Alert",
-        "equipment": "Gaming Set (one kind), Hooded Lantern, Manacles, Quiver with 20 Arrows, Spear, Traveler's Clothes, 11 GP",
     },
     "Guide": {
         "description": (
@@ -598,7 +593,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Stealth", "Survival"],
         "tool_proficiency": "Cartographer's Tools",
         "feat": "Magic Initiate (Druid)",
-        "equipment": "Cartographer's Tools, Bedroll, Quiver with 20 Arrows, Shortbow, Traveler's Clothes, 3 GP",
     },
     "Hermit": {
         "description": (
@@ -609,7 +603,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Medicine", "Religion"],
         "tool_proficiency": "Herbalism Kit",
         "feat": "Magic Initiate (Druid)",
-        "equipment": "Herbalism Kit, Bedroll, Book (philosophy), Blanket, Traveler's Clothes, 16 GP",
     },
     "Merchant": {
         "description": (
@@ -620,7 +613,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Animal Handling", "Persuasion"],
         "tool_proficiency": "Navigator's Tools",
         "feat": "Lucky",
-        "equipment": "Navigator's Tools, 2 Pouches, Traveler's Clothes, 22 GP",
     },
     "Noble": {
         "description": (
@@ -631,7 +623,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["History", "Persuasion"],
         "tool_proficiency": "Gaming Set (one kind)",
         "feat": "Skilled",
-        "equipment": "Gaming Set (one kind), Fine Clothes, Perfume, Signet Ring, 30 GP",
     },
     "Sage": {
         "description": (
@@ -643,7 +634,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Arcana", "History"],
         "tool_proficiency": "Calligrapher's Supplies",
         "feat": "Magic Initiate (Wizard)",
-        "equipment": "Calligrapher's Supplies, Book (history), Parchment (8 sheets), Traveler's Clothes, 8 GP",
     },
     "Sailor": {
         "description": (
@@ -655,7 +645,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Acrobatics", "Perception"],
         "tool_proficiency": "Navigator's Tools",
         "feat": "Tavern Brawler",
-        "equipment": "Navigator's Tools, Dagger, Rope (50 ft.), Traveler's Clothes, 20 GP",
     },
     "Scribe": {
         "description": (
@@ -666,7 +655,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Investigation", "Perception"],
         "tool_proficiency": "Calligrapher's Supplies",
         "feat": "Skilled",
-        "equipment": "Calligrapher's Supplies, Fine Clothes, Parchment (12 sheets), 23 GP",
     },
     "Soldier": {
         "description": (
@@ -678,7 +666,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Athletics", "Intimidation"],
         "tool_proficiency": "Gaming Set (one kind)",
         "feat": "Savage Attacker",
-        "equipment": "Gaming Set (one kind), Healer's Kit, Quiver with 20 Arrows, Shortbow, Traveler's Clothes, Spear, 14 GP",
     },
     "Wayfarer": {
         "description": (
@@ -690,7 +677,6 @@ BACKGROUNDS: dict[str, dict] = {
         "skill_proficiencies": ["Insight", "Stealth"],
         "tool_proficiency": "Thieves' Tools",
         "feat": "Lucky",
-        "equipment": "Thieves' Tools, Bedroll, 2 Daggers, Gaming Set (one kind), Traveler's Clothes, 16 GP",
     },
 }
 
