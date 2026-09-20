@@ -16,19 +16,16 @@ from evennia.prototypes import prototypes as protlib
 from evennia.utils.test_resources import EvenniaCommandTest, EvenniaTest
 from systems.encumbrance import pounds_to_units
 from systems.progression import SELECTABLE_CLASS_NAMES
-from systems.starting_packages import (
-    ITEM_TYPECLASS,
-    StartingPackageError,
-    build_starting_package_registry,
-    describe_package,
-    minimum_release_capacity_units,
-    module_item_prototypes,
-    package_selections,
-    plan_starting_grant,
-    starting_package_registry,
-)
+from systems.starting_packages import (ITEM_TYPECLASS, StartingPackageError,
+                                       build_starting_package_registry,
+                                       describe_package,
+                                       minimum_release_capacity_units,
+                                       module_item_prototypes,
+                                       package_selections, plan_starting_grant,
+                                       starting_package_registry)
 from world.chargen_data import BACKGROUNDS
-from world.chargen_menu import menunode_background_detail, menunode_class_detail
+from world.chargen_menu import (menunode_background_detail,
+                                menunode_class_detail)
 from world.help_entries import HELP_ENTRY_DICTS
 
 
@@ -208,9 +205,11 @@ class TestStartingPackageCompleteness(EvenniaTest):
             "Not yet available.",
         )
 
-    def test_shipped_data_module_builds_without_crashing(self):
+    def test_shipped_data_module_is_complete(self):
+        """Released chargen content resolves through module item prototypes."""
         registry = starting_package_registry()
-        self.assertIsInstance(registry.diagnostics, tuple)
+        self.assertTrue(registry.complete, "\n".join(registry.diagnostics))
+        self.assertEqual(registry.diagnostics, ())
 
     def test_unavailable_class_cannot_contribute_a_package(self):
         classes, backgrounds = _all_packages()
