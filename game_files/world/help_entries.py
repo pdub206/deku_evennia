@@ -26,6 +26,12 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "group",
+        "aliases": ["party", "groups"],
+        "category": "Character",
+        "text": """Use |wgroup|n to view your party. A leader may |wgroup invite <character>|n a visible, conscious PC in the same room; that player uses |wgroup accept <leader>|n or |wgroup decline <leader>|n. Parties hold at most eight members. Members use |wgroup leave|n; leaders may |wgroup kick <member>|n, |wgroup leader <member>|n, or |wgroup disband|n. A leader must transfer leadership before leaving. Party membership persists independently of following and grants no access or automatic movement. You cannot join, leave, kick, or disband while any affected party member is fighting. Party members and their controlled creatures cannot attack one another.""",
+    },
+    {
         "key": "following",
         "aliases": ["follow", "unfollow", "followers"],
         "category": "Character",

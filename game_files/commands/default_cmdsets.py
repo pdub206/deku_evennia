@@ -73,6 +73,7 @@ from commands.generic import (
     CmdSetDesc,
     CmdWear,
 )
+from commands.groups import CmdGroup
 from commands.injury import CmdInjury, CmdStabilize
 from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
@@ -222,6 +223,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPet)
         self.add(CmdFollow)
         self.add(CmdUnfollow)
+        self.add(CmdGroup)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):

@@ -272,9 +272,11 @@ class Character(ObjectParent, DefaultCharacter):
         """Remove combat references before Evennia extracts this character."""
         from systems.mobile_relationships import repair_relationships_for
         from systems.player_following import clear_for
+        from systems.groups import remove_deleted
 
         repair_relationships_for(self)
         clear_for(self)
+        remove_deleted(self)
         handle_departure(self)
         return super().at_object_delete()
 
