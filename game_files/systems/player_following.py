@@ -138,6 +138,51 @@ def inspect(character: Any) -> dict[str, Any]:
     return {"state": state, "members": tuple(sorted(_connected_members(character.id)))}
 
 
+def direct_followers(leader: Any) -> tuple[Any, ...]:
+    """Return the leader's valid direct PC followers in stable id order."""
+    leader_id = getattr(leader, "id", None)
+    followers = []
+    for pc in _pcs():
+        try:
+            if follow_state(pc)["leader_id"] == leader_id:
+                followers.append(pc)
+        except ValueError:
+            # One malformed record must not prevent other followers moving.
+            continue
+    return tuple(sorted(followers, key=lambda pc: pc.id))
+
+
+def pc_by_id(character_id: Any) -> Any | None:
+    """Resolve one current PC without exposing the underlying queryset."""
+    return next((pc for pc in _pcs() if pc.id == character_id), None)
+
+
+def clear_separated_edges_for(character: Any) -> None:
+    """Remove only incident links whose endpoints no longer share a room.
+
+    Voluntary queued travel deliberately leaves an edge live while its follower
+    receives its own action. All other relocation paths call this reconciliation
+    after they commit, preventing teleport, recall, mobile, and forced movement
+    from becoming an implicit catch-up mechanism.
+    """
+    character_id = getattr(character, "id", None)
+    if not _positive_id(character_id):
+        return
+    by_id = {pc.id: pc for pc in _pcs()}
+    for pc in tuple(by_id.values()):
+        try:
+            state = follow_state(pc)
+        except ValueError:
+            continue
+        if character_id not in {pc.id, state["leader_id"]}:
+            continue
+        leader = by_id.get(state["leader_id"])
+        if leader is not None and pc.location is not leader.location:
+            state["leader_id"] = None
+            state["sequence"] += 1
+            _write(pc, state)
+
+
 def repair(character: Any | None = None) -> int:
     """Clear malformed, dangling, cyclic, and over-capacity PC follow records."""
     changed = 0

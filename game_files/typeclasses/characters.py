@@ -251,11 +251,16 @@ class Character(ObjectParent, DefaultCharacter):
             # its encounter. MOB-04 later revalidates every route and target.
             from systems.mobile_navigation import note_target_departure
             from systems.mobile_relationships import note_leader_moved
-            from systems.player_following import clear_requests_for_move
+            from systems.player_following import (
+                clear_requests_for_move,
+                clear_separated_edges_for,
+            )
 
             note_target_departure(self, source_location)
             note_leader_moved(self, source_location)
             clear_requests_for_move(self)
+            if not kwargs.get("travel_execution"):
+                clear_separated_edges_for(self)
             handle_departure(self)
             if self.location is not None:
                 from systems.room_policy import combat_decision

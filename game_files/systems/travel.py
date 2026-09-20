@@ -15,6 +15,7 @@ from systems.action_queue import (
     ActionQueueError,
     ActionResult,
     ActionStatus,
+    current_action_sequence,
     inspect_action,
     register_action_definition,
     schedule_action,
@@ -56,6 +57,18 @@ class TravelDecision:
     allowed: bool
     reason: str = ""
     delay: int | None = None
+
+
+@dataclass(frozen=True)
+class TravelCompletion:
+    """One post-commit voluntary PC exit traversal, expressed as primitives."""
+
+    actor_id: int
+    source_id: int
+    destination_id: int
+    exit_id: int
+    action_id: str
+    action_token: int
 
 
 SECTORS = MappingProxyType(
@@ -176,19 +189,28 @@ def travel_decision(actor: Any, exit_obj: Any) -> TravelDecision:
     return TravelDecision(True, delay=max(1, math.ceil(delay)))
 
 
-def schedule_travel(actor: Any, exit_obj: Any) -> ActionResult:
+def schedule_travel(
+    actor: Any, exit_obj: Any, *, follow_event: TravelCompletion | None = None
+) -> ActionResult:
     """Reserve a normal PC exit traversal without moving immediately."""
     decision = travel_decision(actor, exit_obj)
     if not decision.allowed or decision.delay is None:
         return ActionResult(ActionStatus.DECLINED, reason=decision.reason)
+    arguments: dict[str, Any] = {
+        "source_id": actor.location.id,
+        "exit_id": exit_obj.id,
+        "destination_id": exit_obj.destination.id,
+    }
+    if follow_event is not None:
+        arguments.update(
+            follow_leader_id=follow_event.actor_id,
+            follow_event_id=follow_event.action_id,
+            follow_event_token=follow_event.action_token,
+        )
     return schedule_action(
         actor,
         TRAVEL_ACTION_KEY,
-        {
-            "source_id": actor.location.id,
-            "exit_id": exit_obj.id,
-            "destination_id": exit_obj.destination.id,
-        },
+        arguments,
         delay=decision.delay,
     )
 
@@ -205,11 +227,23 @@ def _resolve(args: Mapping[str, Any]) -> tuple[Any, Any] | None:
 def _validate(actor: Any, args: Mapping[str, Any]) -> bool | str:
     def result(reason: str) -> str:
         """Notify only during due-action revalidation, never initial scheduling."""
+        if args.get("follow_leader_id") is not None:
+            try:
+                from systems.group_following import propagation_failed
+                from systems.player_following import pc_by_id
+
+                propagation_failed(actor, pc_by_id(args["follow_leader_id"]), reason)
+            except Exception:
+                pass
+            return reason
         active = inspect_action(actor)
         if active is not None and active.get("definition") == TRAVEL_ACTION_KEY:
             actor.msg(denial_message(reason))
         return reason
 
+    follow_reason = _follow_validation_reason(actor, args)
+    if follow_reason:
+        return result(follow_reason)
     resolved = _resolve(args)
     if resolved is None or getattr(actor.location, "id", None) != args.get("source_id"):
         return result("route_changed")
@@ -229,7 +263,70 @@ def _execute(actor: Any, args: Mapping[str, Any], reservation: Mapping[str, Any]
     if actor.location is not destination:
         return "traversal_denied"
     actor.msg(f"You arrive at {destination.key}.")
+    active = inspect_action(actor) or {}
+    action_token = active.get("due_token", current_action_sequence())
+    _emit_completion(
+        TravelCompletion(
+            actor_id=actor.id,
+            source_id=args["source_id"],
+            destination_id=destination.id,
+            exit_id=exit_obj.id,
+            action_id=active.get("id", f"travel:{actor.id}:{action_token}"),
+            action_token=action_token,
+        )
+    )
     return None
+
+
+def _follow_validation_reason(actor: Any, args: Mapping[str, Any]) -> str | None:
+    """Validate the extra edge constraints on a queued propagated traversal."""
+    leader_id = args.get("follow_leader_id")
+    if leader_id is None:
+        return None
+    try:
+        from systems.player_following import follow_state, pc_by_id
+
+        leader = pc_by_id(leader_id)
+        if leader is None or follow_state(actor)["leader_id"] != leader_id:
+            return "follow_link_changed"
+        if actor.location is None or getattr(actor.location, "id", None) != args.get(
+            "source_id"
+        ):
+            return "follow_source_changed"
+        from systems.action_policy import Position
+        from systems.combat import is_fighting
+        from systems.combat_outcomes import InjuryState
+        from systems.injury import injury_record
+        from systems.visibility import room_visibility, target_visibility
+
+        if injury_record(actor).state is not InjuryState.CONSCIOUS:
+            return "follow_not_conscious"
+        if actor.actions.position is not Position.STANDING:
+            return "follow_not_standing"
+        if is_fighting(actor):
+            return "follow_in_combat"
+        if not room_visibility(actor, actor.location).visible:
+            return "follow_departure_hidden"
+        resolved = _resolve(args)
+        if resolved is None or not target_visibility(actor, resolved[0]).visible:
+            return "follow_departure_hidden"
+    except Exception:
+        return "follow_invalid"
+    return None
+
+
+def _emit_completion(event: TravelCompletion) -> None:
+    """Offer one committed voluntary traversal to GROUP-01B, if installed."""
+    try:
+        from systems.group_following import propagate_travel_completion
+
+        propagate_travel_completion(event)
+    except Exception:
+        # Movement is already committed; a bad follower record must never undo
+        # travel or block independent movement consumers.
+        from evennia.utils import logger
+
+        logger.log_trace("GROUP-01B propagation failed after committed travel.")
 
 
 def denial_message(reason: str) -> str:

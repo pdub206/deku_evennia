@@ -37,7 +37,12 @@ HELP_ENTRY_DICTS = [
           |wunfollow <character>|n to remove one direct follower. Either person
           may end the link at any time. Requests end if either person moves,
           disconnects, dies, or leaves the game; follow links end under the same
-          unsafe conditions. Following does not make a group, share rewards or
+          unsafe conditions. When your leader uses an ordinary exit, you follow
+          with your own travel delay if you are standing, conscious, can see the
+          departure, and are not fighting or busy. If your route becomes blocked,
+          you stay behind and the follow link ends; following never opens doors
+          or catches you up after recall, teleportation, forced movement, or
+          combat fleeing. Following does not make a group, share rewards or
           loot, grant permissions, or control pets.""",
     },
     {
