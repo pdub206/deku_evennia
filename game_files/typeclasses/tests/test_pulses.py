@@ -125,6 +125,20 @@ class TestPulseState(EvenniaTest):
             self.script.at_recovery_pulse(event)
         recovery.assert_called_once_with(event)
 
+    @override_settings(GAME_PULSE_CADENCES={lane.value: 1 for lane in PULSE_LANES})
+    def test_ordinary_pulses_do_not_create_or_change_survival_state(self):
+        """ENV-03 keeps any legacy-looking survival attributes inert."""
+        self.char1.db.hunger = 17
+        self.char1.db.thirst = 23
+        self.char1.db.intoxication = 4
+
+        self.script.at_repeat()
+
+        self.assertEqual(self.char1.db.hunger, 17)
+        self.assertEqual(self.char1.db.thirst, 23)
+        self.assertEqual(self.char1.db.intoxication, 4)
+        self.assertIsNone(self.char2.attributes.get("survival_state"))
+
     def test_persisted_state_reconstructs_without_replaying_a_token(self):
         cadences = {lane: 1 for lane in PULSE_LANES}
         first_state, first_events = advance_pulse_state(initial_pulse_state(), cadences)

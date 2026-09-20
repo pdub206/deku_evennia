@@ -125,6 +125,22 @@ HELP_ENTRY_DICTS = [
           Items: Staff of Healing.""",
     },
     {
+        "key": "consumables",
+        "aliases": ["food", "drink", "eating", "drinking", "survival"],
+        "category": "General",
+        "text": """Consumables have finite portions, servings, charges, or other
+        stated uses. A successful use spends only the amount described by that
+        item's rules and may apply its registered effect. Food and drink use the
+        ITEM-04A finite-serving/effect rules when released.
+
+        This game deliberately has no hunger, thirst, or intoxication meters.
+        Characters receive no passive decay, warnings, penalties, or death from
+        not eating or drinking. Food and water remain useful finite supplies and
+        role-play objects; they do not need to be consumed to maintain a hidden
+        character stat. Poison, spoilage, addiction, withdrawal, and disease are
+        also outside this release's consumable rules.""",
+    },
+    {
         "key": "building magic items",
         "aliases": ["magic item profiles", "building potions", "building wands"],
         "category": "Building",
@@ -255,7 +271,9 @@ HELP_ENTRY_DICTS = [
         resource first. Malformed profiles/state are isolated, supply no light,
         and do not refill/recharge; inspect and repair in the staff shell without
         removing replay receipts. Type changes clear both profile and state.
-        There is no player charge refill and no shop recharge.""",
+        There is no player charge refill and no shop recharge. Resource profiles
+        never create hunger, thirst, or intoxication meters; do not author hidden
+        survival values for food, drink, or any other item.""",
     },
     {
         "key": "time",
@@ -1230,6 +1248,13 @@ HELP_ENTRY_DICTS = [
             A completed Short Rest restores only resources that say they recover
             on a Short Rest; a completed Long Rest restores both short- and
             long-rest resources. Only released class resources use this system.
+
+            ## Survival Meters
+
+            There are no hunger, thirst, or intoxication meters. The |wscore|n
+            display intentionally has no food or water requirement to maintain,
+            and ordinary world pulses do not create passive survival penalties.
+            See |whelp consumables|n for finite food, drink, and magic-item use.
 
             ## Identity
 

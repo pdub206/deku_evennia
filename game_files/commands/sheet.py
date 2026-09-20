@@ -140,6 +140,7 @@ class CmdSheet(Command):
             f"  |yCarried Load:|n    {load.count}/{load.count_limit} items, "
             f"{load.weight:g}/{load.weight_limit:g} lb.\n"
         )
+        out += "  |ySurvival Meters:|n None (no hunger, thirst, or intoxication)\n"
         out += f"  |yLanguages:|n      {', '.join(languages)}\n"
         out += _SEP
 
