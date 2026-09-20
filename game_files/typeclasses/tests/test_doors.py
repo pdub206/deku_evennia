@@ -60,7 +60,9 @@ class TestDoorState(EvenniaTest):
         transition_door(
             self.north, open=True, locked=False, state_id="builder:test:open"
         )
-        self.north.at_traverse(self.char1, self.room2)
+        # Player traversal is scheduled by INTERACT-03. This door-state unit
+        # test exercises its already-authorized execution path instead.
+        self.north.at_traverse(self.char1, self.room2, travel_execution=True)
         self.assertEqual(self.char1.location, self.room2)
 
     def test_pair_configuration_and_transition_are_synchronized(self):

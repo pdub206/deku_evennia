@@ -419,12 +419,18 @@ def _flatten(prototype: Mapping[str, Any]) -> dict[str, Any]:
 def _builder_text(validate: Callable[[str], Any], value: Any) -> str:
     """Render a stored value as the text a builder would type for it."""
     from world.build_schema import (
+        as_equipment_capabilities,
         as_extra_descriptions,
         as_item_resource,
         as_magic_item,
     )
 
-    if validate in (as_extra_descriptions, as_item_resource, as_magic_item):
+    if validate in (
+        as_equipment_capabilities,
+        as_extra_descriptions,
+        as_item_resource,
+        as_magic_item,
+    ):
         return json.dumps(value)
     if value is None:
         return "none"
