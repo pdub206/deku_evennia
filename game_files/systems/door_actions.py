@@ -74,11 +74,9 @@ def has_matching_key(actor: Any, key_kind: str | None) -> bool:
 
 def has_thieves_tools(actor: Any) -> bool:
     """Return whether the actor directly carries the configured tool item."""
-    return any(
-        str(item.attributes.get("type") or "").casefold() == "other"
-        and str(item.attributes.get("tool_kind") or "").casefold() == THIEVES_TOOLS_KIND
-        for item in actor.contents
-    )
+    from systems.equipment_capabilities import has_equipment_capability
+
+    return has_equipment_capability(actor, f"tool:{THIEVES_TOOLS_KIND}")
 
 
 def manipulate_target(

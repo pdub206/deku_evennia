@@ -55,7 +55,12 @@ class TestDoorCommands(EvenniaCommandTest):
         self.assertFalse(door_state(self.door).locked)
 
     def test_pick_consumes_failure_and_unlocks_on_success(self):
-        self.item("thieves' tools", "other", tool_kind="thieves_tools")
+        self.item(
+            "thieves' tools",
+            "other",
+            tool_kind="thieves_tools",
+            equipment_capabilities=["tool:thieves_tools"],
+        )
         self.item("iron key", "key", key_kind="iron")
         self.call(CmdLock(), "north", "You lock north.")
         self.char1.db.dexterity = 10

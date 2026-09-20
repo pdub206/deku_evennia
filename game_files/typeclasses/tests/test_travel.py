@@ -58,6 +58,7 @@ class TestTravel(EvenniaTest):
             "typeclasses.objects.Object", key="boat", location=self.char1
         )
         boat.db.type = "boat"
+        boat.db.equipment_capabilities = ["terrain:boat"]
         self.char1.db.speed = 30
         with patch("systems.travel._has_condition", return_value=True):
             for key, sector in SECTORS.items():
@@ -90,6 +91,7 @@ class TestTravel(EvenniaTest):
             "typeclasses.objects.Object", key="boat", location=self.char1
         )
         boat.db.type = "boat"
+        boat.db.equipment_capabilities = ["terrain:boat"]
         self.assertTrue(travel_decision(self.char1, self.exit).allowed)
         boat.db.broken = True
         self.assertEqual(travel_decision(self.char1, self.exit).reason, "boat_or_swim")

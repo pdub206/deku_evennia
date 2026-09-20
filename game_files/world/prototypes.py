@@ -222,7 +222,52 @@ pouch = _starting_item(
 )
 arrows = _starting_item("arrows", "arrows", 0.05, 0)
 thieves_tools = _starting_item(
-    "thieves_tools", "thieves' tools", 1.0, 25, "other", tool_kind="thieves_tools"
+    "thieves_tools",
+    "thieves' tools",
+    1.0,
+    25,
+    "other",
+    tool_kind="thieves_tools",
+    equipment_capabilities=["tool:thieves_tools"],
+)
+rowboat = _starting_item(
+    "rowboat", "rowboat", 80.0, 50, "boat", equipment_capabilities=["terrain:boat"]
+)
+fireward_cloak = _starting_item(
+    "fireward_cloak",
+    "fireward cloak",
+    2.0,
+    50,
+    "worn",
+    wear_locations=["back"],
+    equipment_capabilities=["resistance:fire"],
+)
+weatherproof_cloak = _starting_item(
+    "weatherproof_cloak",
+    "weatherproof cloak",
+    2.0,
+    10,
+    "worn",
+    wear_locations=["back"],
+    equipment_capabilities=["weather_protection"],
+)
+wand_of_magic_missiles = _starting_item(
+    "wand_of_magic_missiles",
+    "Wand of Magic Missiles",
+    1.0,
+    100,
+    "wand",
+    equipment_capabilities=["activation:charged"],
+    magic_item={"version": 1, "definition": "wand.magic_missiles", "uses": 0},
+    item_resource={
+        "version": 1,
+        "kind": "charges",
+        "resource_key": "wand_magic_missiles",
+        "current": 7,
+        "maximum": 7,
+        "recharge": "dawn",
+        "recharge_amount": 7,
+    },
 )
 calligraphers_supplies = _starting_item(
     "calligraphers_supplies", "calligrapher's supplies", 5.0, 10
@@ -257,7 +302,9 @@ bell = _starting_item("bell", "bell", 0.0, 1)
 oil_flask = _starting_item("oil_flask", "flask of oil", 1.0, 0)
 rope = _starting_item("rope", "50-foot hempen rope", 10.0, 1)
 caltrops = _starting_item("caltrops", "bag of caltrops", 2.0, 1)
-torch = _starting_item("torch", "torch", 1.0, 0, "light")
+torch = _starting_item(
+    "torch", "torch", 1.0, 0, "light", equipment_capabilities=["light"]
+)
 lamp = _starting_item("lamp", "lamp", 1.0, 0, "light")
 hooded_lantern = _starting_item("hooded_lantern", "hooded lantern", 2.0, 5, "light")
 candle = _starting_item("candle", "candle", 0.0, 0, "light")

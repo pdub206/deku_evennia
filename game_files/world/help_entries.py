@@ -2574,6 +2574,25 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "equipment capabilities",
+        "aliases": ["utility equipment", "equipment utility"],
+        "category": "Equipment",
+        "text": """
+            Some items provide a specific utility capability when carried or
+            equipped, as stated in the item's description. Capabilities do not
+            stack: carrying two boats, lights, or copies of the same protective
+            gear is no better than one.
+
+            A boat can meet water-travel requirements, and equipped swim or
+            flight gear can meet its stated terrain requirement. Tools must be
+            carried for the action that calls for them, but owning a tool never
+            makes you proficient with it. Equipped resistance gear halves that
+            damage after armor has protected the struck location. Weather gear
+            only protects against travel and perception penalties from severe
+            weather; it is not a general defense or social bonus.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

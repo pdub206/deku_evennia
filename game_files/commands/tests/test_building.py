@@ -530,6 +530,25 @@ class TestEditNewItem(EvenniaCommandTest):
             "Invalid value for 'equipment_modifiers'",
         )
 
+    def test_equipment_capabilities_validate_and_persist_to_prototype(self):
+        """ITEM-08B profiles share the spawned-item and prototype schema."""
+        self.call(CmdBuild(), "new item Pick Set")
+        self.call(CmdBuildSet(), "type other")
+        self.call(CmdBuildSet(), 'equipment_capabilities ["tool:thieves_tools"]')
+
+        self.assertEqual(
+            self.char1.ndb._build_target["equipment_capabilities"],
+            ["tool:thieves_tools"],
+        )
+        self.assertEqual(
+            _proto("pick_set")["equipment_capabilities"], ["tool:thieves_tools"]
+        )
+        self.call(
+            CmdBuildSet(),
+            'equipment_capabilities ["resistance:fire"]',
+            "Invalid value for 'equipment_capabilities'",
+        )
+
     def test_invalid_wear_location_rejected(self):
         self.call(CmdBuild(), "new item Bracelet")
 
@@ -722,6 +741,8 @@ class TestItemType(EvenniaCommandTest):
                 "weight",
                 "value",
                 "wear_locations",
+                "equipment_modifiers",
+                "equipment_capabilities",
                 "no_drop",
                 "account_bound",
                 "decay_minutes",

@@ -104,22 +104,32 @@ def _has_condition(actor: Any, condition: str) -> bool:
 
 
 def _has_functional_boat(actor: Any) -> bool:
-    """Accept only a directly carried, usable boat item."""
-    for item in getattr(actor, "contents", ()):
-        if str(item.attributes.get("type", default="")).strip().lower() != "boat":
-            continue
-        if item.attributes.get("broken", default=False) is not False:
-            continue
-        return True
-    return False
+    """Accept a directly carried, intact ITEM-08B boat capability."""
+    from systems.equipment_capabilities import item_equipment_capabilities
+
+    return any(
+        "terrain:boat" in item_equipment_capabilities(item)
+        and item.attributes.get("broken", default=False) is False
+        for item in getattr(actor, "contents", ())
+    )
 
 
 def _meets_requirement(actor: Any, requirement: TravelRequirement) -> bool:
     if requirement is TravelRequirement.NONE:
         return True
     if requirement is TravelRequirement.WATER:
-        return _has_functional_boat(actor) or _has_condition(actor, "swim")
-    return _has_condition(actor, "flight")
+        from systems.equipment_capabilities import has_equipment_capability
+
+        return (
+            _has_functional_boat(actor)
+            or has_equipment_capability(actor, "terrain:swim")
+            or _has_condition(actor, "swim")
+        )
+    from systems.equipment_capabilities import has_equipment_capability
+
+    return has_equipment_capability(actor, "terrain:flight") or _has_condition(
+        actor, "flight"
+    )
 
 
 def travel_decision(actor: Any, exit_obj: Any) -> TravelDecision:

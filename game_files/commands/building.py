@@ -415,6 +415,12 @@ def _apply_field(target, name: str, field, value) -> None:
             target[field.target] = validate_equipment_modifiers(
                 value, target.get("type"), target.get("wear_locations")
             )
+        elif field.target == "equipment_capabilities":
+            from systems.equipment_capabilities import validate_equipment_capabilities
+
+            target[field.target] = validate_equipment_capabilities(
+                value, target.get("type"), target.get("wear_locations")
+            )
         elif field.target == "decay_minutes" and value is None:
             target.pop("decay_minutes", None)
         else:  # attr or a validated service profile
@@ -440,6 +446,15 @@ def _apply_field(target, name: str, field, value) -> None:
             target.attributes.add(
                 field.target,
                 validate_equipment_modifiers(
+                    value, target.db.type, target.db.wear_locations
+                ),
+            )
+        elif field.target == "equipment_capabilities":
+            from systems.equipment_capabilities import validate_equipment_capabilities
+
+            target.attributes.add(
+                field.target,
+                validate_equipment_capabilities(
                     value, target.db.type, target.db.wear_locations
                 ),
             )

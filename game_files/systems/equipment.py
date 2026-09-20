@@ -354,6 +354,10 @@ class EquipmentHandler:
         )
         percentage_reduction = math.floor(amount * percentage / 100)
         final = max(0, amount - percentage_reduction - flat)
+        from systems.equipment_capabilities import has_damage_resistance
+
+        if has_damage_resistance(self.owner, normalized_damage_type):
+            final //= 2
         return DamageMitigation(
             incoming=amount,
             final=final,

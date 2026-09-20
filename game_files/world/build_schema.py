@@ -110,6 +110,17 @@ def as_equipment_modifiers(raw: str) -> dict[str, int]:
     return value
 
 
+def as_equipment_capabilities(raw: str) -> list[str]:
+    """Parse ITEM-08B's categorical capability list; context is checked on set."""
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON equipment capability list.") from err
+    if not isinstance(value, list):
+        raise ValueError("expected a JSON equipment capability list.")
+    return value
+
+
 def as_magic_item(raw: str) -> dict[str, Any]:
     """Parse a bounded primitive magic-item activation profile for items/prototypes."""
     from systems.magic_items import validate_magic_item_profile
@@ -671,6 +682,12 @@ ITEM_FIELDS: dict[str, Field] = {
         as_equipment_modifiers,
         "JSON bounded bonuses: ability/save/skill, speed, carry_capacity, passive_perception",
         target="equipment_modifiers",
+    ),
+    "equipment_capabilities": Field(
+        "attr",
+        as_equipment_capabilities,
+        "JSON utility capabilities: terrain, light, tool, resistance, weather protection",
+        target="equipment_capabilities",
     ),
     "no_drop": Field(
         "attr",
