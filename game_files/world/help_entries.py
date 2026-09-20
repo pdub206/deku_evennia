@@ -130,8 +130,12 @@ HELP_ENTRY_DICTS = [
         "category": "General",
         "text": """Consumables have finite portions, servings, charges, or other
         stated uses. A successful use spends only the amount described by that
-        item's rules and may apply its registered effect. Food and drink use the
-        ITEM-04A finite-serving/effect rules when released.
+        item's rules and may apply its registered effect. Use |weat <food>|n for
+        one carried food portion, |wdrink|n or |wsip <source>|n for one serving,
+        and |wtaste <source>|n to learn a liquid's taste without spending it.
+        Use |wpour <source> into <container>|n to move servings that fit, or
+        |wpour <source> into out|n to discard them. Fountains are room fixtures:
+        you may drink or taste from them but cannot carry or pour them.
 
         This game deliberately has no hunger, thirst, or intoxication meters.
         Characters receive no passive decay, warnings, penalties, or death from
@@ -273,7 +277,13 @@ HELP_ENTRY_DICTS = [
         removing replay receipts. Type changes clear both profile and state.
         There is no player charge refill and no shop recharge. Resource profiles
         never create hunger, thirst, or intoxication meters; do not author hidden
-        survival values for food, drink, or any other item.""",
+        survival values for food, drink, or any other item. For |wfood|n, also
+        set |wfood|n to {"version":1,"portions":2,"effect":null}. For a
+        |wdrinkcon|n or |wfountain|n, set |wliquid|n to
+        {"version":1,"liquid_key":"water","inexhaustible":false}; only
+        fountains may be inexhaustible, and this key must match resource_key.
+        Liquid keys and optional effects are code-owned; builders cannot add
+        markup or callbacks.""",
     },
     {
         "key": "time",

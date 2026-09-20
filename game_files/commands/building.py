@@ -350,7 +350,12 @@ def _set_item_type(item, value: str) -> None:
         return
     for attr in _type_attr_names(item.db.type):
         item.attributes.remove(attr)
-    for state_attr in ("item_resource_state", "magic_item_state", "note_record"):
+    for state_attr in (
+        "item_resource_state",
+        "magic_item_state",
+        "food_state",
+        "note_record",
+    ):
         if item.attributes.has(state_attr):
             item.attributes.remove(state_attr)
     item.db.type = new_type
@@ -406,6 +411,14 @@ def _apply_field(target, name: str, field, value) -> None:
             target[field.target] = validate_resource_profile(
                 value, target.get("type") or "item"
             )
+        elif field.target == "food_profile":
+            from systems.consumables import validate_food_profile
+
+            target[field.target] = validate_food_profile(value)
+        elif field.target == "liquid_profile":
+            from systems.consumables import validate_liquid_profile
+
+            target[field.target] = validate_liquid_profile(value, target.get("type"))
         elif field.target == "magic_item":
             from systems.magic_items import validate_magic_item_profile
 
@@ -439,6 +452,14 @@ def _apply_field(target, name: str, field, value) -> None:
             from systems.item_resources import set_resource_profile
 
             set_resource_profile(target, value)
+        elif field.target == "food_profile":
+            from systems.consumables import set_food_profile
+
+            set_food_profile(target, value)
+        elif field.target == "liquid_profile":
+            from systems.consumables import set_liquid_profile
+
+            set_liquid_profile(target, value)
         elif field.target == "magic_item":
             from systems.magic_items import set_magic_item_profile
 

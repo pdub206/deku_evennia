@@ -254,6 +254,19 @@ class Object(ObjectParent, DefaultObject):
 
     """
 
+    def at_pre_move(self, destination, **kwargs):
+        """Keep ITEM-04A fountains as room fixtures unless staff audits a move."""
+        if (
+            self.db.type == "fountain"
+            and destination is not None
+            and destination.is_typeclass(
+                "typeclasses.characters.Character", exact=False
+            )
+            and not kwargs.get("transfer_bypass")
+        ):
+            return False
+        return super().at_pre_move(destination, **kwargs)
+
     pass
 
 

@@ -99,6 +99,30 @@ def as_item_resource(raw: str) -> dict[str, Any]:
     return validate_resource_profile(value)
 
 
+def as_food_profile(raw: str) -> dict[str, Any]:
+    """Parse ITEM-04A's bounded food portions and optional effect adapter."""
+    from systems.consumables import validate_food_profile
+
+    if len(raw) > 1000:
+        raise ValueError("food profile is too long.")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON food profile.") from err
+    return validate_food_profile(value)
+
+
+def as_liquid_profile(raw: str) -> dict[str, Any]:
+    """Parse ITEM-04A's liquid identity and fountain replenishment policy."""
+    from systems.consumables import validate_liquid_profile
+
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as err:
+        raise ValueError("expected a JSON liquid profile.") from err
+    return validate_liquid_profile(value)
+
+
 def as_equipment_modifiers(raw: str) -> dict[str, int]:
     """Parse ITEM-08A's JSON modifier mapping; item context is checked on set."""
     try:
@@ -628,6 +652,30 @@ TYPE_FIELDS: dict[str, dict[str, Field]] = {
             as_note_title,
             "plain-text title shown when the note is read",
             target="note_title",
+        )
+    },
+    "food": {
+        "food": Field(
+            "attr",
+            as_food_profile,
+            "JSON food profile: version, portions, effect (or null)",
+            target="food_profile",
+        )
+    },
+    "drinkcon": {
+        "liquid": Field(
+            "attr",
+            as_liquid_profile,
+            "JSON liquid profile: version, liquid_key, inexhaustible (false)",
+            target="liquid_profile",
+        )
+    },
+    "fountain": {
+        "liquid": Field(
+            "attr",
+            as_liquid_profile,
+            "JSON liquid profile: version, liquid_key, inexhaustible",
+            target="liquid_profile",
         )
     },
     "other": {

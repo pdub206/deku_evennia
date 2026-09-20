@@ -44,6 +44,7 @@ from commands.combat import (
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import CmdSay, CmdWhisper
+from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
 from commands.generic import (
@@ -91,8 +92,8 @@ from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
 from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
-from commands.world_time import CmdTime
 from commands.weather import CmdWeather
+from commands.world_time import CmdTime
 from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
@@ -115,6 +116,11 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLight)
         self.add(CmdExtinguish)
         self.add(CmdRefill)
+        self.add(CmdEat)
+        self.add(CmdDrink)
+        self.add(CmdSip)
+        self.add(CmdTaste)
+        self.add(CmdPour)
         self.add(CmdRead)
         self.add(CmdWrite)
         self.add(CmdTime)
