@@ -409,6 +409,12 @@ def _apply_field(target, name: str, field, value) -> None:
             target[field.target] = validate_magic_item_profile(
                 value, target.get("type")
             )
+        elif field.target == "equipment_modifiers":
+            from systems.equipment_modifiers import validate_equipment_modifiers
+
+            target[field.target] = validate_equipment_modifiers(
+                value, target.get("type"), target.get("wear_locations")
+            )
         elif field.target == "decay_minutes" and value is None:
             target.pop("decay_minutes", None)
         else:  # attr or a validated service profile
@@ -428,6 +434,15 @@ def _apply_field(target, name: str, field, value) -> None:
             from systems.magic_items import set_magic_item_profile
 
             set_magic_item_profile(target, value)
+        elif field.target == "equipment_modifiers":
+            from systems.equipment_modifiers import validate_equipment_modifiers
+
+            target.attributes.add(
+                field.target,
+                validate_equipment_modifiers(
+                    value, target.db.type, target.db.wear_locations
+                ),
+            )
         elif field.target in ("no_drop", "account_bound"):
             from systems.item_transfer import validate_flag_change
 

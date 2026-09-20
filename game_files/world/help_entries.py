@@ -2558,6 +2558,22 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "equipment bonuses",
+        "aliases": ["equipment modifiers", "magic equipment"],
+        "category": "Equipment",
+        "text": """
+            Some equipped items can improve or hinder an ability, saving throw,
+            skill, speed, carrying capacity, or passive Perception. Only worn
+            equipment applies these bonuses; carrying an item is not enough.
+
+            For an ability, saving throw, skill, or passive Perception, use the
+            best bonus and the worst penalty among your equipment. Speed and
+            carrying-capacity bonuses and penalties combine, within the game's
+            equipment limits. Armor Class and armor damage protection follow
+            their own equipment rules rather than these bonuses.
+        """,
+    },
+    {
         "key": "evennia",
         "aliases": ["ev"],
         "category": "General",

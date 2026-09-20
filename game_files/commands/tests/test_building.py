@@ -513,6 +513,23 @@ class TestEditNewItem(EvenniaCommandTest):
             _proto("bracelet")["wear_locations"], ["left wrist", "right wrist"]
         )
 
+    def test_equipment_modifiers_validate_and_persist_to_prototype(self):
+        """ITEM-08A profiles use the same builder schema as spawned item data."""
+        self.call(CmdBuild(), "new item Swift Boots")
+        self.call(CmdBuildSet(), "type worn")
+        self.call(CmdBuildSet(), "wear_locations feet")
+        self.call(CmdBuildSet(), 'equipment_modifiers {"speed": 5}')
+
+        self.assertEqual(
+            self.char1.ndb._build_target["equipment_modifiers"], {"speed": 5}
+        )
+        self.assertEqual(_proto("swift_boots")["equipment_modifiers"], {"speed": 5})
+        self.call(
+            CmdBuildSet(),
+            'equipment_modifiers {"armor_class": 1}',
+            "Invalid value for 'equipment_modifiers'",
+        )
+
     def test_invalid_wear_location_rejected(self):
         self.call(CmdBuild(), "new item Bracelet")
 
