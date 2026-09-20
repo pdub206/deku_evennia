@@ -26,6 +26,21 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "following",
+        "aliases": ["follow", "unfollow", "followers"],
+        "category": "Character",
+        "text": """Following is a voluntary movement relationship, not a group.
+
+          |wfollow <character>|n asks a visible, conscious person in your room
+          for permission. They answer with |wfollow/accept <character>|n or
+          |wfollow/decline <character>|n. Use |wunfollow|n to leave, or
+          |wunfollow <character>|n to remove one direct follower. Either person
+          may end the link at any time. Requests end if either person moves,
+          disconnects, dies, or leaves the game; follow links end under the same
+          unsafe conditions. Following does not make a group, share rewards or
+          loot, grant permissions, or control pets.""",
+    },
+    {
         "key": "lights",
         "aliases": ["light", "extinguish", "lamps", "fuel"],
         "category": "General",

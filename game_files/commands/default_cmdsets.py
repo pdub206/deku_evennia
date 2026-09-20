@@ -47,6 +47,7 @@ from commands.communication import CmdSay, CmdWhisper
 from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
+from commands.following import CmdFollow, CmdUnfollow
 from commands.generic import (
     CmdAccess,
     CmdActionQueue,
@@ -219,6 +220,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAdvancement)
         self.add(CmdOrder)
         self.add(CmdPet)
+        self.add(CmdFollow)
+        self.add(CmdUnfollow)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
