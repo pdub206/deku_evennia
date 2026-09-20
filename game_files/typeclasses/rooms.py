@@ -52,7 +52,11 @@ class Room(ObjectParent, DefaultRoom):
         profile = get_presentation_profile(looker)
         if kwargs.get("arrival") and profile.room_mode == "brief":
             return ""
-        return super().get_display_desc(looker, **kwargs)
+        description = super().get_display_desc(looker, **kwargs)
+        from systems.weather import current_state
+
+        state = current_state(self)
+        return f"{description}\nThe weather is {state.value}." if state else description
 
     def get_display_exits(self, looker, **kwargs) -> str:
         """Honor the observer's automatic-exit preference on room displays."""

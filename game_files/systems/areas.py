@@ -44,7 +44,7 @@ from systems.room_policy import (
     room_policy_data,
     validate_room_policy,
 )
-from systems.travel import SECTORS, SECTOR_ATTRIBUTE, sector_key
+from systems.travel import SECTOR_ATTRIBUTE, SECTORS, sector_key
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
@@ -106,9 +106,16 @@ def ensure_room_key(room, area_slug: str) -> str:
 
 def assign_area(room, area_slug: str) -> None:
     """Tag ``room`` into ``area_slug`` (replacing any prior area) and key it."""
+    profiles = {
+        profile
+        for member in search_tag(area_slug, category=AREA_TAG_CATEGORY)
+        for profile in member.tags.get(category="weather_profile", return_list=True)
+    }
     for old in room.tags.get(category=AREA_TAG_CATEGORY, return_list=True):
         room.tags.remove(old, category=AREA_TAG_CATEGORY)
     room.tags.add(area_slug, category=AREA_TAG_CATEGORY)
+    if profiles == {"temperate"}:
+        room.tags.add("temperate", category="weather_profile")
     ensure_room_key(room, area_slug)
 
 

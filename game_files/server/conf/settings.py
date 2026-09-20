@@ -73,6 +73,13 @@ GAME_CLOCK_EPOCH_MINUTE = 720
 GAME_CLOCK_REAL_SECONDS_PER_HOUR = 600
 GAME_CLOCK_SCALE_VERSION = 1
 
+# ENV-02's bounded temperate profile. Values are consumed only by weather.py.
+GAME_WEATHER_TRANSITION_TOKENS = 1
+GAME_WEATHER_RAIN_PERCEPTION_PENALTY = 2
+GAME_WEATHER_SEVERE_PERCEPTION_PENALTY = 5
+GAME_WEATHER_RAIN_TRAVEL_MULTIPLIER = 1.25
+GAME_WEATHER_STORM_TRAVEL_MULTIPLIER = 1.5
+
 # INTERACT-06's independently configurable delayed-interaction heartbeat.
 GAME_ACTION_AUDIT_LIMIT = 20
 # MAGIC-03 uses the one-minute recovery lane as its real-time clock. These

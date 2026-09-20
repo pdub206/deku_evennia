@@ -59,9 +59,11 @@ def active_light_level(observer: Any, room: Any) -> LightLevel | None:
     return item_light_level(observer, room)
 
 
-def weather_perception_modifier(room: Any) -> int:
-    """ENV-02 adapter returning its future fixed Perception modifier."""
-    return 0
+def weather_perception_modifier(room: Any, observer: Any | None = None) -> int:
+    """Return ENV-02's protected observer-specific outdoor modifier."""
+    from systems.weather import perception_modifier
+
+    return perception_modifier(room, observer)
 
 
 def ambient_light(observer: Any, room: Any) -> LightLevel:
@@ -108,7 +110,7 @@ def room_visibility(
         and _has_darkvision(observer)
     ):
         return VisibilityDecision(Visibility.OBSCURED, "darkness")
-    if weather_perception_modifier(room) < 0:
+    if weather_perception_modifier(room, observer) < 0:
         return VisibilityDecision(Visibility.OBSCURED, "weather")
     return VisibilityDecision(Visibility.VISIBLE, "clear")
 
@@ -161,7 +163,7 @@ def passive_perception(observer: Any, room: Any) -> int:
         action_key="passive_perception",
         override=observer.attributes.get("passive_perception_override"),
     )
-    return result.total + weather_perception_modifier(room)
+    return result.total + weather_perception_modifier(room, observer)
 
 
 def discover_passively(observer: Any, targets: Sequence[Any]) -> tuple[Any, ...]:
@@ -214,7 +216,10 @@ def active_search(
             ),
             roller=roller,
         )
-        if check.total + weather_perception_modifier(room) >= state.discovery_dc:
+        if (
+            check.total + weather_perception_modifier(room, observer)
+            >= state.discovery_dc
+        ):
             found.append(target)
     if found:
         record = getattr(observer.ndb, "visibility_discoveries", None)
@@ -351,7 +356,7 @@ def active_search_extras(
             ):
                 eligible.append((owner, index, record))
     found = []
-    modifier = weather_perception_modifier(room)
+    modifier = weather_perception_modifier(room, observer)
     for owner, index, record in sorted(
         eligible, key=lambda item: (item[0].id, item[1])
     ):

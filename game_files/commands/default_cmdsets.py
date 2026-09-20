@@ -92,6 +92,7 @@ from commands.skills import CmdSkills
 from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
 from commands.world_time import CmdTime
+from commands.weather import CmdWeather
 from evennia import default_cmds
 from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
@@ -117,6 +118,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdRead)
         self.add(CmdWrite)
         self.add(CmdTime)
+        self.add(CmdWeather)
         self.add(CmdRecall)
         self.add(CmdLook)
         self.add(CmdExits)

@@ -236,6 +236,9 @@ def _field_value(target, name: str, field) -> str:
         if isinstance(value, bool):
             value = "on" if value else "off"
         return _crop(value) if value is not None else "|x(unset)|n"
+    if field.kind == "weather_profile":
+        values = target.tags.get(category="weather_profile", return_list=True)
+        return _crop(values[0]) if len(values) == 1 else "|x(unset)|n"
     if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
@@ -485,6 +488,10 @@ def _apply_field(target, name: str, field, value) -> None:
         from systems.room_environment import set_room_environment_value
 
         set_room_environment_value(target, field.target or name, value)
+    elif field.kind == "weather_profile":
+        from systems.weather import set_weather_profile
+
+        set_weather_profile(target, value)
     elif field.kind == "policy":
         from systems.mobile_policy import set_mobile_policy_value
 

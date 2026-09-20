@@ -269,6 +269,20 @@ HELP_ENTRY_DICTS = [
         Shop opening hours follow this shared clock.""",
     },
     {
+        "key": "weather",
+        "aliases": ["rain", "storm", "fog", "conditions"],
+        "category": "General",
+        "text": """Use |wweather|n outdoors to check local conditions. Clear and
+        cloudy weather do not affect you. Rain makes Perception and travel a
+        little harder; fog makes Perception harder and prevents looking through
+        an exit; storms combine the severe travel and Perception penalties with
+        that directional limit. Equipped weather-protection gear cancels the
+        travel and Perception penalties, but not the weather itself. Indoors,
+        you cannot judge conditions directly. Weather changes only while the
+        world is running; it never harms you, extinguishes lights, or changes
+        combat.""",
+    },
+    {
         "key": "world clock administration",
         "aliases": ["clock repair", "clock scale"],
         "category": "Building",

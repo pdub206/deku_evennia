@@ -405,6 +405,9 @@ ROOM_FIELDS: dict[str, Field] = {
         "ordered JSON keyword/description records with optional discovery_dc",
     ),
     "area": Field("tag", as_slug, "the area this room belongs to (drives export)"),
+    "weather_profile": Field(
+        "weather_profile", as_choice("temperate"), "area weather profile (temperate)"
+    ),
     "sector": Field(
         "attr",
         as_choice(

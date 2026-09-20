@@ -70,6 +70,7 @@ from systems.visibility import (
     room_visibility,
     target_visibility,
 )
+from systems.weather import blocks_directional_view
 
 
 class CmdLook(_BaseLook):
@@ -121,6 +122,10 @@ class CmdLook(_BaseLook):
                 if (
                     destination is not None
                     and room_visibility(caller, destination, adjacent=True).visible
+                    and not (
+                        blocks_directional_view(room)
+                        or blocks_directional_view(destination)
+                    )
                 ):
                     from systems.room_policy import room_policy
 

@@ -228,6 +228,9 @@ class GamePulseScript(Script):
 
     def at_weather_pulse(self, event: PulseEvent) -> None:
         """Run weather transitions supplied by ENV-02."""
+        from systems.weather import process_weather_pulse
+
+        process_weather_pulse(self, event)
 
     def at_resets_pulse(self, event: PulseEvent) -> None:
         """Run area resets supplied by AREA-03."""
