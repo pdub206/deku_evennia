@@ -222,6 +222,18 @@ HELP_ENTRY_DICTS = [
         Bump STARTING_PACKAGE_VERSION when you change published packages.""",
     },
     {
+        "key": "starting equipment",
+        "aliases": ["starting gear", "starting package"],
+        "category": "Character",
+        "locks": "read:all()",
+        "text": """At the end of character creation, choose one of the listed
+        starting-equipment combinations for your class and background. The
+        choice shows every item and coin you will receive. Once you enter the
+        world, that package is final: it is not changed if the game's starting
+        equipment is updated later. Use |winventory|n and |wcoins|n to review
+        what you received.""",
+    },
+    {
         "key": "building item resources",
         "aliases": ["building lights", "building charges", "resource profiles"],
         "category": "Building",
