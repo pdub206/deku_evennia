@@ -122,6 +122,9 @@ NOTE_BODY_MAX_LENGTH = 2000
 # duration is deliberately global policy.
 NPC_CORPSE_DECAY_MINUTES = 10
 PC_CORPSE_DECAY_MINUTES = 30
+# GROUP-03B protects an NPC's death-time credited roster before its ordinary
+# corpse lifetime and decay policy take over.
+NPC_CORPSE_LOOT_RESERVATION_MINUTES = 2
 GLOBAL_SCRIPTS = {
     "game_pulse": {
         "typeclass": "typeclasses.scripts.GamePulseScript",

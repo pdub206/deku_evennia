@@ -1616,7 +1616,10 @@ HELP_ENTRY_DICTS = [
 
             Player-versus-player deaths never award XP. NPC loot is simply what
             the NPC was still carrying or wearing when it died; equipment or
-            items it lost while alive do not reappear.
+            items it lost while alive do not reappear. For two minutes after an
+            NPC dies, only the player or frozen eligible group roster credited
+            for that death may remove its items or coins. Anyone may inspect the
+            corpse, and remaining loot becomes public when that time expires.
         """,
     },
     {

@@ -1,11 +1,15 @@
 """COMBAT-07 attribution and NPC experience regression coverage."""
 
+from django.test import override_settings
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
 from systems import groups
 from systems.advancement import award_xp, initialize_level_one
+from systems.corpses import can_withdraw, corpse_record, process_corpse_pulse
 from systems.injury import apply_damage
+from systems.pulses import PulseEvent, PulseLane
 from systems.rewards import record_damage, reward_result
+from typeclasses.objects import Corpse
 
 
 class TestCombatRewards(EvenniaTest):
@@ -131,3 +135,37 @@ class TestCombatRewards(EvenniaTest):
             [share.recipient_id for share in result.shares], [self.char1.id]
         )
         self.assertEqual(self.char3.stats.xp, 900)
+
+    @override_settings(NPC_CORPSE_LOOT_RESERVATION_MINUTES=1)
+    def test_group_death_roster_reserves_then_releases_npc_corpse_loot(self):
+        """Loot uses the resolved XP roster, not current party membership."""
+        self._group_with_char3()
+        outsider = create_object(
+            "typeclasses.characters.Character", key="outsider", location=self.room1
+        )
+        outsider.db.hp_current = 20
+        item = create_object(
+            "typeclasses.objects.Item", key="relic", location=self.char2
+        )
+
+        injury = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
+        corpse = next(
+            corpse
+            for corpse in Corpse.objects.filter_family()
+            if corpse_record(corpse).death_id == injury.death_id
+        )
+
+        self.assertEqual(
+            corpse_record(corpse).loot_recipient_ids,
+            (self.char1.id, self.char3.id),
+        )
+        self.assertTrue(can_withdraw(corpse, self.char3))
+        self.assertFalse(can_withdraw(corpse, outsider))
+        self.assertTrue(groups.leave(self.char3).accepted)
+        self.assertTrue(can_withdraw(corpse, self.char3))
+        self.assertIs(item.location, corpse)
+
+        process_corpse_pulse(PulseEvent(60, PulseLane.CORPSES, 1))
+
+        self.assertEqual(corpse_record(corpse).reservation_remaining_pulses, 0)
+        self.assertTrue(can_withdraw(corpse, outsider))

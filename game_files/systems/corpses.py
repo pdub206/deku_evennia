@@ -7,7 +7,7 @@ the service only controls when those contents may enter or leave the container.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from typing import Any
@@ -21,7 +21,7 @@ from systems.item_transfer import retain_bound_items
 from systems.pulses import PulseEvent, PulseLane
 
 CORPSE_ATTRIBUTE = "corpse_state"
-CORPSE_VERSION = 1
+CORPSE_VERSION = 2
 CURRENCY_ATTRIBUTE = "currency"
 DEFAULT_NPC_DECAY_MINUTES = 10
 DEFAULT_PC_DECAY_MINUTES = 30
@@ -45,6 +45,9 @@ class CorpseRecord:
     currency: int = 0
     currency_transferred: bool = False
     status: str = "creating"
+    loot_recipient_ids: tuple[int, ...] = ()
+    reservation_remaining_pulses: int = 0
+    reservation_last_pulse: int = 0
 
 
 @dataclass(frozen=True)
@@ -81,10 +84,20 @@ def corpse_record(corpse: Any) -> CorpseRecord:
         "currency_transferred",
         "status",
     }
+    version = raw.get("version") if isinstance(raw, Mapping) else None
+    if version == 1:
+        expected |= {"version"}
+    elif version == CORPSE_VERSION:
+        expected |= {
+            "version",
+            "loot_recipient_ids",
+            "reservation_remaining_pulses",
+            "reservation_last_pulse",
+        }
+    else:
+        raise CorpseError("Corpse record has an unsupported version.")
     if not isinstance(raw, Mapping) or set(raw) != expected:
         raise CorpseError("Corpse record is invalid.")
-    if raw.get("version") != CORPSE_VERSION:
-        raise CorpseError("Corpse record has an unsupported version.")
     death_id, display_name, status = raw["death_id"], raw["display_name"], raw["status"]
     if not all(isinstance(value, str) and value for value in (death_id, display_name)):
         raise CorpseError("Corpse identity is invalid.")
@@ -124,6 +137,26 @@ def corpse_record(corpse: Any) -> CorpseRecord:
         raise CorpseError("Corpse location or lifetime is invalid.")
     if not isinstance(raw["currency_transferred"], bool):
         raise CorpseError("Corpse currency state is invalid.")
+    recipient_ids = ()
+    reservation_remaining_pulses = reservation_last_pulse = 0
+    if version == CORPSE_VERSION:
+        recipient_ids = raw["loot_recipient_ids"]
+        reservation_remaining_pulses = raw["reservation_remaining_pulses"]
+        reservation_last_pulse = raw["reservation_last_pulse"]
+        if (
+            not isinstance(recipient_ids, Sequence)
+            or isinstance(recipient_ids, (str, bytes))
+            or len(recipient_ids) > 8
+            or len(set(recipient_ids)) != len(recipient_ids)
+            or not all(_positive_int(identifier) for identifier in recipient_ids)
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in (reservation_remaining_pulses, reservation_last_pulse)
+            )
+            or (is_pc and recipient_ids)
+            or (not recipient_ids and reservation_remaining_pulses)
+        ):
+            raise CorpseError("Corpse loot reservation is invalid.")
     return CorpseRecord(
         death_id,
         is_pc,
@@ -135,6 +168,9 @@ def corpse_record(corpse: Any) -> CorpseRecord:
         raw["currency"],
         raw["currency_transferred"],
         status,
+        tuple(recipient_ids),
+        reservation_remaining_pulses,
+        reservation_last_pulse,
     )
 
 
@@ -166,6 +202,7 @@ def create_corpse(owner: Any, death_id: str) -> Any | None:
         display_name=owner.get_display_name(owner),
         creation_location_id=location_id,
         remaining_pulses=_lifetime_pulses(owner, is_pc),
+        **_loot_reservation(owner, death_id, is_pc),
     )
     corpse = create_object(
         "typeclasses.objects.Corpse", key=f"corpse of {owner.key}", nohome=True
@@ -188,7 +225,13 @@ def can_withdraw(corpse: Any, looter: Any) -> bool:
     """Return the shared, side-effect-free PC/NPC corpse removal decision."""
     record = corpse_record(corpse)
     if not record.is_pc:
-        return True
+        if not record.loot_recipient_ids or not record.reservation_remaining_pulses:
+            return True
+        return bool(
+            getattr(looter, "id", None) in record.loot_recipient_ids
+            or getattr(looter, "is_superuser", False)
+            or looter.check_permstring("Admin")
+        )
     return bool(
         getattr(looter, "id", None) == record.owner_id
         or getattr(looter, "is_superuser", False)
@@ -278,6 +321,17 @@ def process_corpse_pulse(event: PulseEvent) -> CorpsePulseResult:
                 last_pulse=event.sequence,
                 remaining_pulses=record.remaining_pulses - 1,
             )
+            if (
+                next_record.reservation_remaining_pulses
+                and next_record.reservation_last_pulse < event.sequence
+            ):
+                next_record = replace(
+                    next_record,
+                    reservation_last_pulse=event.sequence,
+                    reservation_remaining_pulses=(
+                        next_record.reservation_remaining_pulses - 1
+                    ),
+                )
             if next_record.remaining_pulses:
                 _write(corpse, next_record)
                 continue
@@ -401,6 +455,9 @@ def _write(corpse: Any, record: CorpseRecord) -> None:
             "currency": record.currency,
             "currency_transferred": record.currency_transferred,
             "status": record.status,
+            "loot_recipient_ids": list(record.loot_recipient_ids),
+            "reservation_remaining_pulses": record.reservation_remaining_pulses,
+            "reservation_last_pulse": record.reservation_last_pulse,
         },
     )
 
@@ -433,6 +490,61 @@ def _lifetime_pulses(owner: Any, is_pc: bool) -> int:
     return int(
         (value * 60 / Decimal(cadence * interval)).to_integral_value(ROUND_CEILING)
     )
+
+
+def _loot_reservation(owner: Any, death_id: str, is_pc: bool) -> dict[str, Any]:
+    """Read GROUP-03A's consumed death result for a new NPC corpse only."""
+    if is_pc:
+        return {}
+    try:
+        from systems.rewards import reward_result
+
+        result = reward_result(death_id)
+        recipient_ids = (
+            tuple(share.recipient_id for share in result.shares)
+            if result is not None and result.reason == "awarded"
+            else ()
+        )
+    except Exception:
+        # Attribution diagnostics must never make corpse creation fail.  No
+        # trustworthy result means public loot, rather than inventing access.
+        recipient_ids = ()
+    if not recipient_ids:
+        return {}
+    return {
+        "loot_recipient_ids": recipient_ids,
+        "reservation_remaining_pulses": _reservation_pulses(),
+    }
+
+
+def _reservation_pulses() -> int:
+    """Convert the settings-managed reservation duration to corpse tokens."""
+    minutes = getattr(settings, "NPC_CORPSE_LOOT_RESERVATION_MINUTES", 2)
+    try:
+        value = Decimal(str(minutes))
+    except (InvalidOperation, ValueError):
+        raise CorpseError(
+            "Corpse loot reservation must be a positive number of minutes."
+        ) from None
+    if not value.is_finite() or value <= 0:
+        raise CorpseError(
+            "Corpse loot reservation must be a positive number of minutes."
+        )
+    cadence = getattr(settings, "GAME_PULSE_CADENCES", {}).get("corpses", 60)
+    interval = getattr(settings, "GAME_PULSE_INTERVAL_SECONDS", 1)
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 1
+        for value in (cadence, interval)
+    ):
+        raise CorpseError("Corpse pulse settings are invalid.")
+    return int(
+        (value * 60 / Decimal(cadence * interval)).to_integral_value(ROUND_CEILING)
+    )
+
+
+def _positive_int(value: Any) -> bool:
+    """Return whether a persisted object identity is valid and bounded by type."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def _is_pc(owner: Any) -> bool:
