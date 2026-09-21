@@ -45,6 +45,19 @@ HELP_ENTRY_DICTS = [
         "text": """Use |wtell <account> <message>|n to send a private message to an online account. |wpage|n is an alias for |wtell|n. Use |wtell/reply <message>|n to answer the last person you successfully told or who successfully told you. Tells are live only: they are not delivered to offline accounts, are not saved, and have no tell history, list, or read command. If a person is unavailable or ignores you, you receive the same unavailable response.\n\nUse |wignore|n to see your ignored accounts, |wignore/add <account>|n to silence an account's optional communication, and |wignore/remove <account>|n to hear them again. You may ignore up to 100 accounts. Ignoring blocks their tells and direct communication, and suppresses their ordinary speech and shouts; it does not hide required game information such as movement, combat, group, or system messages.""",
     },
     {
+        "key": "mail",
+        "aliases": ["mail send", "mail reply", "mail read"],
+        "category": "Communication",
+        "text": """Mail is durable account-to-account correspondence. Use |wmail|n to list received mail and |wmail/sent|n to list what you sent; lists show 20 messages per page (for example, |wmail 2|n). Use |wmail/read <number>|n to open a received message, which marks it read, and |wmail/delete <number>|n to remove only your own view.\n\nCompose with |wmail/send <account> = <subject>|n. This opens the text editor for the body; when you leave the editor, its current body is sent. Use |wmail/reply <number>|n to open an editor addressed to that received message's sender. Subjects are limited to 80 characters and bodies to 4,000 plain-text characters. Mail is delivered even when its recipient is offline. Ignore blocks new mail, and deleted mail is unavailable from your own list but remains visible to the other party until they delete it too.""",
+    },
+    {
+        "key": "mail moderation",
+        "aliases": ["mail moderate"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins may remove abusive durable mail with |wmail/moderate <number> = <reason>|n. A non-empty reason is required and the action is written to the server audit log. Builders and group leaders have no mail moderation access.""",
+    },
+    {
         "key": "group",
         "aliases": ["party", "groups"],
         "category": "Character",

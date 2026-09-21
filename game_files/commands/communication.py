@@ -10,12 +10,24 @@ from typing import Any, Sequence
 
 from commands.command import Command, MuxCommand
 from evennia.accounts.models import AccountDB
+from evennia.comms.models import Msg
 from evennia.utils import logger
+from evennia.utils.eveditor import EvEditor
 from systems.action_policy import ActionCategory
 from systems.channels import released_channels
 from systems.communication import authorize, ignored_by, normalize_text
 from systems.doors import traversal_decision
 from systems.language import garble, hand_pronoun, is_sign_language
+from systems.mail import MAX_SUBJECT_LENGTH
+from systems.mail import delete as delete_mail
+from systems.mail import mail_messages
+from systems.mail import read as read_mail
+from systems.mail import received as received_mail
+from systems.mail import reply_target
+from systems.mail import send as send_mail
+from systems.mail import sent as sent_mail
+from systems.mail import snapshots as mail_snapshots
+from systems.mail import unread_count
 from systems.visibility import target_visibility
 
 
@@ -192,6 +204,208 @@ class CmdTell(MuxCommand):
         target.msg(f'{caller.key} tells you, "{result.text}"')
         caller.ndb.last_tell_account_id = target.id
         target.ndb.last_tell_account_id = caller.id
+
+
+def _mail_editor_load(caller: Any) -> str:
+    """Always begin a new mail composition with an empty immutable body."""
+    return ""
+
+
+def _mail_editor_save(caller: Any, buffer: str) -> bool:
+    """Let Evennia acknowledge editor saves; delivery waits until editor exit."""
+    return True
+
+
+def _mail_editor_quit(caller: Any) -> None:
+    """Deliver the editor buffer exactly once when its compose session exits."""
+    compose = getattr(caller.ndb, "mail_compose", None)
+    editor = getattr(caller.ndb, "_eveditor", None)
+    caller.ndb.mail_compose = None
+    if not isinstance(compose, dict) or editor is None:
+        return
+    try:
+        target = AccountDB.objects.get(pk=int(compose["target_id"]))
+    except (AccountDB.DoesNotExist, KeyError, TypeError, ValueError):
+        caller.msg("That person is unavailable.")
+        return
+    result = send_mail(caller, target, compose.get("subject"), editor._buffer)
+    if result.accepted:
+        caller.msg(f"Mail sent to {target.key}.")
+    elif result.reason == "invalid_text":
+        caller.msg("Mail needs a plain-text body of at most 4,000 characters.")
+    else:
+        caller.msg("That person is unavailable.")
+
+
+class CmdMail(MuxCommand):
+    """Read, compose, and remove persistent account mail.
+
+    Usage:
+      mail
+      mail/read <number>
+      mail/send <account> = <subject>
+      mail/reply <number>
+      mail/sent
+      mail/delete <number>
+
+    Send and reply open Evennia's text editor. Leaving that editor sends its
+    current body; it is not possible to supply a body on the command line.
+    """
+
+    key = "mail"
+    switch_options = ("read", "send", "reply", "sent", "delete", "moderate")
+    locks = "cmd:all()"
+    help_category = "Communication"
+    account_caller = True
+    rows_per_page = 20
+
+    def func(self) -> None:
+        """Dispatch the intentionally small, account-scoped mail surface."""
+        caller = self.caller
+        if len(self.switches) > 1:
+            caller.msg(
+                "Usage: mail, mail/read, mail/send, mail/reply, mail/sent, or mail/delete."
+            )
+            return
+        switch = self.switches[0] if self.switches else "inbox"
+        if switch == "inbox":
+            self._list(received_mail(caller), outgoing=False)
+        elif switch == "sent":
+            self._list(sent_mail(caller), outgoing=True)
+        elif switch == "read":
+            self._read()
+        elif switch == "send":
+            self._compose()
+        elif switch == "reply":
+            self._reply()
+        elif switch == "delete":
+            self._delete()
+        elif switch == "moderate":
+            self._moderate()
+
+    def _list(self, messages: Any, *, outgoing: bool) -> None:
+        """Render one fixed-size page without exposing deleted mail."""
+        page = 1
+        if self.args.strip():
+            try:
+                page = int(self.args.strip())
+            except ValueError:
+                page = 0
+        if page < 1:
+            self.caller.msg("Mail page numbers start at 1.")
+            return
+        start = (page - 1) * self.rows_per_page
+        rows = list(messages[start : start + self.rows_per_page])
+        if not rows:
+            self.caller.msg("You have no mail on that page.")
+            return
+        heading = (
+            "Sent mail" if outgoing else f"Inbox ({unread_count(self.caller)} unread)"
+        )
+        lines = [f"{heading}, page {page}:"]
+        for message in rows:
+            snapshot = mail_snapshots(message)
+            name = snapshot.get(
+                "recipient_name" if outgoing else "sender_name", "Unknown"
+            )
+            unread = (
+                "*"
+                if not outgoing and message.tags.has("unread", category="communication")
+                else " "
+            )
+            lines.append(f"{unread}{message.id:>5} {name}: {message.header}")
+        self.caller.msg("\n".join(lines))
+
+    def _read(self) -> None:
+        """Open exactly one received message, marking it read only on success."""
+        result = read_mail(self.caller, self.args.strip())
+        if not result.accepted:
+            self.caller.msg("You have no such mail.")
+            return
+        message = result.message
+        sender = mail_snapshots(message).get("sender_name", "Unknown")
+        self.caller.msg(
+            f"Mail #{message.id} from {sender}: {message.header}\n\n{message.message}"
+        )
+
+    def _compose(self) -> None:
+        """Resolve recipient and subject before entering the body editor."""
+        if not self.lhs.strip() or not self.rhs.strip() or "|" in self.args:
+            self.caller.msg("Usage: mail/send <account> = <subject>")
+            return
+        subject = self.rhs.strip()
+        if len(subject) > MAX_SUBJECT_LENGTH:
+            self.caller.msg("Mail subjects may be at most 80 characters.")
+            return
+        target = _account_for_tell(self.caller, self.lhs)
+        if target is None:
+            # Mail may be delivered offline; only account existence, locks, and
+            # ignore are relevant here, unlike tells.
+            matches = list(
+                AccountDB.objects.filter(username__iexact=self.lhs.strip())[:2]
+            )
+            target = matches[0] if len(matches) == 1 else None
+            if (
+                target is None
+                or target == self.caller
+                or not target.access(self.caller, "msg")
+                or ignored_by(target, self.caller)
+            ):
+                self.caller.msg("That person is unavailable.")
+                return
+        self._open_editor(target, subject)
+
+    def _reply(self) -> None:
+        """Reply through the editor to the original sender of received mail."""
+        target = reply_target(self.caller, self.args.strip())
+        if target is None or target == self.caller:
+            self.caller.msg("You have no such mail.")
+            return
+        try:
+            original = received_mail(self.caller).get(pk=int(self.args.strip()))
+        except (Msg.DoesNotExist, TypeError, ValueError):
+            self.caller.msg("You have no such mail.")
+            return
+        self._open_editor(target, f"Re: {original.header}"[:MAX_SUBJECT_LENGTH])
+
+    def _open_editor(self, target: Any, subject: str) -> None:
+        """Persist only the transient compose context while the editor is live."""
+        self.caller.ndb.mail_compose = {"target_id": target.id, "subject": subject}
+        EvEditor(
+            self.caller,
+            loadfunc=_mail_editor_load,
+            savefunc=_mail_editor_save,
+            quitfunc=_mail_editor_quit,
+            key="mail composition",
+            persistent=False,
+        )
+
+    def _delete(self) -> None:
+        """Hide this caller's view, never the other account's view."""
+        result = delete_mail(self.caller, self.args.strip())
+        self.caller.msg(
+            "Mail deleted." if result.accepted else "You have no such mail."
+        )
+
+    def _moderate(self) -> None:
+        """Allow only Admins to remove a message with a server-audited reason."""
+        if (
+            not self.caller.check_permstring("Admin")
+            or not self.lhs.strip()
+            or not self.rhs.strip()
+        ):
+            self.caller.msg("Usage: mail/moderate <number> = <reason>")
+            return
+        try:
+            message = mail_messages().get(pk=int(self.lhs.strip()))
+        except (Msg.DoesNotExist, ValueError):
+            self.caller.msg("No such mail exists.")
+            return
+        logger.log_info(
+            f"COMM-03A mail moderation: admin=#{self.caller.id} mail=#{message.id} reason={self.rhs.strip()[:500]!r}"
+        )
+        message.delete()
+        self.caller.msg("Mail removed and audited.")
 
 
 class CmdIgnore(MuxCommand):

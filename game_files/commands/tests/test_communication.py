@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 
 # fmt: off
 from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
-                                    CmdSay, CmdShout, CmdTell, CmdWhisper)
+                                    CmdMail, CmdSay, CmdShout, CmdTell,
+                                    CmdWhisper, _mail_editor_quit)
 from commands.socials import CmdSocial, CmdSocials
 # fmt: on
 from evennia import create_object
@@ -114,6 +115,56 @@ class TestCommunicationCommands(EvenniaCommandTest):
             f"You no longer ignore {self.account2.key}.",
             caller=self.account,
         )
+
+    def test_mail_composes_in_editor_then_persists_and_marks_read(self):
+        """COMM-03A accepts no inline body and sends the editor buffer on exit."""
+        before = Msg.objects.count()
+        command = CmdMail()
+        command.caller = self.account
+        command.switches = ["send"]
+        command.args = f"{self.account2.key} = Greetings"
+        command.lhs = self.account2.key
+        command.rhs = "Greetings"
+        with patch("commands.communication.EvEditor") as editor:
+            command.func()
+        editor.assert_called_once()
+        self.account.ndb._eveditor = MagicMock(_buffer="A durable\nmail body.")
+        _mail_editor_quit(self.account)
+        self.assertEqual(Msg.objects.count(), before + 1)
+        message = Msg.objects.latest("id")
+        self.assertEqual(message.header, "Greetings")
+        self.assertEqual(message.message, "A durable\nmail body.")
+        self.assertTrue(message.tags.has("deku_mail", category="communication"))
+        self.assertTrue(message.tags.has("unread", category="communication"))
+        self.call(
+            CmdMail(),
+            f"/read {message.id}",
+            f"Mail #{message.id} from {self.account.key}: Greetings\n\nA durable\nmail body.",
+            caller=self.account2,
+        )
+        self.assertFalse(message.tags.has("unread", category="communication"))
+
+    def test_mail_hides_only_one_view_and_blocks_ignored_recipient(self):
+        """Mail deletion is independent and ignore produces the generic denial."""
+        from systems.mail import send
+
+        result = send(self.account, self.account2, "Subject", "Body")
+        self.assertTrue(result.accepted)
+        message = result.message
+        self.call(
+            CmdMail(), f"/delete {message.id}", "Mail deleted.", caller=self.account
+        )
+        self.call(CmdMail(), "", "You have no mail on that page.", caller=self.account)
+        self.call(
+            CmdMail(),
+            "",
+            f"Inbox (1 unread), page 1:\n*{message.id:>5} {self.account.key}: Subject",
+            caller=self.account2,
+        )
+        self.account2.db.ignored_account_ids = [self.account.id]
+        denied = send(self.account, self.account2, "Another", "Body")
+        self.assertFalse(denied.accepted)
+        self.assertEqual(denied.reason, "unavailable")
 
     def test_channel_applies_rate_ignore_and_subscription_controls(self):
         """Released channels are account-wide, mute separately, and honor ignore."""
