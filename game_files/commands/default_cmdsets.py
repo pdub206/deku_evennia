@@ -45,7 +45,14 @@ from commands.combat import (
 )
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
-from commands.communication import CmdAsk, CmdSay, CmdShout, CmdWhisper
+from commands.communication import (
+    CmdAsk,
+    CmdIgnore,
+    CmdSay,
+    CmdShout,
+    CmdTell,
+    CmdWhisper,
+)
 from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
@@ -250,6 +257,9 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         # Replace default charcreate/ic with the EvMenu-driven versions.
         self.add(ContribCmdIC)
         self.add(CmdCharCreate)
+        # Replace Evennia's persistent/offline page command with immediate tells.
+        self.add(CmdTell)
+        self.add(CmdIgnore)
         # Preserve the default command while identifying deliberate unpuppets.
         self.add(CmdOOC)
 

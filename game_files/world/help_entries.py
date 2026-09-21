@@ -26,6 +26,12 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "tell",
+        "aliases": ["page", "reply", "ignore"],
+        "category": "Communication",
+        "text": """Use |wtell <account> <message>|n to send a private message to an online account. |wpage|n is an alias for |wtell|n. Use |wtell/reply <message>|n to answer the last person you successfully told or who successfully told you. Tells are live only: they are not delivered to offline accounts, are not saved, and have no tell history, list, or read command. If a person is unavailable or ignores you, you receive the same unavailable response.\n\nUse |wignore|n to see your ignored accounts, |wignore/add <account>|n to silence an account's optional communication, and |wignore/remove <account>|n to hear them again. You may ignore up to 100 accounts. Ignoring blocks their tells and direct communication, and suppresses their ordinary speech and shouts; it does not hide required game information such as movement, combat, group, or system messages.""",
+    },
+    {
         "key": "group",
         "aliases": ["party", "groups"],
         "category": "Character",

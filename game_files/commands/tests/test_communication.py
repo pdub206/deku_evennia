@@ -1,7 +1,13 @@
-"""Command-level coverage for COMM-01A's local speech verbs."""
+"""Command-level coverage for COMM-01A local speech and COMM-01B tells."""
 
-from commands.communication import CmdAsk, CmdSay, CmdShout, CmdWhisper
+from unittest.mock import patch
+
+# fmt: off
+from commands.communication import (CmdAsk, CmdIgnore, CmdSay, CmdShout,
+                                    CmdTell, CmdWhisper)
+# fmt: on
 from evennia import create_object
+from evennia.comms.models import Msg
 from evennia.utils.test_resources import EvenniaCommandTest
 
 
@@ -45,4 +51,63 @@ class TestCommunicationCommands(EvenniaCommandTest):
             CmdSay(),
             "hello",
             "You are asleep and cannot do that. Type wake to wake up.",
+        )
+
+    def test_tell_requires_an_online_target_and_never_creates_history(self):
+        """Offline targets fail safely; live tells are direct, transient delivery."""
+        self.call(
+            CmdTell(),
+            f"{self.account2.key} hello",
+            "That person is unavailable.",
+            caller=self.account,
+        )
+        before = Msg.objects.count()
+        with patch.object(self.account2.sessions, "count", return_value=1):
+            self.call(
+                CmdTell(),
+                f"{self.account2.key} hello",
+                {
+                    self.account: f'You tell {self.account2.key}, "hello"',
+                    self.account2: f'{self.account.key} tells you, "hello"',
+                },
+                caller=self.account,
+            )
+            self.call(
+                CmdTell(),
+                "/reply again",
+                {
+                    self.account: f'You tell {self.account2.key}, "again"',
+                    self.account2: f'{self.account.key} tells you, "again"',
+                },
+                caller=self.account,
+            )
+        self.assertEqual(Msg.objects.count(), before)
+        self.call(
+            CmdTell(),
+            "/list 10",
+            'tell: Extra switch "/list" ignored.|Usage: tell <account> <message>',
+            caller=self.account,
+        )
+
+    def test_ignore_blocks_tells_and_persists_only_account_ids(self):
+        """Ignore has bounded persistent ids and hides tell-target details."""
+        self.call(
+            CmdIgnore(),
+            f"/add {self.account2.key}",
+            f"You now ignore {self.account2.key}.",
+            caller=self.account,
+        )
+        self.assertEqual(self.account.db.ignored_account_ids, [self.account2.id])
+        with patch.object(self.account.sessions, "count", return_value=1):
+            self.call(
+                CmdTell(),
+                f"{self.account.key} hello",
+                "That person is unavailable.",
+                caller=self.account2,
+            )
+        self.call(
+            CmdIgnore(),
+            f"/remove {self.account2.key}",
+            f"You no longer ignore {self.account2.key}.",
+            caller=self.account,
         )

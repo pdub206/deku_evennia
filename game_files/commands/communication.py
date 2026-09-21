@@ -8,7 +8,8 @@ Sign language is handled separately from spoken language.
 
 from typing import Any, Sequence
 
-from commands.command import Command
+from commands.command import Command, MuxCommand
+from evennia.accounts.models import AccountDB
 from systems.action_policy import ActionCategory
 from systems.communication import authorize, ignored_by
 from systems.doors import traversal_decision
@@ -112,6 +113,148 @@ def _direct_parts(command: Command) -> tuple[Any | None, str]:
     return _visible_target(command.caller, query), raw
 
 
+def _account_for_tell(caller: Any, query: str) -> Any | None:
+    """Resolve one account without revealing why an unavailable target failed."""
+    name = query.strip()
+    if not name:
+        return None
+    matches = list(AccountDB.objects.filter(username__iexact=name)[:2])
+    if len(matches) != 1:
+        return None
+    target = matches[0]
+    if (
+        target == caller
+        or not target.sessions.count()
+        or not target.access(caller, "msg")
+        or ignored_by(target, caller)
+    ):
+        return None
+    return target
+
+
+class CmdTell(MuxCommand):
+    """Send an immediate private message to an online account.
+
+    Usage:
+      tell <account> <message>
+      tell/reply <message>
+
+    Tells are delivered only while the recipient is online. They are not saved
+    and have no history, list, or read commands.
+    """
+
+    key = "tell"
+    aliases = ("page",)
+    switch_options = ("reply",)
+    locks = "cmd:not pperm(page_banned)"
+    help_category = "Communication"
+    account_caller = True
+
+    def func(self) -> None:
+        """Validate and send one transient tell to one active account."""
+        caller = self.caller
+        if self.switches and "reply" not in self.switches:
+            caller.msg("Usage: tell <account> <message> or tell/reply <message>")
+            return
+        if "reply" in self.switches:
+            target_id = getattr(caller.ndb, "last_tell_account_id", None)
+            try:
+                target = AccountDB.objects.get(pk=int(target_id))
+            except (AccountDB.DoesNotExist, TypeError, ValueError):
+                target = None
+            if (
+                target is None
+                or not target.sessions.count()
+                or not target.access(caller, "msg")
+                or ignored_by(target, caller)
+            ):
+                caller.msg("That person is unavailable.")
+                return
+            raw = self.args
+        else:
+            parts = self.args.strip().split(maxsplit=1)
+            if len(parts) != 2:
+                caller.msg("Usage: tell <account> <message>")
+                return
+            target = _account_for_tell(caller, parts[0])
+            if target is None:
+                caller.msg("That person is unavailable.")
+                return
+            raw = parts[1]
+
+        result = authorize(caller, raw)
+        if not result.accepted:
+            _message_error(caller, result.reason)
+            return
+        caller.msg(f'You tell {target.key}, "{result.text}"')
+        target.msg(f'{caller.key} tells you, "{result.text}"')
+        caller.ndb.last_tell_account_id = target.id
+        target.ndb.last_tell_account_id = caller.id
+
+
+class CmdIgnore(MuxCommand):
+    """Manage the accounts whose optional communication you do not receive.
+
+    Usage:
+      ignore
+      ignore/add <account>
+      ignore/remove <account>
+    """
+
+    key = "ignore"
+    switch_options = ("add", "remove")
+    locks = "cmd:all()"
+    help_category = "Communication"
+    account_caller = True
+    maximum_ignored_accounts = 100
+
+    def func(self) -> None:
+        """Persist a bounded, de-duplicated account-id ignore list."""
+        caller = self.caller
+        raw_ids = getattr(caller.db, "ignored_account_ids", ()) or ()
+        try:
+            ignored_ids = {int(value) for value in raw_ids}
+        except (TypeError, ValueError):
+            ignored_ids = set()
+        if not self.switches:
+            if not ignored_ids:
+                caller.msg("You are not ignoring anyone.")
+                return
+            names = list(
+                AccountDB.objects.filter(id__in=ignored_ids).values_list(
+                    "username", flat=True
+                )
+            )
+            caller.msg("Ignored accounts: " + ", ".join(sorted(names, key=str.lower)))
+            return
+        if len(self.switches) != 1 or not self.args.strip():
+            caller.msg("Usage: ignore/add <account> or ignore/remove <account>")
+            return
+        matches = list(AccountDB.objects.filter(username__iexact=self.args.strip())[:2])
+        if len(matches) != 1 or matches[0] == caller:
+            caller.msg("That account is unavailable.")
+            return
+        target = matches[0]
+        if "add" in self.switches:
+            if target.id in ignored_ids:
+                caller.msg(f"You are already ignoring {target.key}.")
+                return
+            if len(ignored_ids) >= self.maximum_ignored_accounts:
+                caller.msg("You cannot ignore more than 100 accounts.")
+                return
+            caller.db.ignored_account_ids = sorted((*ignored_ids, target.id))
+            caller.msg(f"You now ignore {target.key}.")
+            return
+        if "remove" in self.switches:
+            if target.id not in ignored_ids:
+                caller.msg(f"You are not ignoring {target.key}.")
+                return
+            caller.db.ignored_account_ids = sorted(ignored_ids - {target.id})
+            caller.msg(f"You no longer ignore {target.key}.")
+            return
+        caller.msg("Usage: ignore/add <account> or ignore/remove <account>")
+
+
 class CmdSay(Command):
     """
     Say something aloud in your active language.
@@ -142,8 +285,13 @@ class CmdSay(Command):
 
         send_speech(caller, speech)
         if caller.location:
-            from systems.mobile_specials import (SpecialEvent,
-                                                 dispatch_room_specials)
+            # isort: off
+            from systems.mobile_specials import (
+                SpecialEvent,
+                dispatch_room_specials,
+            )
+
+            # isort: on
 
             dispatch_room_specials(
                 caller.location,
@@ -218,8 +366,13 @@ class CmdAsk(Command):
             directed=target,
         )
         if self.caller.location:
-            from systems.mobile_specials import (SpecialEvent,
-                                                 dispatch_room_specials)
+            # isort: off
+            from systems.mobile_specials import (
+                SpecialEvent,
+                dispatch_room_specials,
+            )
+
+            # isort: on
 
             dispatch_room_specials(
                 self.caller.location,
