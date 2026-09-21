@@ -52,6 +52,8 @@ from commands.communication import (
     CmdIgnore,
     CmdSay,
     CmdShout,
+    CmdSocial,
+    CmdSocials,
     CmdTell,
     CmdWhisper,
 )
@@ -162,6 +164,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdWhisper)
         self.add(CmdAsk)
         self.add(CmdShout)
+        self.add(CmdSocial)
+        self.add(CmdSocials)
         self.add(CmdJunk)
         self.add(CmdItemPolicy)
         self.add(CmdNoteAdmin)

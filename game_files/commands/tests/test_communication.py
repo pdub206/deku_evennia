@@ -5,11 +5,13 @@ from unittest.mock import MagicMock, patch
 # fmt: off
 from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
                                     CmdSay, CmdShout, CmdTell, CmdWhisper)
+from commands.socials import CmdSocial, CmdSocials
 # fmt: on
 from evennia import create_object
 from evennia.comms.models import ChannelDB, Msg
 from evennia.utils import create
 from evennia.utils.test_resources import EvenniaCommandTest
+from systems.socials import SOCIALS
 
 
 class TestCommunicationCommands(EvenniaCommandTest):
@@ -164,3 +166,47 @@ class TestCommunicationCommands(EvenniaCommandTest):
             command.func()
         self.account.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")
         self.account2.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")
+
+
+class TestSocialCommands(EvenniaCommandTest):
+    """COMM-02 reaches fixed socials through one action-policy-aware command."""
+
+    def setUp(self):
+        super().setUp()
+        self.char2.move_to(self.room1, quiet=True)
+
+    def test_registry_command_lists_and_delivers_no_target_social(self):
+        """The generic command is registered under every release verb in order."""
+        self.call(
+            CmdSocials(),
+            "",
+            "Available socials: bow, grin, laugh, nod, salute, shake, shrug, sigh, smile, thank, wave, wink.",
+        )
+        for key in SOCIALS:
+            self.account.ndb.communication_rate = None
+            self.call(CmdSocial(), "", f"You {key}.", cmdstring=key)
+
+    def test_directed_and_self_socials_have_distinct_exact_audiences(self):
+        """A visible target receives a direct response; self has only observers."""
+        self.call(
+            CmdSocial(),
+            self.char2.key,
+            {
+                self.char1: f"You bow to {self.char2.key}.",
+                self.char2: f"{self.char1.key} bows to you.",
+            },
+        )
+        self.account.ndb.communication_rate = None
+        self.call(CmdSocial(), self.char1.key, "You bow to yourself.")
+
+    def test_social_target_and_observer_ignore_are_private_denials(self):
+        """A direct target blocks before broadcast and ignoring observers hear nothing."""
+        self.char2.db.account = self.account2
+        self.account2.db.ignored_account_ids = [self.account.id]
+        self.call(CmdSocial(), self.char2.key, "That person is unavailable.")
+        self.account2.db.ignored_account_ids = None
+        self.account.ndb.communication_rate = None
+        self.char2.msg = MagicMock()
+        self.account2.db.ignored_account_ids = [self.account.id]
+        self.call(CmdSocial(), "", "You bow.")
+        self.char2.msg.assert_not_called()

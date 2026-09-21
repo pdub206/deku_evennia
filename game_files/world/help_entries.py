@@ -1799,7 +1799,7 @@ HELP_ENTRY_DICTS = [
     },
     {
         "key": "communication",
-        "aliases": ["say", "whisper", "ask", "shout"],
+        "aliases": ["say", "whisper", "ask", "shout", "socials"],
         "category": "Communication",
         "text": """
             Speak in your active language with |wsay <message>|n. Characters who
@@ -1815,6 +1815,12 @@ HELP_ENTRY_DICTS = [
             Messages are limited to 500 characters. To keep conversation readable,
             you may author up to five speech actions in ten seconds; a shout uses
             three of those actions.
+
+            Use |wsocials|n to list the fixed nonverbal expressions. Enter one
+            directly, such as |wwave|n or |wbow <character>|n, to perform it.
+            A social can be directed only at a visible character in your room;
+            directing it at yourself has its own response. Socials do not use a
+            language and have no mechanical effect.
         """,
     },
     {
