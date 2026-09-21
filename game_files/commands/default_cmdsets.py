@@ -45,7 +45,7 @@ from commands.combat import (
 )
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
-from commands.communication import CmdSay, CmdWhisper
+from commands.communication import CmdAsk, CmdSay, CmdShout, CmdWhisper
 from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
@@ -151,6 +151,8 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdDrop)
         self.add(CmdGive)
         self.add(CmdWhisper)
+        self.add(CmdAsk)
+        self.add(CmdShout)
         self.add(CmdJunk)
         self.add(CmdItemPolicy)
         self.add(CmdNoteAdmin)

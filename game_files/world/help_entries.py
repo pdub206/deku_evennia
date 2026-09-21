@@ -1779,6 +1779,26 @@ HELP_ENTRY_DICTS = [
         """,
     },
     {
+        "key": "communication",
+        "aliases": ["say", "whisper", "ask", "shout"],
+        "category": "Communication",
+        "text": """
+            Speak in your active language with |wsay <message>|n. Characters who
+            know that language understand you; others hear garbled speech.
+
+            |wwhisper <character> <message>|n is private to a visible person in
+            your room. |wask <character> <message>|n is directed but audible to
+            everyone in the room. Both use each listener's language knowledge.
+
+            |wshout <message>|n carries to your room and rooms one open exit away.
+            A closed door blocks a shout, and signed languages cannot be shouted.
+
+            Messages are limited to 500 characters. To keep conversation readable,
+            you may author up to five speech actions in ten seconds; a shout uses
+            three of those actions.
+        """,
+    },
+    {
         "key": "change language",
         "aliases": ["change"],
         "category": "Character",

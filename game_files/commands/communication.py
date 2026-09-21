@@ -8,28 +8,66 @@ Sign language is handled separately from spoken language.
 
 from typing import Any, Sequence
 
-from evennia.commands.default.general import CmdSay as _BaseSay
-from evennia.commands.default.general import CmdWhisper as _BaseWhisper
+from commands.command import Command
 from systems.action_policy import ActionCategory
+from systems.communication import authorize, ignored_by
+from systems.doors import traversal_decision
 from systems.language import garble, hand_pronoun, is_sign_language
+from systems.visibility import target_visibility
+
+
+def _language(speaker: Any) -> tuple[str, bool]:
+    """Return the speaker's valid active language and whether it is signed."""
+    known: list[str] = speaker.db.languages or ["Common"]
+    active = speaker.db.active_language
+    if not active or active not in known:
+        active = known[0]
+        speaker.db.active_language = active
+    return active, is_sign_language(active)
+
+
+def _heard(
+    speaker: Any,
+    listener: Any,
+    speech: str,
+    *,
+    verb: str,
+    directed: Any | None = None,
+) -> str:
+    """Render speech once for a single listener in their known language."""
+    active, sign = _language(speaker)
+    label = active.lower()
+    knows = active in (listener.db.languages or ["Common"])
+    name = speaker.get_display_name(listener)
+    if directed is not None:
+        verb = f"{verb} {directed.get_display_name(listener)}"
+    if sign and not knows:
+        return f"{name} uses {hand_pronoun(speaker.db.gender or '')} hands to communicate in sign language."
+    if sign or knows:
+        return f'{name} {verb}, in {label},\n  "{speech}"'
+    return f'{name} {verb}, in an unknown language,\n  "{garble(speech)}"'
 
 
 def send_speech(
-    speaker: Any, speech: str, *, recipients: Sequence[Any] | None = None
+    speaker: Any,
+    speech: str,
+    *,
+    recipients: Sequence[Any] | None = None,
+    verb: str = "says",
+    self_verb: str = "say",
+    directed: Any | None = None,
 ) -> None:
     """Use the normal display- and language-aware spoken-message path.
 
     MOB-06 scripted speakers call this rather than constructing a separate
     dialogue channel.  ``recipients`` can narrow delivery for a directed reply.
     """
-    known: list[str] = speaker.db.languages or ["Common"]
-    active = speaker.db.active_language
-    if not active or active not in known:
-        active = known[0]
-        speaker.db.active_language = active
+    active, _ = _language(speaker)
     lang_label = active.lower()
-    sign = is_sign_language(active)
-    speaker.msg(f'You say, in {lang_label},\n  "{speech}"')
+    self_target = (
+        f" {directed.get_display_name(speaker)}" if directed is not None else ""
+    )
+    speaker.msg(f'You {self_verb}{self_target}, in {lang_label},\n  "{speech}"')
     if not speaker.location:
         return
     audience = recipients
@@ -38,23 +76,43 @@ def send_speech(
     for obj in audience:
         if obj is speaker or getattr(obj, "location", None) is not speaker.location:
             continue
-        listener_langs: list[str] = obj.db.languages or ["Common"]
-        knows = active in listener_langs
-        name = speaker.get_display_name(obj)
-        if sign:
-            if knows:
-                obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
-            else:
-                obj.msg(
-                    f"{name} uses {hand_pronoun(speaker.db.gender or '')} hands to communicate in sign language."
-                )
-        elif knows:
-            obj.msg(f'{name} says, in {lang_label},\n  "{speech}"')
-        else:
-            obj.msg(f'{name} says, in an unknown language,\n  "{garble(speech)}"')
+        if not ignored_by(obj, speaker):
+            obj.msg(_heard(speaker, obj, speech, verb=verb, directed=directed))
 
 
-class CmdSay(_BaseSay):
+def _message_error(caller: Any, reason: str) -> None:
+    """Give one safe, consistent denial for shared text/rate validation."""
+    messages = {
+        "empty": "Say what?",
+        "unsafe_text": "Your message contains unsupported control or formatting characters.",
+        "too_long": "Messages may be at most 500 characters.",
+        "rate_limited": "You are speaking too quickly. Please wait a moment.",
+    }
+    caller.msg(messages.get(reason, "You cannot communicate that right now."))
+
+
+def _visible_target(caller: Any, query: str) -> Any | None:
+    """Resolve exactly one visible co-located character without disclosure."""
+    target = caller.search(query, location=caller.location)
+    if target is None:
+        return None
+    if target is caller or not target_visibility(caller, target).visible:
+        caller.msg("You cannot find that person here.")
+        return None
+    return target
+
+
+def _direct_parts(command: Command) -> tuple[Any | None, str]:
+    """Parse the delimiter-free ``target message`` directed-speech surface."""
+    parts = command.args.strip().split(maxsplit=1)
+    if len(parts) != 2:
+        command.caller.msg(f"Usage: {command.key} <character> <message>")
+        return None, ""
+    query, raw = parts
+    return _visible_target(command.caller, query), raw
+
+
+class CmdSay(Command):
     """
     Say something aloud in your active language.
 
@@ -69,14 +127,18 @@ class CmdSay(_BaseSay):
     """
 
     action_category = ActionCategory.COMMUNICATE
+    key = "say"
+    aliases = ('"', "'")
+    locks = "cmd:all()"
+    help_category = "Communication"
 
     def func(self) -> None:
         caller = self.caller
-        if not self.args:
-            caller.msg("Say what?")
+        result = authorize(caller, self.args)
+        if not result.accepted:
+            _message_error(caller, result.reason)
             return
-
-        speech = self.args.strip()
+        speech = result.text
 
         send_speech(caller, speech)
         if caller.location:
@@ -94,11 +156,119 @@ class CmdSay(_BaseSay):
             )
 
 
-class CmdWhisper(_BaseWhisper):
+class CmdWhisper(Command):
     """Whisper privately when the shared action policy allows communication.
 
     Usage:
-      whisper <character> = <message>
+      whisper <character> <message>
     """
 
     action_category = ActionCategory.COMMUNICATE
+    key = "whisper"
+    locks = "cmd:all()"
+    help_category = "Communication"
+
+    def func(self) -> None:
+        """Deliver language-aware private speech only to a visible target."""
+        target, raw = _direct_parts(self)
+        if target is None:
+            return
+        result = authorize(self.caller, raw)
+        if not result.accepted:
+            _message_error(self.caller, result.reason)
+            return
+        if ignored_by(target, self.caller):
+            self.caller.msg("That person is unavailable.")
+            return
+        active, _sign = _language(self.caller)
+        self.caller.msg(
+            f'You whisper to {target.get_display_name(self.caller)}, in {active.lower()},\n  "{result.text}"'
+        )
+        target.msg(_heard(self.caller, target, result.text, verb="whispers"))
+
+
+class CmdAsk(Command):
+    """Ask one visible local character a question others can hear.
+
+    Usage: ask <character> <message>
+    """
+
+    key = "ask"
+    locks = "cmd:all()"
+    help_category = "Communication"
+    action_category = ActionCategory.COMMUNICATE
+
+    def func(self) -> None:
+        """Broadcast an audible directed question using listener language rules."""
+        target, raw = _direct_parts(self)
+        if target is None:
+            return
+        result = authorize(self.caller, raw)
+        if not result.accepted:
+            _message_error(self.caller, result.reason)
+            return
+        if ignored_by(target, self.caller):
+            self.caller.msg("That person is unavailable.")
+            return
+        send_speech(
+            self.caller,
+            result.text,
+            verb="asks",
+            self_verb="ask",
+            directed=target,
+        )
+        if self.caller.location:
+            from systems.mobile_specials import (SpecialEvent,
+                                                 dispatch_room_specials)
+
+            dispatch_room_specials(
+                self.caller.location,
+                SpecialEvent(
+                    "speech",
+                    actor=self.caller,
+                    text=result.text,
+                    language=self.caller.db.active_language,
+                ),
+            )
+
+
+class CmdShout(Command):
+    """Shout into this room and each room one open exit away. Usage: shout <message>"""
+
+    key = "shout"
+    locks = "cmd:all()"
+    help_category = "Communication"
+    action_category = ActionCategory.COMMUNICATE
+
+    def func(self) -> None:
+        """Deliver one-hop nonrecursive speech; signed language cannot carry."""
+        active, sign = _language(self.caller)
+        if sign:
+            self.caller.msg("You cannot shout in a signed language.")
+            return
+        result = authorize(self.caller, self.args, cost=3)
+        if not result.accepted:
+            _message_error(self.caller, result.reason)
+            return
+        room = self.caller.location
+        if room is None:
+            return
+        rooms = {room}
+        for exit_obj in room.exits:
+            if (
+                getattr(exit_obj, "destination", None) is not None
+                and traversal_decision(exit_obj).allowed
+            ):
+                rooms.add(exit_obj.destination)
+        self.caller.msg(f'You shout, in {active.lower()},\n  "{result.text}"')
+        delivered: set[int] = set()
+        for destination in rooms:
+            for listener in destination.contents_get(content_type="character"):
+                if (
+                    listener is self.caller
+                    or listener.id in delivered
+                    or ignored_by(listener, self.caller)
+                ):
+                    continue
+                delivered.add(listener.id)
+                listener.msg(_heard(self.caller, listener, result.text, verb="shouts"))
