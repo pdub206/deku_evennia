@@ -10,8 +10,10 @@ from typing import Any, Sequence
 
 from commands.command import Command, MuxCommand
 from evennia.accounts.models import AccountDB
+from evennia.utils import logger
 from systems.action_policy import ActionCategory
-from systems.communication import authorize, ignored_by
+from systems.channels import released_channels
+from systems.communication import authorize, ignored_by, normalize_text
 from systems.doors import traversal_decision
 from systems.language import garble, hand_pronoun, is_sign_language
 from systems.visibility import target_visibility
@@ -253,6 +255,218 @@ class CmdIgnore(MuxCommand):
             caller.msg(f"You no longer ignore {target.key}.")
             return
         caller.msg("Usage: ignore/add <account> or ignore/remove <account>")
+
+
+class CmdChannel(MuxCommand):
+    """Use the OOC and Newbie channels, or manage your subscriptions.
+
+    Usage:
+      channel
+      channel <OOC|Newbie> = <message>
+      channel/sub, /unsub, /mute, /unmute <OOC|Newbie>
+      channel/alias <OOC|Newbie> = <alias>
+      channel/unalias <alias>
+      channel/history <OOC|Newbie>
+      channel/who <OOC|Newbie>
+      channel/purge <OOC|Newbie>       (Admin)
+    """
+
+    key = "channel"
+    aliases = ("@channel", "@chan", "@channels")
+    switch_options = (
+        "sub",
+        "unsub",
+        "mute",
+        "unmute",
+        "alias",
+        "unalias",
+        "history",
+        "who",
+        "purge",
+        "create",
+        "destroy",
+        "rename",
+        "lock",
+        "boot",
+        "ban",
+        "unban",
+    )
+    locks = "cmd:not pperm(channel_banned)"
+    help_category = "Communication"
+    account_caller = True
+
+    def _channel(self, name: str) -> Any | None:
+        """Resolve only one of the fixed released channels and its aliases."""
+        query = name.strip().lower()
+        matches = [
+            channel
+            for channel in released_channels()
+            if query == channel.key.lower() or query in channel.aliases.all()
+        ]
+        if len(matches) != 1:
+            self.caller.msg("No released channel matches that name.")
+            return None
+        return matches[0]
+
+    def _list(self) -> None:
+        """Show fixed channels and the caller's subscription/mute state."""
+        lines = ["Released channels:"]
+        for channel in released_channels():
+            if not channel.has_connection(self.caller):
+                state = "not subscribed"
+            elif self.caller in channel.mutelist:
+                state = "muted"
+            else:
+                state = "subscribed"
+            lines.append(f"  {channel.key}: {state} — {channel.db.desc}")
+        self.caller.msg("\n".join(lines))
+
+    def _history(self, channel: Any) -> None:
+        """Show the retained plain-text history to current subscribers only."""
+        if not channel.has_connection(self.caller):
+            self.caller.msg(f"You are not subscribed to {channel.key}.")
+            return
+        history = list(channel.db.comm_history or [])
+        if not history:
+            self.caller.msg(f"There is no retained history for {channel.key}.")
+            return
+        self.caller.msg(
+            "\n".join(
+                f"[{channel.key}] {entry['sender']}: {entry['text']}"
+                for entry in history
+                if isinstance(entry, dict)
+                and isinstance(entry.get("sender"), str)
+                and isinstance(entry.get("text"), str)
+            )
+        )
+
+    def func(self) -> None:
+        """Keep channel use constrained to the released player-facing surface."""
+        switches = set(self.switches)
+        if switches & {"create", "destroy", "rename", "lock", "boot", "ban", "unban"}:
+            self.caller.msg("Channel administration is restricted to staff tools.")
+            return
+        if not self.args.strip() and not switches:
+            self._list()
+            return
+        if "unalias" in switches:
+            alias = self.args.strip()
+            if not alias:
+                self.caller.msg("Usage: channel/unalias <alias>")
+                return
+            for channel in released_channels():
+                if self.caller.nicks.has(alias, category="channel"):
+                    channel.remove_user_channel_alias(self.caller, alias)
+                    self.caller.msg(f"Removed your channel alias '{alias}'.")
+                    return
+            self.caller.msg("No such channel alias was defined.")
+            return
+        name = self.lhs.strip()
+        channel = self._channel(name)
+        if channel is None:
+            return
+        if "purge" in switches:
+            if not self.caller.check_permstring("Admin"):
+                self.caller.msg("You are not permitted to purge channel history.")
+                return
+            removed = len(channel.db.comm_history or [])
+            channel.db.comm_history = []
+            logger.log_sec(
+                f"COMM-01C channel history purged: channel={channel.key} "
+                f"count={removed} actor={self.caller.key}"
+            )
+            self.caller.msg(f"Purged {removed} retained messages from {channel.key}.")
+            return
+        if "sub" in switches:
+            if channel.has_connection(self.caller):
+                self.caller.msg(f"You are already subscribed to {channel.key}.")
+            elif channel.connect(self.caller):
+                self.caller.msg(f"You are now subscribed to {channel.key}.")
+            else:
+                self.caller.msg(f"You cannot subscribe to {channel.key}.")
+            return
+        if "unsub" in switches:
+            if channel.has_connection(self.caller) and channel.disconnect(self.caller):
+                self.caller.msg(f"You unsubscribed from {channel.key}.")
+            else:
+                self.caller.msg(f"You are not subscribed to {channel.key}.")
+            return
+        if "mute" in switches:
+            self.caller.msg(
+                f"Muted channel {channel.key}."
+                if channel.mute(self.caller)
+                else f"Channel {channel.key} is already muted."
+            )
+            return
+        if "unmute" in switches:
+            self.caller.msg(
+                f"Un-muted channel {channel.key}."
+                if channel.unmute(self.caller)
+                else f"Channel {channel.key} is not muted."
+            )
+            return
+        if "alias" in switches:
+            alias = self.rhs.strip()
+            if not alias or not channel.has_connection(self.caller):
+                self.caller.msg(
+                    "Usage: channel/alias <channel> = <alias> (while subscribed)"
+                )
+                return
+            channel.add_user_channel_alias(self.caller, alias.lower())
+            self.caller.msg(
+                f"Added/updated your alias '{alias}' for channel {channel.key}."
+            )
+            return
+        if "history" in switches:
+            self._history(channel)
+            return
+        if "who" in switches:
+            names = [account.key for account in channel.subscriptions.online()]
+            self.caller.msg(
+                f"Subscribed to {channel.key}: " + (", ".join(names) or "<None>")
+            )
+            return
+        if switches:
+            self.caller.msg(
+                "Usage: channel[/sub|unsub|mute|unmute|alias|unalias|history|who] ..."
+            )
+            return
+        if not channel.has_connection(self.caller):
+            self.caller.msg(f"You are not subscribed to {channel.key}.")
+            return
+        result = authorize(self.caller, self.rhs)
+        if not result.accepted:
+            _message_error(self.caller, result.reason)
+            return
+        if not channel.access(self.caller, "send"):
+            self.caller.msg(f"You are not allowed to send messages to {channel.key}.")
+            return
+        channel.msg(result.text, senders=self.caller)
+
+
+class CmdAnnounce(MuxCommand):
+    """Send an immediate, non-ignorable Admin announcement. Usage: announce <message>"""
+
+    key = "announce"
+    locks = "cmd:perm(Admin)"
+    help_category = "Staff"
+    account_caller = True
+
+    def func(self) -> None:
+        """Deliver a single clearly-prefixed broadcast without channel history."""
+        result = normalize_text(self.args)
+        if not result.accepted:
+            _message_error(self.caller, result.reason)
+            return
+        recipients = [
+            account for account in AccountDB.objects.all() if account.sessions.count()
+        ]
+        text = f"|r[ANNOUNCEMENT]|n {result.text}"
+        for account in recipients:
+            account.msg(text)
+        logger.log_sec(
+            f"COMM-01C announcement: actor={self.caller.key} recipients={len(recipients)}"
+        )
 
 
 class CmdSay(Command):

@@ -43,6 +43,23 @@ MAX_NR_CHARACTERS = 1
 # of them to control the account's sole character at a time.
 MULTISESSION_MODE = 2
 MAX_NR_SIMULTANEOUS_PUPPETS = 1
+# COMM-01C deliberately replaces Evennia's catch-all Public channel with the
+# two curated account channels reconciled at server start.
+BASE_CHANNEL_TYPECLASS = "typeclasses.channels.Channel"
+DEFAULT_CHANNELS = [
+    {
+        "key": "OOC",
+        "aliases": ("ooc",),
+        "desc": "Out-of-character discussion",
+        "locks": "control:perm(Admin);listen:all();send:all()",
+    },
+    {
+        "key": "Newbie",
+        "aliases": ("newbie", "new"),
+        "desc": "Questions and help for new players",
+        "locks": "control:perm(Admin);listen:all();send:all()",
+    },
+]
 CHARGEN_MENU = "world.chargen_menu"
 SERVER_SESSION_CLASS = "server.conf.serversession.ServerSession"
 

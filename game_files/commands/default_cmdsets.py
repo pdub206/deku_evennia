@@ -46,7 +46,9 @@ from commands.combat import (
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
 from commands.communication import (
+    CmdAnnounce,
     CmdAsk,
+    CmdChannel,
     CmdIgnore,
     CmdSay,
     CmdShout,
@@ -260,6 +262,10 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         # Replace Evennia's persistent/offline page command with immediate tells.
         self.add(CmdTell)
         self.add(CmdIgnore)
+        # Restrict Evennia's broad channel administration to COMM-01C's two
+        # curated account channels and add the Admin-only live broadcast.
+        self.add(CmdChannel)
+        self.add(CmdAnnounce)
         # Preserve the default command while identifying deliberate unpuppets.
         self.add(CmdOOC)
 

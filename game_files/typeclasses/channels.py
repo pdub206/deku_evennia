@@ -12,7 +12,11 @@ to be modified.
 
 """
 
+from typing import Any
+
 from evennia.comms.comms import DefaultChannel
+from evennia.utils import logger
+from systems.channels import record_history, visible_to
 
 
 class Channel(DefaultChannel):
@@ -115,4 +119,62 @@ class Channel(DefaultChannel):
 
     """
 
-    pass
+    # Database-backed bounded history replaces Evennia's unbounded log files.
+    # Empty disables file logging while still satisfying DefaultChannel's
+    # creation-time filename formatter.
+    log_file = ""
+
+    def msg(
+        self,
+        message: str,
+        senders: Any = None,
+        bypass_mute: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Deliver plain channel text while honoring mute and recipient ignore."""
+        sender_list = list(senders) if isinstance(senders, (list, tuple)) else [senders]
+        sender_list = [sender for sender in sender_list if sender is not None]
+        receivers = list(self.subscriptions.online())
+        if not bypass_mute:
+            receivers = [
+                receiver for receiver in receivers if receiver not in self.mutelist
+            ]
+        message = self.at_pre_msg(
+            message, senders=sender_list, bypass_mute=bypass_mute, **kwargs
+        )
+        if message in (None, False):
+            return
+        sender = sender_list[0] if sender_list else None
+        for receiver in receivers:
+            if sender is not None and not visible_to(receiver, sender):
+                continue
+            try:
+                received = receiver.at_pre_channel_msg(
+                    message,
+                    self,
+                    senders=sender_list,
+                    bypass_mute=bypass_mute,
+                    **kwargs,
+                )
+                if received not in (None, False):
+                    receiver.channel_msg(
+                        received,
+                        self,
+                        senders=sender_list,
+                        bypass_mute=bypass_mute,
+                        **kwargs,
+                    )
+                    receiver.at_post_channel_msg(
+                        received,
+                        self,
+                        senders=sender_list,
+                        bypass_mute=bypass_mute,
+                        **kwargs,
+                    )
+            except Exception:
+                logger.log_trace(f"Error sending channel message to {receiver}.")
+        if sender is not None:
+            record_history(self, sender, message)
+        self.at_post_msg(
+            message, senders=sender_list, bypass_mute=bypass_mute, **kwargs
+        )

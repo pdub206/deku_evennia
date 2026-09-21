@@ -1,13 +1,14 @@
 """Command-level coverage for COMM-01A local speech and COMM-01B tells."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # fmt: off
-from commands.communication import (CmdAsk, CmdIgnore, CmdSay, CmdShout,
-                                    CmdTell, CmdWhisper)
+from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
+                                    CmdSay, CmdShout, CmdTell, CmdWhisper)
 # fmt: on
 from evennia import create_object
-from evennia.comms.models import Msg
+from evennia.comms.models import ChannelDB, Msg
+from evennia.utils import create
 from evennia.utils.test_resources import EvenniaCommandTest
 
 
@@ -111,3 +112,55 @@ class TestCommunicationCommands(EvenniaCommandTest):
             f"You no longer ignore {self.account2.key}.",
             caller=self.account,
         )
+
+    def test_channel_applies_rate_ignore_and_subscription_controls(self):
+        """Released channels are account-wide, mute separately, and honor ignore."""
+        ChannelDB.objects.all().delete()
+        channel = create.create_channel(
+            "OOC",
+            typeclass="typeclasses.channels.Channel",
+            locks="listen:all();send:all()",
+        )
+        channel.connect(self.account)
+        channel.connect(self.account2)
+        self.account2.msg = MagicMock()
+        self.account2.db.ignored_account_ids = [self.account.id]
+        with patch.object(
+            channel.subscriptions, "online", return_value=[self.account, self.account2]
+        ):
+            self.call(
+                CmdChannel(),
+                "OOC = hello",
+                f"[OOC] {self.account.key}: hello",
+                caller=self.account,
+            )
+        self.account2.msg.assert_not_called()
+        self.assertEqual(
+            channel.db.comm_history[-1], {"sender": self.account.key, "text": "hello"}
+        )
+        self.call(CmdChannel(), "/mute OOC", "Muted channel OOC.", caller=self.account)
+        self.call(
+            CmdChannel(), "/unmute OOC", "Un-muted channel OOC.", caller=self.account
+        )
+        self.call(
+            CmdChannel(),
+            "/unsub OOC",
+            "You unsubscribed from OOC.",
+            caller=self.account,
+        )
+
+    def test_announce_bypasses_player_filters_and_is_not_channel_history(self):
+        """Announcements bypass player ignore/mute and never become channel text."""
+        self.account.permissions.add("Admin")
+        self.account.msg = MagicMock()
+        self.account2.msg = MagicMock()
+        with (
+            patch.object(self.account.sessions, "count", return_value=1),
+            patch.object(self.account2.sessions, "count", return_value=1),
+        ):
+            command = CmdAnnounce()
+            command.caller = self.account
+            command.args = "hello"
+            command.func()
+        self.account.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")
+        self.account2.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")

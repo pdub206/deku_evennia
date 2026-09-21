@@ -26,6 +26,19 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "channels",
+        "aliases": ["channel", "ooc", "newbie"],
+        "category": "Communication",
+        "text": """There are two account-wide chat channels: |wOOC|n for out-of-character discussion and |wNewbie|n for questions and help. Use |wOOC <message>|n or |wNewbie <message>|n to speak, or |wchannel OOC = <message>|n. Use |wchannel|n to see your subscriptions, |wchannel/sub <channel>|n or |wchannel/unsub <channel>|n to change them, and |wchannel/mute <channel>|n or |wchannel/unmute <channel>|n to silence or restore one without unsubscribing. |wchannel/history <channel>|n shows up to 200 retained messages while you are subscribed. Your ignore list suppresses a sender's channel messages independently of muting. Channels are plain out-of-character text: they do not use languages or external chat bridges.""",
+    },
+    {
+        "key": "announce",
+        "aliases": ["announcements"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins use |wannounce <message>|n for an immediate server-wide notice. It reaches every online account once, cannot be ignored or muted, and is not stored in channel history. Use news for a durable announcement.""",
+    },
+    {
         "key": "tell",
         "aliases": ["page", "reply", "ignore"],
         "category": "Communication",

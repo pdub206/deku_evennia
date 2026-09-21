@@ -17,6 +17,7 @@ at_server_cold_stop()
 
 """
 
+from systems.channels import reconcile_channels
 from systems.lifecycle import (ServerTransitionMode, prepare_server_transition,
                                recover_server_transition)
 from systems.starting_packages import log_starting_package_status
@@ -35,6 +36,7 @@ def at_server_start():
     how it was shut down.
     """
     log_starting_package_status()
+    reconcile_channels()
 
 
 def at_server_stop():
