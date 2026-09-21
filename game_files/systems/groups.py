@@ -57,6 +57,28 @@ def group_members(character: Any) -> tuple[int, ...]:
     return tuple(group["members"]) if group else ()
 
 
+def reward_roster(character: Any) -> dict[str, Any] | None:
+    """Snapshot ``character``'s current party for a combat-reward ledger.
+
+    The result contains primitives only.  It deliberately captures the registry
+    mutation sequence and member order at contribution time, rather than
+    looking up a party after the victim dies.
+    """
+    identifier = _id(character)
+    if identifier is None:
+        return None
+    state = _read()
+    found = _group_by_member(state, identifier)
+    if found is None:
+        return None
+    group_id, group = found
+    return {
+        "group_id": int(group_id),
+        "membership_sequence": state["sequence"],
+        "member_ids": tuple(group["members"]),
+    }
+
+
 def status_lines(character: Any) -> tuple[str, ...] | None:
     """Return consented, privacy-safe status rows for one current group.
 

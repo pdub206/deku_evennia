@@ -1607,7 +1607,12 @@ HELP_ENTRY_DICTS = [
             base reward is adjusted by ten percent for every level it is above
             or below you, from zero at ten levels below to double at ten levels
             above. You must be alive, conscious, and in the NPC's room when it
-            dies. The most recent eligible contributor receives the whole award.
+            dies. When that contributor was in a group at the time they first
+            contributed, the group's frozen roster shares the authored base XP
+            equally; any remainder goes to earlier joiners. Each eligible
+            member then receives their own level adjustment. Members who join
+            later, leave before the death, are unconscious, sleeping, dead, or
+            elsewhere receive no share.
 
             Player-versus-player deaths never award XP. NPC loot is simply what
             the NPC was still carrying or wearing when it died; equipment or

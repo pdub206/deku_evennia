@@ -2,6 +2,7 @@
 
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
+from systems import groups
 from systems.advancement import award_xp, initialize_level_one
 from systems.injury import apply_damage
 from systems.rewards import record_damage, reward_result
@@ -85,3 +86,48 @@ class TestCombatRewards(EvenniaTest):
         result = reward_result(injury.death_id)
         self.assertEqual(result.reason, "invalid_xp_reward")
         self.assertEqual(self.char1.stats.xp, 900)
+
+    def _group_with_char3(self):
+        """Create a same-room, equal-level party for shared-reward tests."""
+        self.char3 = create_object(
+            "typeclasses.characters.Character", key="Char3", location=self.room1
+        )
+        self.char3.db.hp_current = 20
+        self.char3.db.char_class = "Fighter"
+        self.char3.db.hit_die = 10
+        initialize_level_one(self.char3, class_key="Fighter", hp_base=10)
+        self.char3.db.hp_current = self.char3.stats.hp_max
+        award_xp(
+            self.char3, 900, source_kind="test_setup", source_id=f"{self.id()}-three"
+        )
+        self.assertTrue(groups.invite(self.char1, self.char3).accepted)
+        self.assertTrue(groups.accept(self.char3, self.char1).accepted)
+
+    def test_group_splits_frozen_roster_with_remainder_in_join_order(self):
+        """A responsible party member snapshots and splits its authored base XP."""
+        self._group_with_char3()
+        injury = apply_damage(self.char2, 10, source=self.char1, emit_messages=False)
+        result = reward_result(injury.death_id)
+
+        self.assertEqual(result.frozen_roster, (self.char1.id, self.char3.id))
+        self.assertEqual(
+            [(share.recipient_id, share.raw_xp) for share in result.shares],
+            [(self.char1.id, 6), (self.char3.id, 5)],
+        )
+        self.assertEqual(self.char1.stats.xp, 906)
+        self.assertEqual(self.char3.stats.xp, 905)
+
+    def test_late_joiner_is_not_in_the_contribution_roster(self):
+        """Joining after damage cannot turn a solo contribution into a group split."""
+        record_damage(self.char2, self.char1)
+        self._group_with_char3()
+        injury = apply_damage(
+            self.char2, 10, source=None, source_kind="environment", emit_messages=False
+        )
+        result = reward_result(injury.death_id)
+
+        self.assertEqual(result.frozen_roster, ())
+        self.assertEqual(
+            [share.recipient_id for share in result.shares], [self.char1.id]
+        )
+        self.assertEqual(self.char3.stats.xp, 900)
