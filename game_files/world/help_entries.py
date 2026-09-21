@@ -52,6 +52,12 @@ HELP_ENTRY_DICTS = [
           loot, grant permissions, or control pets.""",
     },
     {
+        "key": "assist",
+        "aliases": ["rescue"],
+        "category": "Combat",
+        "text": """Use |wassist <member>|n to join a conscious, visible group member's current fight on their side and target their opponent. It never makes an immediate attack; your normal combat readiness determines when you act. Use |wrescue <ally>|n, or |wrescue <ally> from <enemy>|n, while fighting to prepare an Athletics contest that may draw one enemy currently attacking that conscious ally to you. An ally need not be grouped. Rescue resolves on your next ready combat action; success changes only that enemy's target, and failure changes nothing else.""",
+    },
+    {
         "key": "lights",
         "aliases": ["light", "extinguish", "lamps", "fuel"],
         "category": "General",

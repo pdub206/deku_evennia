@@ -30,6 +30,7 @@ from commands.change import CmdChange
 from commands.checks import CmdCheck
 from commands.combat import (
     CmdAim,
+    CmdAssist,
     CmdAttack,
     CmdBackstab,
     CmdBash,
@@ -38,6 +39,7 @@ from commands.combat import (
     CmdConsider,
     CmdHide,
     CmdKick,
+    CmdRescue,
     CmdSteadyAim,
     CmdWimpy,
 )
@@ -204,12 +206,14 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLoadArea)
         self.add(CmdEffects)
         self.add(CmdAttack)
+        self.add(CmdAssist)
         self.add(CmdConsider)
         self.add(CmdHide)
         self.add(CmdAim)
         self.add(CmdBackstab)
         self.add(CmdBash)
         self.add(CmdKick)
+        self.add(CmdRescue)
         self.add(CmdSteadyAim)
         self.add(CmdWimpy)
         self.add(CmdCombatPrompt)

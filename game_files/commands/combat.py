@@ -5,9 +5,19 @@ from __future__ import annotations
 from commands.command import Command
 from systems.action_policy import ActionCategory
 from systems.attacks import can_attack
-from systems.combat import get_target, schedule_tactical_action, start_fight
-from systems.combat_controls import (estimate_threat, set_combat_prompt,
-                                     set_combat_verbose, set_wimpy)
+from systems.combat import (
+    assist_fight,
+    combat_opponents,
+    get_target,
+    schedule_tactical_action,
+    start_fight,
+)
+from systems.combat_controls import (
+    estimate_threat,
+    set_combat_prompt,
+    set_combat_verbose,
+    set_wimpy,
+)
 from systems.equipment import HIT_LOCATIONS
 from systems.injury import InjuryError, InjuryState, injury_record
 
@@ -60,6 +70,106 @@ class CmdAttack(Command):
             )
             return
         self.caller.msg(f"You begin fighting {target.get_display_name(self.caller)}.")
+
+
+class CmdAssist(Command):
+    """Join a visible group member's side of their current fight.
+
+    Usage: assist <member>
+    """
+
+    key = "assist"
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Require party consent before delegating atomic side placement."""
+        if not self.args.strip():
+            self.caller.msg("Assist whom?")
+            return
+        member = self.caller.search(self.args.strip(), location=self.caller.location)
+        if member is None:
+            return
+        from systems.groups import are_allied
+        from systems.injury import InjuryError, InjuryState, injury_record
+
+        try:
+            conscious = (
+                injury_record(self.caller).state is InjuryState.CONSCIOUS
+                and injury_record(member).state is InjuryState.CONSCIOUS
+            )
+        except InjuryError:
+            conscious = False
+        if not are_allied(self.caller, member) or not conscious:
+            self.caller.msg("You can only assist a conscious group member here.")
+            return
+        result = assist_fight(self.caller, member)
+        if not result.accepted:
+            self.caller.msg("You cannot assist that member's fight right now.")
+            return
+        self.caller.msg(f"You assist {member.get_display_name(self.caller)}.")
+
+
+class CmdRescue(Command):
+    """Queue a contest to draw one enemy away from an ally.
+
+    Usage: rescue <ally> [from <enemy>]
+    """
+
+    key = "rescue"
+    help_category = "Combat"
+    action_category = ActionCategory.COMBAT
+
+    def func(self) -> None:
+        """Choose one currently focused enemy, then store primitive ids only."""
+        ally_text, marker, enemy_text = self.args.strip().partition(" from ")
+        if not ally_text or (marker and not enemy_text):
+            self.caller.msg("Usage: rescue <ally> [from <enemy>]")
+            return
+        ally = self.caller.search(ally_text, location=self.caller.location)
+        if ally is None:
+            return
+        from systems.injury import InjuryError, InjuryState, injury_record
+
+        try:
+            if any(
+                injury_record(character).state is not InjuryState.CONSCIOUS
+                for character in (self.caller, ally)
+            ):
+                self.caller.msg("You and the ally must be conscious to rescue.")
+                return
+        except InjuryError:
+            self.caller.msg("You cannot prepare a rescue right now.")
+            return
+        enemies = [
+            enemy
+            for enemy in combat_opponents(self.caller)
+            if get_target(enemy) is ally
+        ]
+        if marker:
+            enemy = self.caller.search(enemy_text, location=self.caller.location)
+            if enemy not in enemies:
+                self.caller.msg("That enemy is not targeting that ally.")
+                return
+        elif enemies:
+            enemy = min(enemies, key=lambda value: value.id)
+        else:
+            self.caller.msg("No enemy is targeting that ally.")
+            return
+        try:
+            if injury_record(enemy).state is not InjuryState.CONSCIOUS:
+                self.caller.msg("That enemy cannot be rescued from right now.")
+                return
+        except InjuryError:
+            self.caller.msg("You cannot prepare a rescue right now.")
+            return
+        result = schedule_tactical_action(
+            self.caller, "rescue", enemy, protected=ally.id
+        )
+        if not result.accepted:
+            self.caller.msg("You cannot prepare a rescue right now.")
+            return
+        self.caller.msg(f"You prepare to rescue {ally.get_display_name(self.caller)}.")
 
 
 class CmdHide(Command):

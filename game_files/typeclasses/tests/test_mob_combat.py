@@ -6,7 +6,14 @@ from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.attacks import AttackOutcome, AttackResult, can_attack
-from systems.combat import COMBAT_CONFIG_KEY, get_target, is_fighting, start_fight
+from systems.combat import (
+    COMBAT_CONFIG_KEY,
+    _participant_sides,
+    _read_state,
+    get_target,
+    is_fighting,
+    start_fight,
+)
 from systems.injury import apply_damage
 from systems.mob_combat import (
     MOB_COMBAT_STATE_ATTRIBUTE,
@@ -14,8 +21,8 @@ from systems.mob_combat import (
     default_combat_profile,
     reconcile_mob_wimpy,
     resolve_mob_combat_action,
-    set_combat_profile,
     select_combat_target,
+    set_combat_profile,
     validate_combat_profile,
 )
 from systems.pulses import PulseEvent, PulseLane
@@ -72,6 +79,25 @@ class TestMobCombat(EvenniaTest):
 
         self.assertIs(get_target(self.npc), self.target)
         self.assertIs(attack.call_args.args[1], self.target)
+
+    def test_group_ally_joins_its_member_side_and_mobile_keeps_rescue_focus(self):
+        """Group affinity affects enrollment, while current remains the only AI focus."""
+        from systems import groups
+
+        self.assertTrue(groups.invite(self.target, self.other).accepted)
+        self.assertTrue(groups.accept(self.other, self.target).accepted)
+        start_fight(self.npc, self.target)
+
+        joined = start_fight(self.other, self.npc)
+        encounter = _read_state()["encounters"][str(joined.encounter_id)]
+        sides = _participant_sides(encounter)
+
+        self.assertEqual(sides[self.target.id], sides[self.other.id])
+        self.assertIs(get_target(self.other), self.npc)
+        self.assertIs(
+            select_combat_target(self.npc, self.target, combat_profile(self.npc)),
+            self.target,
+        )
 
     def test_illegal_tactic_falls_back_to_one_basic_attack(self):
         start_fight(self.npc, self.target)
