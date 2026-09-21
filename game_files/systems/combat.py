@@ -1058,12 +1058,14 @@ def _side_for_join(
     must never rewrite a persisted encounter side.
     """
     sides = _participant_sides(encounter)
-    allied_sides = {
-        sides[participant_id]
+    affinities = tuple(
+        (sides[participant_id], _group_side_affinity(joining, participant))
         for participant_id in sides
         if (participant := _get_character(participant_id)) is not None
-        and _group_side_allies(joining, participant)
-    }
+    )
+    if any(affinity is None for _, affinity in affinities):
+        return None
+    allied_sides = {side for side, affinity in affinities if affinity}
     if len(allied_sides) > 1:
         return None
     if allied_sides:
@@ -1071,9 +1073,9 @@ def _side_for_join(
     return _opposing_side(encounter, opposed_to)
 
 
-def _group_side_allies(first: Any, second: Any) -> bool:
+def _group_side_affinity(first: Any, second: Any) -> bool | None:
     """Read GROUP-02 affinity for PCs and their responsible creatures only."""
-    from systems.groups import are_allied
+    from systems.groups import combat_affinity
     from systems.mobile_relationships import responsible_pc_id
 
     def principal(character: Any) -> Any | None:
@@ -1084,14 +1086,11 @@ def _group_side_allies(first: Any, second: Any) -> bool:
         return character if player is None or bool(player) else None
 
     first_principal, second_principal = principal(first), principal(second)
-    return (
-        first_principal is not None
-        and second_principal is not None
-        and (
-            first_principal.id == second_principal.id
-            or are_allied(first_principal, second_principal)
-        )
-    )
+    if first_principal is None or second_principal is None:
+        return False
+    if first_principal.id == second_principal.id:
+        return True
+    return combat_affinity(first_principal, second_principal)
 
 
 def _has_group_side_conflict(
@@ -1100,11 +1099,16 @@ def _has_group_side_conflict(
     """Fail closed when current group affinity contradicts persisted sides."""
     participant_ids = sorted(sides)
     return any(
-        _group_side_allies(_get_character(first), _get_character(second))
-        and sides[first] != sides[second]
+        affinity is None or (affinity and sides[first] != sides[second])
         for index, first in enumerate(participant_ids)
         for second in participant_ids[index + 1 :]
         if _get_character(first) is not None and _get_character(second) is not None
+        if (
+            affinity := _group_side_affinity(
+                _get_character(first), _get_character(second)
+            )
+        )
+        is not False
     )
 
 
@@ -1124,7 +1128,7 @@ def _can_target(encounter: Mapping[str, Any], actor_id: int, target_id: int) -> 
     return (
         actor is not None
         and target is not None
-        and not _group_side_allies(actor, target)
+        and _group_side_affinity(actor, target) is False
     )
 
 

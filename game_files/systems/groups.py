@@ -118,6 +118,25 @@ def are_allied(first: Any, second: Any) -> bool:
     )
 
 
+def combat_affinity(first: Any, second: Any) -> bool | None:
+    """Return same-group affinity, or ``None`` when registry data is unsafe.
+
+    Combat uses this side-effect-free tri-state reader to fail closed rather
+    than treating malformed durable membership as permission to attack.
+    """
+    first_id, second_id = _id(first), _id(second)
+    if first_id is None or second_id is None:
+        return False
+    raw = ServerConfig.objects.conf(GROUP_CONFIG_KEY)
+    if raw is not None and not _valid(raw):
+        return None
+    state = _initial() if raw is None else raw
+    return any(
+        first_id in group["members"] and second_id in group["members"]
+        for group in state["groups"].values()
+    )
+
+
 def invite(leader: Any, target: Any) -> GroupOutcome:
     """Create or replace one same-room invitation from a party leader."""
     with transaction.atomic():
