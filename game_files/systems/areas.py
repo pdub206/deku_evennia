@@ -33,6 +33,7 @@ from typing import Any
 
 from django.conf import settings
 from evennia import create_object
+from evennia.prototypes.prototypes import search_prototype
 from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
@@ -83,12 +84,16 @@ MANIFEST_FIELDS = frozenset(
         "rooms",
         "exits",
         "mobiles",
+        "objects",
     }
 )
 MAX_MANIFEST_TEXT_LENGTH = 2_000
 MAX_MANIFEST_COLLECTION_SIZE = 2_000
 MAX_MANIFEST_DEPTH = 20
 MAX_LIFESPAN_PULSES = 1_000_000
+MAX_OBJECT_CONTENT_DEPTH = 10
+MAX_OBJECT_CHILDREN = 100
+MAX_OBJECT_QUANTITY = 100
 
 
 class AreaManifestError(ValueError):
@@ -156,6 +161,9 @@ def validate_area_manifest(manifest: object) -> dict[str, Any]:
         raise
     if not isinstance(data, dict):
         raise AreaManifestError("Manifest must be a mapping.")
+    # AREA-01A/B manifests predate object placements. Their empty default is
+    # deliberately migration-compatible rather than an implicit live reset.
+    data.setdefault("objects", {})
     unknown = set(data) - MANIFEST_FIELDS
     missing = MANIFEST_FIELDS - set(data)
     if unknown:
@@ -203,6 +211,8 @@ def validate_area_manifest(manifest: object) -> dict[str, Any]:
         raise AreaManifestError("Manifest rooms and exits have invalid section types.")
     if not isinstance(data["mobiles"], list):
         raise AreaManifestError("Manifest mobiles has an invalid section type.")
+    if not isinstance(data["objects"], dict):
+        raise AreaManifestError("Manifest objects has an invalid section type.")
     _validate_area_records(data)
     return data
 
@@ -231,6 +241,7 @@ def build_area_manifest(area_slug: str) -> dict[str, Any]:
             "rooms": rooms,
             "exits": exits,
             "mobiles": [],
+            "objects": {},
         }
     )
 
@@ -601,6 +612,170 @@ def _validate_area_records(data: dict[str, Any]) -> None:
         validate_area_exit_doors(pair_entries)
     except DoorError as err:
         raise AreaManifestError("Manifest has invalid paired doors.") from err
+    _validate_manifest_mobile_placements(data)
+    _validate_manifest_object_placements(data)
+
+
+def _validate_manifest_mobile_placements(data: dict[str, Any]) -> None:
+    """Keep AREA-01C mobile records exactly on MOB-05's placement contract."""
+    from systems.mob_spawning import MobileSpawnError, validate_mobile_placement
+
+    seen: set[str] = set()
+    for placement in data["mobiles"]:
+        try:
+            validated = validate_mobile_placement(placement, area_key=data["key"])
+        except MobileSpawnError as err:
+            raise AreaManifestError(
+                "Manifest has an invalid mobile placement."
+            ) from err
+        if validated.placement_key in seen or validated.room_key not in data["rooms"]:
+            raise AreaManifestError(
+                "Manifest mobile placements need unique known rooms."
+            )
+        seen.add(validated.placement_key)
+        _validate_mobile_prototype_services(validated.prototype_key)
+
+
+def _prototype_for_kind(
+    prototype_key: str, typeclass: str, label: str
+) -> dict[str, Any]:
+    """Return one exact source prototype of the required non-executable kind."""
+    _slug(prototype_key, f"{label} prototype key")
+    matches = [
+        prototype
+        for prototype in search_prototype(prototype_key)
+        if prototype.get("prototype_key") == prototype_key
+    ]
+    if len(matches) != 1 or matches[0].get("typeclass") != typeclass:
+        raise AreaManifestError(
+            f"{label.title()} prototype is missing, ambiguous, or wrong-kind."
+        )
+    return matches[0]
+
+
+def _prototype_attributes(prototype: dict[str, Any]) -> dict[str, Any]:
+    """Read only literal prototype attributes for service validation."""
+    # Evennia accepts both direct prototype keys and its serialized ``attrs``
+    # form; builders may have authored either, so neither can bypass checks.
+    attributes = {
+        key: prototype[key]
+        for key in (
+            "mobile_policy",
+            "mobile_specials",
+            "mobile_behavior_profile",
+            "trainer_profile",
+        )
+        if key in prototype
+    }
+    for entry in prototype.get("attrs", []):
+        if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+            raise AreaManifestError("Prototype attributes are malformed.")
+        attributes[entry[0]] = entry[1]
+    return attributes
+
+
+def _validate_mobile_prototype_services(prototype_key: str) -> None:
+    """Validate services on an NPC prototype without granting area-side behavior."""
+    from systems.mob_spawning import NPC_TYPECLASS
+    from systems.mobile_policy import default_mobile_policy, validate_mobile_policy
+    from systems.mobile_specials import (
+        default_mobile_specials,
+        validate_mobile_specials,
+    )
+    from systems.mobiles import initial_mobile_state
+    from systems.training import validate_trainer_profile
+
+    prototype = _prototype_for_kind(prototype_key, NPC_TYPECLASS, "mobile")
+    attributes = _prototype_attributes(prototype)
+    try:
+        validate_mobile_policy(attributes.get("mobile_policy", default_mobile_policy()))
+        validate_mobile_specials(
+            attributes.get("mobile_specials", default_mobile_specials())
+        )
+        initial_mobile_state(attributes.get("mobile_behavior_profile", "idle"))
+        if attributes.get("trainer_profile") is not None:
+            validate_trainer_profile(attributes["trainer_profile"])
+    except ValueError as err:
+        raise AreaManifestError("Mobile prototype has invalid service data.") from err
+
+
+def _validate_manifest_object_placements(data: dict[str, Any]) -> None:
+    """Validate bounded, rooted item trees without materializing any objects."""
+    seen: set[str] = set()
+    for placement_key, placement in data["objects"].items():
+        _slug(placement_key, "object placement key")
+        if placement_key in seen:
+            raise AreaManifestError("Object placement keys must be unique.")
+        seen.add(placement_key)
+        if not isinstance(placement, dict) or set(placement) != {
+            "room_key",
+            "prototype_key",
+            "desired",
+            "room_max",
+            "area_max",
+            "contents",
+        }:
+            raise AreaManifestError(
+                f"Object placement '{placement_key}' has an invalid schema."
+            )
+        if placement["room_key"] not in data["rooms"]:
+            raise AreaManifestError(
+                f"Object placement '{placement_key}' has an unknown room."
+            )
+        for field in ("desired", "room_max", "area_max"):
+            value = placement[field]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or not 0 <= value <= MAX_OBJECT_QUANTITY
+            ):
+                raise AreaManifestError(
+                    f"Object placement '{placement_key}' has an invalid {field}."
+                )
+        if (
+            placement["desired"] > placement["room_max"]
+            or placement["desired"] > placement["area_max"]
+        ):
+            raise AreaManifestError(
+                f"Object placement '{placement_key}' exceeds a ceiling."
+            )
+        _prototype_for_kind(
+            placement["prototype_key"], settings.BASE_OBJECT_TYPECLASS, "item"
+        )
+        contents = placement["contents"]
+        if not isinstance(contents, list) or len(contents) > MAX_OBJECT_CHILDREN:
+            raise AreaManifestError("Object contents must be a bounded list.")
+        for child in contents:
+            _validate_object_node(child, ancestors=(placement["prototype_key"],))
+
+
+def _validate_object_node(node: Any, *, ancestors: tuple[str, ...]) -> None:
+    """Validate one nested authored item node and prohibit recursive prototypes."""
+    if not isinstance(node, dict) or set(node) != {
+        "prototype_key",
+        "quantity",
+        "contents",
+    }:
+        raise AreaManifestError("Object contents have an invalid schema.")
+    prototype_key, quantity = node["prototype_key"], node["quantity"]
+    if (
+        isinstance(quantity, bool)
+        or not isinstance(quantity, int)
+        or not 1 <= quantity <= MAX_OBJECT_QUANTITY
+    ):
+        raise AreaManifestError(
+            "Object content quantity is outside its supported range."
+        )
+    if prototype_key in ancestors or len(ancestors) >= MAX_OBJECT_CONTENT_DEPTH:
+        raise AreaManifestError(
+            "Object contents contain a cycle or exceed nesting depth."
+        )
+    _prototype_for_kind(prototype_key, settings.BASE_OBJECT_TYPECLASS, "item")
+    children = node["contents"]
+    if not isinstance(children, list) or len(children) > MAX_OBJECT_CHILDREN:
+        raise AreaManifestError("Object contents must be a bounded list.")
+    for child in children:
+        _validate_object_node(child, ancestors=(*ancestors, prototype_key))
 
 
 def _areas_dir() -> str:
@@ -756,9 +931,11 @@ def load_area_data(
         # create an NPC, then uses a stable load token to keep repeated loads
         # from duplicating successful copies. AREA-03 later supplies reset
         # tokens for recurring reconciliation.
-        from systems.mob_spawning import (MobileSpawnError,
-                                          reconcile_mobile_placement,
-                                          validate_mobile_placements)
+        from systems.mob_spawning import (
+            MobileSpawnError,
+            reconcile_mobile_placement,
+            validate_mobile_placements,
+        )
 
         try:
             placements = validate_mobile_placements(area_slug, mobiles, key_to_room)

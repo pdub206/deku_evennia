@@ -2364,6 +2364,18 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
             stale reference. An external target must be managed by its own area;
             it is not a dbref. A door with no |wpair_key|n is a legal one-way
             door. A paired local door needs matching reciprocal sides.
+
+            ## Placements
+
+            Area manifests may declare named mobile and loose-item root
+            placements. A root names its room and source prototype plus desired,
+            room, and area counts. Item roots may contain a bounded tree of item
+            prototype quantities; children are contents, not separately reset
+            placements. NPC inventory, equipment, shops, trainers, schedules,
+            loot, and special behavior remain on the NPC prototype. Area data
+            never contains |wgive|n, |wequip|n, commands, scripts, or callable
+            behavior. Placement records are validated source data; AREA-03 later
+            owns when missing roots are created.
         """,
     },
     {

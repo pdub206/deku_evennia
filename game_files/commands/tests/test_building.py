@@ -507,6 +507,112 @@ class TestAreaManifestRecords(EvenniaCommandTest):
         )
         self.assertIsNone(north_record["door"]["pair_key"])
 
+    def test_mobile_and_object_placements_validate_without_reset_side_effects(self):
+        save_prototype(
+            {
+                "prototype_key": "area01c_item",
+                "key": "AREA-01C item",
+                "typeclass": settings.BASE_OBJECT_TYPECLASS,
+            }
+        )
+        save_prototype(
+            {
+                "prototype_key": "area01c_child",
+                "key": "AREA-01C child",
+                "typeclass": settings.BASE_OBJECT_TYPECLASS,
+            }
+        )
+        save_prototype(
+            {
+                "prototype_key": "area01c_mobile",
+                "key": "AREA-01C mobile",
+                "typeclass": "typeclasses.characters.Character",
+                "is_player_character": False,
+                "mobile_behavior_profile": "idle",
+            }
+        )
+        manifest = {
+            "key": "placement_area",
+            "display_name": "Placement Area",
+            "schema_version": 1,
+            "dependencies": [],
+            "credits": [],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 0,
+            "rooms": {
+                "entry": {
+                    "name": "Entry",
+                    "description": "",
+                    "extra_descriptions": [],
+                    "sector": "inside",
+                    "policy": {},
+                    "environment": {},
+                    "weather_profile": None,
+                }
+            },
+            "exits": {},
+            "mobiles": [
+                {
+                    "area_key": "placement_area",
+                    "room_key": "entry",
+                    "placement_key": "entry_mobile",
+                    "prototype_key": "area01c_mobile",
+                    "desired": 1,
+                    "room_max": 1,
+                    "area_max": 1,
+                }
+            ],
+            "objects": {
+                "entry_cache": {
+                    "room_key": "entry",
+                    "prototype_key": "area01c_item",
+                    "desired": 1,
+                    "room_max": 2,
+                    "area_max": 2,
+                    "contents": [
+                        {
+                            "prototype_key": "area01c_child",
+                            "quantity": 2,
+                            "contents": [],
+                        }
+                    ],
+                }
+            },
+        }
+        self.assertEqual(
+            validate_area_manifest(manifest)["objects"], manifest["objects"]
+        )
+
+        duplicate_mobile = dict(manifest)
+        duplicate_mobile["mobiles"] = manifest["mobiles"] * 2
+        with self.assertRaises(AreaManifestError):
+            validate_area_manifest(duplicate_mobile)
+        wrong_item = dict(manifest)
+        wrong_item["objects"] = {
+            "entry_cache": {
+                **manifest["objects"]["entry_cache"],
+                "prototype_key": "area01c_mobile",
+            }
+        }
+        with self.assertRaises(AreaManifestError):
+            validate_area_manifest(wrong_item)
+        cyclic = dict(manifest)
+        cyclic["objects"] = {
+            "entry_cache": {
+                **manifest["objects"]["entry_cache"],
+                "contents": [
+                    {
+                        "prototype_key": "area01c_item",
+                        "quantity": 1,
+                        "contents": [],
+                    }
+                ],
+            }
+        }
+        with self.assertRaises(AreaManifestError):
+            validate_area_manifest(cyclic)
+
 
 class TestEditExitRedirect(EvenniaCommandTest):
     """'edit <direction>' binds the room the exit leads to, not the exit."""
