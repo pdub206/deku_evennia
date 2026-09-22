@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+from commands.boards import CmdBoard
+from commands.boards import _editor_quit as board_editor_quit
 # fmt: off
 from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
                                     CmdMail, CmdSay, CmdShout, CmdTell,
@@ -165,6 +167,41 @@ class TestCommunicationCommands(EvenniaCommandTest):
         denied = send(self.account, self.account2, "Another", "Body")
         self.assertFalse(denied.accepted)
         self.assertEqual(denied.reason, "unavailable")
+
+    def test_board_posts_through_editor_and_read_advances_high_water(self):
+        """COMM-03B posts the editor body with local numbering and public reads."""
+        command = CmdBoard()
+        command.caller = self.account
+        command.switches = ["post"]
+        command.args = "general A subject"
+        with patch("commands.boards.EvEditor") as editor:
+            command.func()
+        editor.assert_called_once()
+        self.account.ndb._eveditor = MagicMock(_buffer="A board\nbody.")
+        board_editor_quit(self.account)
+        from systems.boards import posts
+
+        message = posts("general")[0]
+        self.assertEqual(message.header, "A subject")
+        self.call(
+            CmdBoard(),
+            "/read general 1",
+            "General #1 by %s: A subject\n\nA board\nbody." % self.account.key,
+            caller=self.account2,
+        )
+        self.assertEqual(self.account2.db.board_read_high_water, {"general": 1})
+
+    def test_board_news_is_admin_only_and_general_author_can_remove(self):
+        """News and moderation remain Admin-only while authors own general removal."""
+        from systems.boards import post, posts
+
+        self.assertFalse(post(self.account2, "news", "No", "Body").accepted)
+        posted = post(self.account2, "general", "Mine", "Body")
+        self.assertTrue(posted.accepted)
+        self.call(
+            CmdBoard(), "/remove general 1", "Post removed.", caller=self.account2
+        )
+        self.assertEqual(posts("general"), [])
 
     def test_channel_applies_rate_ignore_and_subscription_controls(self):
         """Released channels are account-wide, mute separately, and honor ignore."""

@@ -236,6 +236,7 @@ class GamePulseScript(Script):
 
     def at_objects_pulse(self, event: PulseEvent) -> None:
         """Advance object upkeep and purge mail past its post-deletion retention."""
+        from systems.boards import purge_expired as purge_expired_boards
         from systems.item_decay import process_decay_pulse
         from systems.item_resources import process_object_pulse
         from systems.mail import purge_expired
@@ -249,3 +250,4 @@ class GamePulseScript(Script):
                 process_decay_pulse(event)
             finally:
                 purge_expired()
+                purge_expired_boards()

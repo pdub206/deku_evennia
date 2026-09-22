@@ -16,6 +16,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
+from commands.boards import CmdBoard
 from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
                                CmdMobile, CmdNpcs, CmdRooms, CmdSpawn)
 from commands.change import CmdChange
@@ -216,6 +217,7 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         self.add(CmdTell)
         self.add(CmdIgnore)
         self.add(CmdMail)
+        self.add(CmdBoard)
         # Restrict Evennia's broad channel administration to COMM-01C's two
         # curated account channels and add the Admin-only live broadcast.
         self.add(CmdChannel)

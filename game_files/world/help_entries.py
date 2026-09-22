@@ -58,6 +58,19 @@ HELP_ENTRY_DICTS = [
         "text": """Admins may remove abusive durable mail with |wmail/moderate <number> = <reason>|n. A non-empty reason is required and the action is written to the server audit log. Builders and group leaders have no mail moderation access.""",
     },
     {
+        "key": "board",
+        "aliases": ["boards", "general", "news"],
+        "category": "Communication",
+        "text": """There are two public account boards: |wgeneral|n and |wnews|n. Use |wboard|n or |wboard general|n to list general posts, |wboard news|n for news, and add a page number to see another 20-post page. |wboard/read <board> <number>|n opens a post; reading advances your unread marker for that board and all older posts.\n\nUse |wboard/post general <subject>|n to start a general post. It opens the text editor; exiting the editor posts its body. Subjects are limited to 80 characters and bodies to 4,000 plain-text characters. General can be temporarily closed to new posts, but both boards always remain readable. Only Admins post news. A general-post author may use |wboard/remove general <number>|n to remove their own post. Posts are public: ignoring an author does not hide or renumber them.""",
+    },
+    {
+        "key": "board moderation",
+        "aliases": ["board remove", "board pin"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins may remove any post with |wboard/remove <board> <number> = <reason>|n, pin or unpin a news post with |wboard/pin <number> = <reason>|n or |wboard/unpin <number> = <reason>|n, and control general posting with |wboard/open = <reason>|n or |wboard/close = <reason>|n. Every moderation action requires a reason and is audit-logged. Builders and group leaders gain no board moderation access.""",
+    },
+    {
         "key": "group",
         "aliases": ["party", "groups"],
         "category": "Character",
