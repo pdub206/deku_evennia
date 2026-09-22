@@ -33,6 +33,10 @@ from evennia.settings_default import *
 
 # This is the name of your game. Make it catchy!
 SERVERNAME = "game"
+# COMM-04A records this configured deployment label, never environment details.
+# Production deployments should override it in secret_settings.py or deployment
+# configuration with a release identifier such as ``2026.09.21``.
+GAME_BUILD_ID = "development"
 
 # Character creation: new accounts go to OOC screen; charcreate runs the EvMenu wizard.
 # Account #1 (superuser) still gets a character via initial_setup.py regardless of this flag.

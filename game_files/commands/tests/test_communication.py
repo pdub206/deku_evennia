@@ -8,12 +8,14 @@ from commands.boards import _editor_quit as board_editor_quit
 from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
                                     CmdMail, CmdSay, CmdShout, CmdTell,
                                     CmdWhisper, _mail_editor_quit)
+from commands.reports import CmdReport
 from commands.socials import CmdSocial, CmdSocials
 # fmt: on
 from evennia import create_object
 from evennia.comms.models import ChannelDB, Msg
 from evennia.utils import create
 from evennia.utils.test_resources import EvenniaCommandTest
+from systems.reports import ReportResult
 from systems.socials import SOCIALS
 
 
@@ -254,6 +256,25 @@ class TestCommunicationCommands(EvenniaCommandTest):
             command.func()
         self.account.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")
         self.account2.msg.assert_called_once_with("|r[ANNOUNCEMENT]|n hello")
+
+    def test_report_commands_are_account_scoped_and_acknowledge_only_id_status(self):
+        """Bug, typo, and idea remain available OOC and reveal no saved context."""
+        with patch(
+            "commands.reports.submit",
+            return_value=ReportResult(True, "ok", "safe-report-id", "submitted"),
+        ):
+            self.call(
+                CmdReport(),
+                "The gate description has a spelling error.",
+                "Report #safe-report-id submitted.",
+                caller=self.account,
+            )
+        self.call(
+            CmdReport(),
+            "short",
+            "Reports need 10–2,000 characters of plain text.",
+            caller=self.account,
+        )
 
 
 class TestSocialCommands(EvenniaCommandTest):

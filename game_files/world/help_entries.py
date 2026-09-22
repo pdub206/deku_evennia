@@ -71,6 +71,12 @@ HELP_ENTRY_DICTS = [
         "text": """Admins may remove any post with |wboard/remove <board> <number> = <reason>|n, pin or unpin a news post with |wboard/pin <number> = <reason>|n or |wboard/unpin <number> = <reason>|n, and control general posting with |wboard/open = <reason>|n or |wboard/close = <reason>|n. Every moderation action requires a reason and is audit-logged. Builders and group leaders gain no board moderation access.""",
     },
     {
+        "key": "reports",
+        "aliases": ["bug", "typo", "idea", "report"],
+        "category": "Communication",
+        "text": """Use |wbug <text>|n, |wtypo <text>|n, or |widea <text>|n to send staff a durable report. Reports must contain 10 to 2,000 characters of plain text. Your confirmation gives a report number, but does not reveal staff notes or internal diagnostics. You may submit up to three reports in ten minutes and keep up to 20 unresolved reports. Reports work while you are OOC; when you are playing, the game saves only a safe snapshot of your current character and location to help staff investigate.""",
+    },
+    {
         "key": "group",
         "aliases": ["party", "groups"],
         "category": "Character",
