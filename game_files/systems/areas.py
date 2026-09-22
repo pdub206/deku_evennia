@@ -20,9 +20,15 @@ Rooms carry two bookkeeping tags so this round-trips idempotently:
   DIKU vnum), unique within the area.
 """
 
+import ast
+import hashlib
+import importlib.util
+import json
+import math
 import os
 from dataclasses import asdict
 from pprint import pformat
+from typing import Any
 
 from django.conf import settings
 from evennia import create_object
@@ -49,6 +55,170 @@ from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
 ROOM_KEY_CATEGORY = "room_key"
+
+# AREA-01A is deliberately a small envelope around the legacy room graph.  The
+# later AREA-01 packages own the detailed records, but every tracked area now
+# has one safe, versioned boundary rather than a collection of module globals.
+MANIFEST_VERSION = 1
+MANIFEST_FIELDS = frozenset(
+    {
+        "key",
+        "display_name",
+        "schema_version",
+        "dependencies",
+        "credits",
+        "srd_references",
+        "reset_policy",
+        "lifespan_pulses",
+        "rooms",
+        "exits",
+        "mobiles",
+    }
+)
+MAX_MANIFEST_TEXT_LENGTH = 2_000
+MAX_MANIFEST_COLLECTION_SIZE = 2_000
+MAX_MANIFEST_DEPTH = 20
+MAX_LIFESPAN_PULSES = 1_000_000
+
+
+class AreaManifestError(ValueError):
+    """A tracked area manifest is malformed, unsafe, or unsupported."""
+
+
+def _normalize_data(value: Any) -> Any:
+    """Return a JSON-like copy, rejecting live objects and executable values."""
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise AreaManifestError("Manifest numbers must be finite.")
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_normalize_data(item) for item in value]
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise AreaManifestError("Manifest mapping keys must be strings.")
+        return {key: _normalize_data(item) for key, item in value.items()}
+    raise AreaManifestError("Manifest data may contain only primitive values.")
+
+
+def _check_bounds(value: Any, depth: int = 0) -> None:
+    """Enforce bounded text, nesting, and collections on normalized data."""
+    if depth > MAX_MANIFEST_DEPTH:
+        raise AreaManifestError("Manifest nesting exceeds its maximum depth.")
+    if isinstance(value, str):
+        if len(value) > MAX_MANIFEST_TEXT_LENGTH:
+            raise AreaManifestError("Manifest text exceeds its maximum length.")
+    elif isinstance(value, list):
+        if len(value) > MAX_MANIFEST_COLLECTION_SIZE:
+            raise AreaManifestError("Manifest collection exceeds its maximum size.")
+        for item in value:
+            _check_bounds(item, depth + 1)
+    elif isinstance(value, dict):
+        if len(value) > MAX_MANIFEST_COLLECTION_SIZE:
+            raise AreaManifestError("Manifest collection exceeds its maximum size.")
+        for key, item in value.items():
+            _check_bounds(key, depth + 1)
+            _check_bounds(item, depth + 1)
+
+
+def _slug(value: object, field: str) -> str:
+    """Validate one existing-style slug without silently changing authored data."""
+    if not isinstance(value, str):
+        raise AreaManifestError(f"Manifest {field} must be a slug.")
+    try:
+        if as_slug(value) != value:
+            raise AreaManifestError(f"Manifest {field} must be a normalized slug.")
+    except ValueError as err:
+        raise AreaManifestError(f"Manifest {field} must be a slug.") from err
+    return value
+
+
+def validate_area_manifest(manifest: object) -> dict[str, Any]:
+    """Validate and normalize a version-one, data-only area manifest."""
+    try:
+        data = _normalize_data(manifest)
+    except AreaManifestError:
+        raise
+    if not isinstance(data, dict):
+        raise AreaManifestError("Manifest must be a mapping.")
+    unknown = set(data) - MANIFEST_FIELDS
+    missing = MANIFEST_FIELDS - set(data)
+    if unknown:
+        raise AreaManifestError(
+            f"Manifest has unknown fields: {', '.join(sorted(unknown))}."
+        )
+    if missing:
+        raise AreaManifestError(
+            f"Manifest is missing fields: {', '.join(sorted(missing))}."
+        )
+    _check_bounds(data)
+    _slug(data["key"], "key")
+    if not isinstance(data["display_name"], str) or not data["display_name"].strip():
+        raise AreaManifestError("Manifest display_name must be non-empty text.")
+    if data["schema_version"] != MANIFEST_VERSION:
+        raise AreaManifestError(
+            f"Unsupported area manifest version: {data['schema_version']!r}."
+        )
+    for field in ("dependencies",):
+        if not isinstance(data[field], list) or len(set(data[field])) != len(
+            data[field]
+        ):
+            raise AreaManifestError(f"Manifest {field} must be a unique list of slugs.")
+        for value in data[field]:
+            _slug(value, field)
+    for field in ("credits", "srd_references"):
+        if not isinstance(data[field], list) or not all(
+            isinstance(value, str) and value.strip() for value in data[field]
+        ):
+            raise AreaManifestError(
+                f"Manifest {field} must be a list of non-empty text."
+            )
+    _slug(data["reset_policy"], "reset_policy")
+    if (
+        not isinstance(data["lifespan_pulses"], int)
+        or isinstance(data["lifespan_pulses"], bool)
+        or not 0 <= data["lifespan_pulses"] <= MAX_LIFESPAN_PULSES
+    ):
+        raise AreaManifestError(
+            "Manifest lifespan_pulses is outside its supported range."
+        )
+    if not isinstance(data["rooms"], dict) or not isinstance(data["exits"], list):
+        raise AreaManifestError("Manifest rooms and exits have invalid section types.")
+    if not isinstance(data["mobiles"], list):
+        raise AreaManifestError("Manifest mobiles has an invalid section type.")
+    return data
+
+
+def manifest_fingerprint(manifest: object) -> str:
+    """Return the SHA-256 fingerprint of validated, canonical manifest data."""
+    data = validate_area_manifest(manifest)
+    encoded = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def build_area_manifest(area_slug: str) -> dict[str, Any]:
+    """Snapshot a live area in AREA-01A's versioned envelope."""
+    area_slug = _slug(area_slug, "key")
+    rooms, exits = build_area_data(area_slug)
+    return validate_area_manifest(
+        {
+            "key": area_slug,
+            "display_name": area_slug.replace("_", " ").title(),
+            "schema_version": MANIFEST_VERSION,
+            "dependencies": [],
+            "credits": [],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 0,
+            "rooms": rooms,
+            "exits": exits,
+            "mobiles": [],
+        }
+    )
+
 
 # Attributes of an Evennia prototype that are tied to a specific live object and
 # must be dropped before the prototype can be re-spawned in another world.
@@ -229,10 +399,19 @@ def _areas_dir() -> str:
     return os.path.join(repo_root, "game_files", "world", "areas")
 
 
+def _render_manifest(manifest: object) -> str:
+    """Render a stable, literal-only module for one validated manifest."""
+    data = validate_area_manifest(manifest)
+    return (
+        '"""Generated AREA-01A data-only area manifest.  Do not add code.\n"""\n\n'
+        f"MANIFEST = {pformat(data, width=88, sort_dicts=True)}\n"
+    )
+
+
 def _render_module(
     area_slug: str, rooms: dict, exits: list, mobiles: list | None = None
 ) -> str:
-    """Render a readable, valid Python area module."""
+    """Render a legacy module; retained only for migration-reader tests."""
     header = (
         f'"""Area "{area_slug}" — generated by the build command.\n\n'
         "Edit in-game and re-export, or hand-edit and reload; both round-trip\n"
@@ -249,12 +428,13 @@ def export_area(area_slug: str, directory: str | None = None) -> tuple[str, dict
 
     ``directory`` defaults to the git source tree; tests pass a temp dir.
     """
-    rooms, exits = build_area_data(area_slug)
+    manifest = build_area_manifest(area_slug)
+    rooms, exits = manifest["rooms"], manifest["exits"]
     directory = directory or _areas_dir()
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, f"{area_slug}.py")
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(_render_module(area_slug, rooms, exits))
+        handle.write(_render_manifest(manifest))
     return path, rooms, exits
 
 
@@ -387,10 +567,67 @@ def load_area_data(
     return key_to_room
 
 
+def _literal_manifest_from_module(module_name: str) -> dict[str, Any] | None:
+    """Read MANIFEST without executing a new-format area module."""
+    spec = importlib.util.find_spec(module_name)
+    if spec is None or not spec.origin or not spec.origin.endswith(".py"):
+        return None
+    try:
+        with open(spec.origin, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), filename=spec.origin)
+    except (OSError, SyntaxError) as err:
+        raise AreaManifestError("Could not read the area manifest safely.") from err
+    assignments = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "MANIFEST"
+    ]
+    if not assignments:
+        return None
+
+    def is_docstring(node: ast.AST) -> bool:
+        """Return whether an AST node is the module's harmless docstring."""
+        return (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        )
+
+    if len(assignments) != 1 or any(
+        not isinstance(node, ast.Assign) and not is_docstring(node)
+        for node in tree.body
+    ):
+        raise AreaManifestError("Area manifest modules may contain only MANIFEST data.")
+    try:
+        return validate_area_manifest(ast.literal_eval(assignments[0].value))
+    except (ValueError, TypeError) as err:
+        raise AreaManifestError("Area manifest must be a Python literal.") from err
+
+
 def load_area(area_slug: str) -> dict:
-    """Import ``world.areas.<area>`` and load it into the live world."""
+    """Load a safe AREA-01A manifest, falling back to a legacy module reader."""
     from importlib import import_module
 
+    try:
+        area_slug = _slug(area_slug, "key")
+        manifest = _literal_manifest_from_module(f"world.areas.{area_slug}")
+        if manifest is not None:
+            if manifest["key"] != area_slug:
+                raise AreaManifestError(
+                    "Manifest key does not match its requested area."
+                )
+            return load_area_data(
+                area_slug,
+                manifest["rooms"],
+                manifest["exits"],
+                manifest["mobiles"],
+            )
+    except AreaManifestError as err:
+        logger.log_err(f"load_area: invalid manifest for {area_slug}: {err}")
+        return {}
     try:
         module = import_module(f"world.areas.{area_slug}")
     except ModuleNotFoundError:

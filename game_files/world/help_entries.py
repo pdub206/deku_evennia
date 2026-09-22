@@ -2335,10 +2335,14 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
               |wexport|n                 save that area to a git-tracked file
 
             |wexport|n writes |wgame_files/world/areas/<area>.py|n — a readable
-            file describing the rooms and the exit graph by stable keys (not
-            dbrefs), so it can be reviewed in version control and re-loaded into
-            any world.  To apply a saved area to the live game, sync it in,
-            reload, then:
+            AREA-01A manifest. It records the area's stable key, descriptive
+            metadata, reset policy boundary, and its room/exit/mobile sections
+            using stable keys (not dbrefs), so it can be reviewed in version
+            control and re-loaded into any world. The manifest is data only:
+            do not add imports, functions, objects, or executable expressions.
+            Older |wROOMS|n/|wEXITS|n/|wMOBILES|n modules still load during the
+            migration, but every newly exported area uses the manifest. To apply
+            a saved area to the live game, sync it in, reload, then:
 
               |wloadarea <area>|n        spawn an area's rooms and exits
 

@@ -7,7 +7,7 @@ Run from the game/ directory:
 
 import importlib.util
 import tempfile
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from commands.building import (
     _BUILD_PROMPT,
@@ -36,7 +36,19 @@ from evennia.prototypes.prototypes import save_prototype, search_prototype
 from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
-from systems.areas import build_area_data, export_area, load_area_data
+from systems.areas import (
+    AreaManifestError,
+    MAX_MANIFEST_COLLECTION_SIZE,
+    MAX_MANIFEST_DEPTH,
+    MAX_MANIFEST_TEXT_LENGTH,
+    _literal_manifest_from_module,
+    _render_manifest,
+    build_area_data,
+    export_area,
+    load_area_data,
+    manifest_fingerprint,
+    validate_area_manifest,
+)
 from systems.doors import DoorError, configure_door, door_state, transition_door
 from systems.mob_spawning import mobile_spawn_identity
 from systems.room_environment import ROOM_ENVIRONMENT_ATTRIBUTE, room_environment
@@ -251,7 +263,7 @@ class TestAreaRoundTrip(EvenniaCommandTest):
 
 
 class TestAreaExportFile(EvenniaCommandTest):
-    """export_area writes a valid, importable area module."""
+    """export_area writes a valid, literal-only AREA-01A manifest module."""
 
     def test_export_writes_importable_module(self):
         self.char1.permissions.add("Builder")
@@ -266,11 +278,88 @@ class TestAreaExportFile(EvenniaCommandTest):
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            self.assertIn("room", module.ROOMS)
-            self.assertIn("cellar", module.ROOMS)
-            edges = {(frm, direction, to) for (frm, direction, to, _a) in module.EXITS}
+            self.assertEqual(module.MANIFEST["key"], "tmptest")
+            self.assertIn("room", module.MANIFEST["rooms"])
+            self.assertIn("cellar", module.MANIFEST["rooms"])
+            edges = {
+                (frm, direction, to)
+                for (frm, direction, to, _a) in module.MANIFEST["exits"]
+            }
             self.assertIn(("room", "east", "cellar"), edges)
             self.assertIn(("cellar", "west", "room"), edges)
+
+
+class TestAreaManifest(EvenniaCommandTest):
+    """AREA-01A's envelope is bounded, deterministic, and data-only."""
+
+    def _manifest(self):
+        return {
+            "key": "test_area",
+            "display_name": "Test Area",
+            "schema_version": 1,
+            "dependencies": ["shared_area"],
+            "credits": ["Original work: DEKU contributors"],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 30,
+            "rooms": {},
+            "exits": [],
+            "mobiles": [],
+        }
+
+    def test_normalizes_and_fingerprints_independently_of_mapping_order(self):
+        manifest = self._manifest()
+        normalized = validate_area_manifest(manifest)
+        self.assertEqual(normalized["key"], "test_area")
+        reordered = dict(reversed(list(manifest.items())))
+        self.assertEqual(
+            manifest_fingerprint(manifest), manifest_fingerprint(reordered)
+        )
+
+    def test_rejects_unknown_versions_unknown_fields_and_live_values(self):
+        for field, value in (
+            ("schema_version", 99),
+            ("unexpected", True),
+            ("credits", [MagicMock()]),
+            ("dependencies", ["shared_area", "shared_area"]),
+            ("lifespan_pulses", -1),
+        ):
+            manifest = self._manifest()
+            manifest[field] = value
+            with self.assertRaises(AreaManifestError):
+                validate_area_manifest(manifest)
+
+    def test_enforces_text_collection_and_depth_bounds(self):
+        cases = []
+        oversized_text = self._manifest()
+        oversized_text["display_name"] = "x" * (MAX_MANIFEST_TEXT_LENGTH + 1)
+        cases.append(oversized_text)
+        oversized_collection = self._manifest()
+        oversized_collection["credits"] = ["credit"] * (
+            MAX_MANIFEST_COLLECTION_SIZE + 1
+        )
+        cases.append(oversized_collection)
+        nested = "leaf"
+        for _ in range(MAX_MANIFEST_DEPTH + 1):
+            nested = [nested]
+        too_deep = self._manifest()
+        too_deep["rooms"] = {"room": nested}
+        cases.append(too_deep)
+        for manifest in cases:
+            with self.assertRaises(AreaManifestError):
+                validate_area_manifest(manifest)
+
+    def test_rendering_is_stable_and_reader_rejects_executable_manifest(self):
+        manifest = self._manifest()
+        self.assertEqual(_render_manifest(manifest), _render_manifest(dict(manifest)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = f"{tmpdir}/unsafe.py"
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("MANIFEST = make_manifest()\n")
+            spec = MagicMock(origin=path)
+            with patch("systems.areas.importlib.util.find_spec", return_value=spec):
+                with self.assertRaises(AreaManifestError):
+                    _literal_manifest_from_module("world.areas.unsafe")
 
 
 class TestEditExitRedirect(EvenniaCommandTest):
