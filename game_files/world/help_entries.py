@@ -118,6 +118,13 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
           loot, grant permissions, or control pets.""",
     },
     {
+        "key": "follow diagnostics",
+        "aliases": ["@follow", "follow repair"],
+        "category": "Staff",
+        "locks": "read:perm(Builder)",
+        "text": """Builders may inspect a PC's durable following record with |w@follow <character or #dbref>|n. Use |w@follow/repair <character or #dbref>|n only to clear malformed, dangling, cyclic, or over-capacity follow state. The repair is explicit: normal player commands never alter invalid records on their own.""",
+    },
+    {
         "key": "assist",
         "aliases": ["rescue"],
         "category": "Combat",

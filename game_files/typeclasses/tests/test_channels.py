@@ -6,8 +6,11 @@ from evennia.comms.models import ChannelDB
 from evennia.server.models import ServerConfig
 from evennia.utils import create
 from evennia.utils.test_resources import EvenniaTest
-from systems.channels import (CHANNEL_HISTORY_LIMIT, reconcile_channels,
-                              released_channels)
+from systems.channels import (
+    CHANNEL_HISTORY_LIMIT,
+    reconcile_channels,
+    released_channels,
+)
 
 
 class TestCuratedChannels(EvenniaTest):

@@ -1,6 +1,6 @@
 """Player commands for GROUP-01A's consensual PC following."""
 
-from commands.command import Command
+from commands.command import Command, MuxCommand
 from systems.player_following import accept, decline, request, unlink
 from systems.visibility import target_visibility
 
@@ -15,7 +15,7 @@ class CmdFollow(Command):
     """
 
     key = "follow"
-    switches = ("accept", "decline")
+    switch_options = ("accept", "decline")
     locks = "cmd:all()"
     help_category = "Character"
 
@@ -90,3 +90,58 @@ class CmdUnfollow(Command):
                 target.msg(f"{self.caller.key} stops you from following them.")
         else:
             self.msg("That person is not directly following you.")
+
+
+class CmdFollowAdmin(MuxCommand):
+    """Inspect or explicitly repair a PC follow record.
+
+    Usage:
+      @follow [<character or #dbref>]
+      @follow/repair [<character or #dbref>]
+
+    This is intentionally a Builder-only recovery surface. Normal follow
+    commands never repair malformed durable state implicitly.
+    """
+
+    key = "@follow"
+    locks = "cmd:perm(Builder)"
+    help_category = "Staff"
+    switch_options = ("repair",)
+
+    def func(self) -> None:
+        """Show primitive graph state or perform one explicit repair."""
+        from systems.player_following import inspect, repair
+
+        if self.switches and any(switch != "repair" for switch in self.switches):
+            self.msg("Usage: @follow[/repair] [<character or #dbref>]")
+            return
+        target = (
+            self.caller.search(self.args.strip(), global_search=True)
+            if self.args.strip()
+            else self.caller
+        )
+        if target is None:
+            return
+        if not getattr(getattr(target, "db", None), "is_player_character", False):
+            self.msg("That object has no PC follow state.")
+            return
+        if "repair" in self.switches:
+            changed = repair(target)
+            self.msg(
+                f"Repaired {target.key}'s follow state: {changed} record(s) changed."
+            )
+            return
+        try:
+            state = inspect(target)
+        except ValueError:
+            self.msg(f"{target.key}'s follow state is invalid; use @follow/repair.")
+            return
+        leader = state["state"]["leader_id"]
+        request = state["state"]["request_id"]
+        members = (
+            ", ".join(str(identifier) for identifier in state["members"]) or "none"
+        )
+        self.msg(
+            f"{target.key}: leader #{leader or 'none'}; request #{request or 'none'}; "
+            f"connected PCs: {members}."
+        )

@@ -17,31 +17,76 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
 from commands.boards import CmdBoard
-from commands.building import (CmdAreas, CmdBuild, CmdItems, CmdLoadArea,
-                               CmdMobile, CmdNpcs, CmdRooms, CmdSpawn)
+from commands.building import (
+    CmdAreas,
+    CmdBuild,
+    CmdItems,
+    CmdLoadArea,
+    CmdMobile,
+    CmdNpcs,
+    CmdRooms,
+    CmdSpawn,
+)
 from commands.change import CmdChange
 from commands.checks import CmdCheck
-from commands.combat import (CmdAim, CmdAssist, CmdAttack, CmdBackstab,
-                             CmdBash, CmdCombatPrompt, CmdCombatVerbose,
-                             CmdConsider, CmdHide, CmdKick, CmdRescue,
-                             CmdSteadyAim, CmdWimpy)
+from commands.combat import (
+    CmdAim,
+    CmdAssist,
+    CmdAttack,
+    CmdBackstab,
+    CmdBash,
+    CmdCombatPrompt,
+    CmdCombatVerbose,
+    CmdConsider,
+    CmdHide,
+    CmdKick,
+    CmdRescue,
+    CmdSteadyAim,
+    CmdWimpy,
+)
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
-from commands.communication import (CmdAnnounce, CmdAsk, CmdChannel, CmdIgnore,
-                                    CmdMail, CmdSay, CmdShout, CmdSocial,
-                                    CmdSocials, CmdTell, CmdWhisper)
+from commands.communication import (
+    CmdAnnounce,
+    CmdAsk,
+    CmdChannel,
+    CmdIgnore,
+    CmdMail,
+    CmdSay,
+    CmdShout,
+    CmdTell,
+    CmdWhisper,
+)
 from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
-from commands.following import CmdFollow, CmdUnfollow
-from commands.generic import (CmdAccess, CmdActionQueue, CmdCoins, CmdCurrency,
-                              CmdDrop, CmdExamine, CmdExits, CmdFastHands,
-                              CmdGet, CmdGive, CmdHelp, CmdInventory, CmdJunk,
-                              CmdLook, CmdNick, CmdPose, CmdPut, CmdRecall,
-                              CmdRemove, CmdRoomRoles, CmdSearch, CmdSetDesc,
-                              CmdWear)
+from commands.following import CmdFollow, CmdFollowAdmin, CmdUnfollow
+from commands.generic import (
+    CmdAccess,
+    CmdActionQueue,
+    CmdCoins,
+    CmdCurrency,
+    CmdDrop,
+    CmdExamine,
+    CmdExits,
+    CmdFastHands,
+    CmdGet,
+    CmdGive,
+    CmdHelp,
+    CmdInventory,
+    CmdJunk,
+    CmdLook,
+    CmdNick,
+    CmdPose,
+    CmdPut,
+    CmdRecall,
+    CmdRemove,
+    CmdRoomRoles,
+    CmdSearch,
+    CmdSetDesc,
+    CmdWear,
+)
 from commands.groups import CmdGroup
-from commands.injury import CmdInjury, CmdStabilize
 from commands.information import (
     CmdCredits,
     CmdInfo,
@@ -50,26 +95,32 @@ from commands.information import (
     CmdWho,
     CmdWizlist,
 )
+from commands.injury import CmdInjury, CmdStabilize
 from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
 from commands.magic_items import CmdQuaff, CmdRecite, CmdUseDevice
 from commands.notes import CmdNoteAdmin, CmdRead, CmdWrite
 from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
-from commands.presentation import (CmdAutoExits, CmdBrief, CmdCompact,
-                                   CmdPreferences, CmdPrompt)
+from commands.presentation import (
+    CmdAutoExits,
+    CmdBrief,
+    CmdCompact,
+    CmdPreferences,
+    CmdPrompt,
+)
 from commands.relationships import CmdOrder, CmdPet
 from commands.reports import CmdAdminReports, CmdReport, CmdReports
 from commands.sheet import CmdSheet
 from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
+from commands.socials import CmdSocial, CmdSocials
 from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
 from commands.weather import CmdWeather
 from commands.world_time import CmdTime
 from evennia import default_cmds
-from evennia.contrib.rpg.character_creator.character_creator import \
-    ContribCmdIC
+from evennia.contrib.rpg.character_creator.character_creator import ContribCmdIC
 
 
 class CharacterCmdSet(default_cmds.CharacterCmdSet):
@@ -201,6 +252,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdPet)
         self.add(CmdFollow)
         self.add(CmdUnfollow)
+        self.add(CmdFollowAdmin)
         self.add(CmdGroup)
 
 

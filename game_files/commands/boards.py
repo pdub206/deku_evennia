@@ -7,9 +7,20 @@ from typing import Any
 from commands.command import MuxCommand
 from evennia.utils import logger
 from evennia.utils.eveditor import EvEditor
-from systems.boards import (BOARDS, GENERAL, NEWS, ROWS_PER_PAGE, metadata,
-                            pin, post, posts, read, remove, set_general_open,
-                            unread_count)
+from systems.boards import (
+    BOARDS,
+    GENERAL,
+    NEWS,
+    ROWS_PER_PAGE,
+    metadata,
+    pin,
+    post,
+    posts,
+    read,
+    remove,
+    set_general_open,
+    unread_count,
+)
 from systems.mail import MAX_SUBJECT_LENGTH
 
 
