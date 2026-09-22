@@ -11,7 +11,8 @@ from evennia.objects.models import ObjectDB
 from systems.currency import credit
 from systems.encumbrance import character_load, spawn_with_capacity
 from systems.equipment import EquipmentError
-from systems.starting_packages import GrantPlan, module_item_prototypes
+from systems.prototype_catalogs import PrototypeCatalogError, resolve_prototype
+from systems.starting_packages import GrantPlan
 
 GRANT_ATTRIBUTE = "starting_package_grant"
 ITEM_PROVENANCE_ATTRIBUTE = "starting_package_provenance"
@@ -131,10 +132,10 @@ def _ensure_capacity(character: Any, plan: GrantPlan) -> None:
 
 def _prototype(key: str) -> dict[str, Any]:
     """Resolve the one source-controlled prototype validated by ITEM-07A."""
-    matches = module_item_prototypes(key)
-    if len(matches) != 1:
+    try:
+        return resolve_prototype(key, kind="item")
+    except PrototypeCatalogError:
         raise StartingGrantError("Starting equipment source needs staff repair.")
-    return dict(matches[0])
 
 
 def _reserved_state(identity: str, plan: GrantPlan) -> dict[str, Any]:

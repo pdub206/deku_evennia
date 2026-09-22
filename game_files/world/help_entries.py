@@ -2680,6 +2680,49 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
         """,
     },
     {
+        "key": "prototype drafts",
+        "aliases": ["prototypes", "prototype export", "prototype diff"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            Editing a source-owned item or NPC template creates a database draft;
+            it changes the live Builder view but not tracked release content.
+            Use |wprototypes/diff|n to see changed fields, then
+            |wprototypes/export|n to atomically render every source template to
+            the tracked catalog. Export refuses stale or invalid drafts. After
+            source sync and reload, an unchanged matching draft is incorporated;
+            a divergent draft remains visible for repair. Legacy templates are
+            still edited directly and are not release content.
+        """,
+    },
+    {
+        "key": "npc capture",
+        "aliases": ["force npc", "npc force", "save npc"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            While editing a source-linked live NPC, |wsave|n captures its
+            Builder-visible sheet into that NPC's prototype draft. It never
+            captures location, combat, followers, injuries, effects, currency,
+            connection state, or other runtime state. |wforce <command>|n runs
+            only one loadout verb as that NPC: inventory, get, put, drop, wear,
+            or remove. Other commands and command separators are refused.
+        """,
+    },
+    {
+        "key": "npc loadouts",
+        "aliases": ["mobile loadouts", "npc equipment"],
+        "category": "Builder",
+        "locks": "read:perm(Builder)",
+        "text": """
+            An NPC prototype may carry a version-one loadout of source-owned
+            item templates. Each entry names a prototype, quantity, and optional
+            wear location. NPCs receive fresh copies before becoming visible;
+            invalid or over-capacity loadouts fail without leaving partial items.
+            Money and account-bound items are never valid NPC loadout entries.
+        """,
+    },
+    {
         "key": "shop building",
         "aliases": ["shop profiles", "shop stock", "shop scheduling"],
         "category": "Builder",

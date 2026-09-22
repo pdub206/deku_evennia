@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from evennia.prototypes.prototypes import search_prototype
 from evennia.prototypes.spawner import spawn
 from evennia.server.models import ServerConfig
 from evennia.utils import logger
@@ -191,6 +190,9 @@ def spawn_mobile(
         trainer_profile = npc.attributes.get("trainer_profile")
         if trainer_profile is not None:
             set_trainer_profile(npc, trainer_profile)
+        from systems.mobile_loadouts import materialize_loadout
+
+        materialize_loadout(npc, npc.attributes.get("loadout"))
         if not npc.move_to(room, quiet=True, move_type="spawn", capacity_actor=npc):
             _delete_partial(npc)
             return MobileSpawnResult("failed", "room_admission_denied")
@@ -371,15 +373,15 @@ def _identity_payload(identity: MobileSpawnIdentity) -> dict[str, Any]:
 
 def _prototype_for_key(key: str) -> dict[str, Any]:
     _stable_key(key, "prototype_key")
-    matches = [
-        proto for proto in search_prototype(key) if proto.get("prototype_key") == key
-    ]
-    if len(matches) != 1:
+    from systems.prototype_catalogs import (
+        PrototypeCatalogError,
+        resolve_runtime_prototype,
+    )
+
+    try:
+        return resolve_runtime_prototype(key, kind="mobile")
+    except PrototypeCatalogError:
         raise MobileSpawnError("NPC prototype is missing or ambiguous.")
-    prototype = matches[0]
-    if prototype.get("typeclass") != NPC_TYPECLASS:
-        raise MobileSpawnError("Mobile prototype is not an NPC Character prototype.")
-    return deepcopy(prototype)
 
 
 def _flatten_prototype(prototype: Mapping[str, Any]) -> dict[str, Any]:

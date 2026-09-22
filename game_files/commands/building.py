@@ -17,6 +17,7 @@ field schema decides what each target exposes.
 """
 
 import json
+from pathlib import Path
 from typing import Any
 
 from commands.command import Command, MuxCommand
@@ -52,6 +53,7 @@ from systems.areas import (
     rooms_in_area,
 )
 from systems.mob_spawning import spawn_mobile
+from systems.mobile_capture import MobileCaptureError, capture_npc, force_npc
 from systems.mobile_diagnostics import (
     MobileDiagnosticError,
     clear_mobile_failure,
@@ -59,6 +61,14 @@ from systems.mobile_diagnostics import (
     mobile_diagnostic_snapshot,
     mobile_population_snapshot,
     mobile_template_snapshot,
+)
+from systems.prototype_drafts import (
+    PrototypeDraftError,
+    begin_draft,
+    draft_status,
+    draft_target,
+    export_drafts,
+    save_draft,
 )
 from world.build_schema import (
     ITEM_TYPES,
@@ -153,6 +163,14 @@ def _find_item_prototype(key: str):
 def _find_npc_prototype(key: str):
     """Return the NPC prototype (flat form) with this exact key, or ``None``."""
     return _find_prototype(key, _NPC_TYPECLASS)
+
+
+def _save_template(target: dict) -> None:
+    """Persist a legacy template or its source-owned AREA-05B draft."""
+    if draft_target(target):
+        save_draft(target)
+    else:
+        save_prototype(target)
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +475,7 @@ def _apply_field(target, name: str, field, value) -> None:
             target.pop("decay_minutes", None)
         else:  # attr or a validated service profile
             target[field.target or name] = value
-        save_prototype(target)  # templates persist on every change
+        _save_template(target)  # templates persist on every change
         return
     if field.kind == "key":
         target.key = value
@@ -798,7 +816,10 @@ class CmdBuild(Command):
             caller.msg("Usage: edit item <name>")
             return
         key = as_slug(name)
-        proto = _find_item_prototype(key)
+        try:
+            proto = begin_draft(key, caller)
+        except PrototypeDraftError:
+            proto = _find_item_prototype(key)
         if proto is None:
             caller.msg(
                 f"No item prototype '|y{key}|n'. See |witems|n, or create it with "
@@ -910,7 +931,10 @@ class CmdBuild(Command):
             caller.msg("Usage: edit npc <name>")
             return
         key = as_slug(name)
-        proto = _find_npc_prototype(key)
+        try:
+            proto = begin_draft(key, caller)
+        except PrototypeDraftError:
+            proto = _find_npc_prototype(key)
         if proto is None:
             caller.msg(
                 f"No NPC prototype '|y{key}|n'. See |wnpcs|n, or create it with "
@@ -1229,6 +1253,51 @@ class CmdAreas(Command):
 
     def func(self) -> None:
         self.caller.msg(_render_area_index())
+
+
+class CmdPrototypes(MuxCommand):
+    """Inspect or export AREA-05B source-template drafts.
+
+    Usage:
+      prototypes/diff
+      prototypes/export
+    """
+
+    key = "prototypes"
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+    switch_options = ("diff", "export")
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        if len(self.switches) != 1 or self.switches[0] not in self.switch_options:
+            self.caller.msg("Usage: prototypes/diff or prototypes/export")
+            return
+        if self.switches[0] == "diff":
+            try:
+                status = draft_status()
+            except PrototypeDraftError as err:
+                self.caller.msg(f"Prototype drafts unavailable: {err}")
+                return
+            if not status:
+                self.caller.msg("No source-template drafts.")
+                return
+            lines = ["|wPrototype drafts|n:"]
+            for key, fields in status.items():
+                detail = ", ".join(fields) if fields else "unchanged"
+                lines.append(f"  |y{key}|n: {detail}")
+            self.caller.msg("\n".join(lines))
+            return
+        path = Path(settings.GAME_DIR).parent / "game_files/world/prototypes.py"
+        try:
+            changed = export_drafts(path)
+        except PrototypeDraftError as err:
+            self.caller.msg(f"Prototype export failed: {err}")
+            return
+        self.caller.msg(
+            "Exported deterministic prototype catalog"
+            + (f": {', '.join(changed)}." if changed else ".")
+        )
 
 
 class CmdRooms(Command):
@@ -1758,7 +1827,7 @@ def _get_desc(target) -> str:
 def _set_desc(target, value) -> None:
     if _is_prototype(target):
         target["desc"] = value
-        save_prototype(target)
+        _save_template(target)
     else:
         target.db.desc = value
 
@@ -2082,6 +2151,46 @@ class CmdBuildDone(_BuildCommand):
         self.caller.msg(f"Done editing |y{name}|n.")
 
 
+class CmdBuildSave(_BuildCommand):
+    """Capture the current source-linked live NPC into its prototype draft."""
+
+    key = "save"
+
+    def func(self) -> None:
+        if _is_prototype(self.target):
+            self.caller.msg("Save captures a live source-linked NPC, not a template.")
+            return
+        try:
+            key, captured = capture_npc(self.target)
+            draft = begin_draft(key, self.caller)
+            marker = draft.get("_area05b_draft")
+            draft.clear()
+            draft.update(captured)
+            draft["_area05b_draft"] = marker
+            save_draft(draft)
+        except (MobileCaptureError, PrototypeDraftError) as err:
+            self.caller.msg(f"NPC capture failed: {err}")
+            return
+        self.caller.msg(f"Captured |y{self.target.key}|n into prototype draft |y{key}|n.")
+
+
+class CmdBuildForce(_BuildCommand):
+    """Run one allowlisted loadout command as the live NPC being edited."""
+
+    key = "force"
+
+    def func(self) -> None:
+        if _is_prototype(self.target):
+            self.caller.msg("Force requires a live source-linked NPC edit target.")
+            return
+        try:
+            force_npc(self.target, self.args, self.caller)
+        except MobileCaptureError as err:
+            self.caller.msg(f"NPC force failed: {err}")
+            return
+        self.caller.msg("NPC loadout command executed.")
+
+
 class BuildModeCmdSet(CmdSet):
     """Sticky verbs active only while editing an object via |wbuild|n.
 
@@ -2105,4 +2214,6 @@ class BuildModeCmdSet(CmdSet):
         self.add(CmdBuildArea())
         self.add(CmdBuildExport())
         self.add(CmdBuildDel())
+        self.add(CmdBuildSave())
+        self.add(CmdBuildForce())
         self.add(CmdBuildDone())

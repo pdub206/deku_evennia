@@ -18,8 +18,8 @@ from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
 from commands.boards import CmdBoard
 from commands.building import (
-    CmdAreaCheck,
     CmdAreaApply,
+    CmdAreaCheck,
     CmdAreaDiff,
     CmdAreaPrune,
     CmdAreaReset,
@@ -29,6 +29,7 @@ from commands.building import (
     CmdLoadArea,
     CmdMobile,
     CmdNpcs,
+    CmdPrototypes,
     CmdRooms,
     CmdSpawn,
 )
@@ -185,6 +186,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdItemPolicy)
         self.add(CmdNoteAdmin)
         self.add(CmdStartPackages)
+        self.add(CmdPrototypes)
         self.add(CmdWear)
         self.add(CmdRemove)
         self.add(CmdAccess)

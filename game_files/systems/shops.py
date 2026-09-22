@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
-from evennia.prototypes.prototypes import PROTOTYPE_TAG_CATEGORY, search_prototype
+from evennia.prototypes.prototypes import PROTOTYPE_TAG_CATEGORY
 from systems.combat import is_fighting
 from systems.encumbrance import spawn_with_capacity
 from systems.item_transfer import transfer_denial
@@ -298,20 +298,15 @@ def _restock_state(npc: Any) -> dict[str, Any]:
 
 
 def _item_prototype(key: str) -> dict[str, Any]:
-    matches = [
-        p
-        for p in search_prototype(key)
-        if p.get("prototype_key") == key
-        and p.get("typeclass") == "typeclasses.objects.Item"
-    ]
-    if len(matches) != 1:
+    from systems.prototype_catalogs import (
+        PrototypeCatalogError,
+        resolve_runtime_prototype,
+    )
+
+    try:
+        return resolve_runtime_prototype(key, kind="item")
+    except PrototypeCatalogError:
         raise ShopError("Shop stock references an unknown or ambiguous item prototype.")
-    flat = {
-        name: deepcopy(value) for name, value in matches[0].items() if name != "attrs"
-    }
-    for attr in matches[0].get("attrs", []):
-        flat[attr[0]] = deepcopy(attr[1])
-    return flat
 
 
 def _stable_key(value: Any, label: str) -> str:

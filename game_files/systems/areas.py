@@ -1377,6 +1377,18 @@ def build_area_registry(
     straightforward to use in validation and tests.  If omitted, all literal
     modules in ``world.areas`` are read without executing their contents.
     """
+    # Release planning always sees the same source-owned catalog as spawning.
+    # Tests may inject a tiny catalog to isolate an area manifest.
+    if prototype_catalogs is None:
+        from systems.prototype_catalogs import (
+            PrototypeCatalogError,
+            catalog_for_area_planning,
+        )
+
+        try:
+            prototype_catalogs = catalog_for_area_planning()
+        except PrototypeCatalogError as err:
+            raise AreaRegistryError(str(err)) from err
     errors: list[str] = []
     raw_manifests: dict[str, object] = {}
     if manifests is not None:

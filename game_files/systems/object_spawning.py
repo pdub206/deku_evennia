@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from evennia.prototypes.prototypes import PROTOTYPE_TAG_CATEGORY, search_prototype
+from evennia.prototypes.prototypes import PROTOTYPE_TAG_CATEGORY
 from evennia.server.models import ServerConfig
 from systems.areas import area_of, room_key_of
 from systems.currency import create_pile
@@ -285,12 +284,15 @@ def _validate_placement(
 
 
 def _prototype(key: str) -> dict[str, Any]:
-    matches = [
-        item for item in search_prototype(key) if item.get("prototype_key") == key
-    ]
-    if len(matches) != 1 or matches[0].get("typeclass") != "typeclasses.objects.Item":
+    from systems.prototype_catalogs import (
+        PrototypeCatalogError,
+        resolve_runtime_prototype,
+    )
+
+    try:
+        return resolve_runtime_prototype(key, kind="item")
+    except PrototypeCatalogError:
         raise ObjectSpawnError("Item prototype is missing or ambiguous.")
-    return deepcopy(matches[0])
 
 
 def _prototype_tag(item: Any) -> str | None:
