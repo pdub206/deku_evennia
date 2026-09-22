@@ -2388,6 +2388,19 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
             corpses, items, mail, reports, or other player state; blocked
             records remain in place and are reported for repair.
 
+            ## Deployment and Reload
+
+            Staff deploy area source in this order: run
+            |w./sync_game_files.sh restore|n, then |w./game_ctl.sh reload|n.
+            Reload validates the enabled source manifests but never applies
+            changed rooms, exits, prototypes, doors, or Builder drafts. A
+            changed manifest is logged as pending until an authorized apply.
+            Review it with |warea/check all|n and |warea/diff all|n; then use
+            |warea/apply all|n to commit the reviewed source. Use
+            |wareareset <area>|n only for an Admin-requested reset after
+            apply. If stale empty records need retirement, review a fresh diff
+            and use |warea/prune <area> = <full revision>|n last.
+
             ## Room and Exit Records
 
             New manifests keep room keys and exit keys stable even if you rename

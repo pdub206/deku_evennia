@@ -109,6 +109,9 @@ GAME_PULSE_CADENCES = {
 # with one of boot, if_empty, always, or never.
 GAME_AREA_RESET_DEFAULT_POLICY = "never"
 GAME_AREA_RESET_WARNING_PULSES = 1
+# AREA-06A is the sole deployment-owned selection of source manifests. Keep
+# this empty in the development skeleton; production lists stable area keys.
+GAME_ENABLED_AREA_MANIFESTS = ()
 # ENV-01 starts at noon, year 1. Scale changes require a new version and
 # systems.world_clock.reconcile_clock() from the staff shell.
 GAME_CLOCK_EPOCH_MINUTE = 720

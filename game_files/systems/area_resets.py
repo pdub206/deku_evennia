@@ -48,18 +48,43 @@ class AreaResetResult:
     reason: str = ""
 
 
+@dataclass(frozen=True)
+class AreaControllerRecovery:
+    """Controller-only recovery performed without accepting changed source."""
+
+    recovered: tuple[str, ...]
+    pending: tuple[str, ...]
+    retired: tuple[str, ...]
+
+
 def process_area_reset_pulse(event: PulseEvent) -> tuple[AreaResetResult, ...]:
     """Register source areas then dispatch due controllers in stable key order.
 
     An invalid source plan is deliberately a global dependency failure: no
     controller is allowed to reset against an unvalidated world graph.
     """
+    from systems.area_startup import (
+        AreaStartupError,
+        configured_enabled_area_manifests,
+    )
+
     try:
-        plan = compile_area_load_plan()
-    except AreaPlanError as err:
+        plan = compile_area_load_plan(configured_enabled_area_manifests())
+    except (AreaPlanError, AreaStartupError) as err:
         logger.log_err(f"AREA-03A reset plan is invalid: {_summary(err)}")
         return ()
-    return process_area_reset_plan(event, plan)
+    recovery = recover_area_controllers(plan)
+    if recovery.pending:
+        logger.log_warn(
+            "AREA-06B reset skipped changed source pending apply: "
+            + ", ".join(recovery.pending)
+        )
+    allowed = tuple(
+        area_key
+        for area_key in plan.registry.manifests
+        if area_key not in recovery.pending
+    )
+    return process_area_reset_plan(event, plan, reconcile=False, area_keys=allowed)
 
 
 def process_area_reset_plan(
@@ -67,14 +92,18 @@ def process_area_reset_plan(
     plan: AreaLoadPlan,
     *,
     directive_runner: Callable[[str, str, AreaLoadPlan], None] | None = None,
+    reconcile: bool = True,
+    area_keys: tuple[str, ...] | None = None,
 ) -> tuple[AreaResetResult, ...]:
     """Run one already-validated plan, chiefly for AREA-03 integrations/tests."""
     if not isinstance(event.sequence, int) or isinstance(event.sequence, bool):
         raise AreaResetError("Reset lane token must be an integer.")
-    controllers = _reconcile_controllers(plan)
+    controllers = _reconcile_controllers(plan) if reconcile else controller_snapshot()
     runner = directive_runner or run_area_directives
     results: list[AreaResetResult] = []
     for area_key in sorted(plan.registry.manifests):
+        if area_keys is not None and area_key not in area_keys:
+            continue
         controller = controllers[area_key]
         try:
             result = _process_controller(
@@ -453,6 +482,52 @@ def handoff_area_controllers(
                 old["lifespan_pulses"] = lifespan
         _write_state(state)
         return {key: dict(value) for key, value in live.items()}
+
+
+def reconcile_area_controllers(plan: AreaLoadPlan) -> dict[str, dict[str, Any]]:
+    """Make persisted controllers exactly match one enabled source plan.
+
+    Startup uses this after a successful graph apply so disabled manifests do
+    not retain reset authority. It deliberately does not run any directive.
+    """
+    return _reconcile_controllers(plan)
+
+
+def recover_area_controllers(plan: AreaLoadPlan) -> AreaControllerRecovery:
+    """Repair controller claims without accepting an un-applied fingerprint.
+
+    An unchanged controller retains every scheduling token. A running claim is
+    made eligible for its normal retry, while a changed manifest remains on its
+    last applied controller until an authorized AREA-04B apply hands it off.
+    """
+    recovered: list[str] = []
+    pending: list[str] = []
+    retired: list[str] = []
+    with _locked_state() as state:
+        live = state["controllers"]
+        for area_key, manifest in plan.registry.manifests.items():
+            fingerprint = _fingerprint(manifest)
+            controller = live.get(area_key)
+            if controller is None:
+                live[area_key] = _new_controller(
+                    fingerprint,
+                    _policy(manifest["reset_policy"]),
+                    manifest["lifespan_pulses"],
+                )
+                recovered.append(area_key)
+            elif controller["manifest_fingerprint"] != fingerprint:
+                pending.append(area_key)
+            elif controller["status"] == "running":
+                controller["status"] = "idle"
+                recovered.append(area_key)
+        for area_key in tuple(live):
+            if area_key not in plan.registry.manifests:
+                del live[area_key]
+                retired.append(area_key)
+        _write_state(state)
+    return AreaControllerRecovery(
+        tuple(sorted(recovered)), tuple(sorted(pending)), tuple(sorted(retired))
+    )
 
 
 def retire_area_controller(area_key: str) -> bool:

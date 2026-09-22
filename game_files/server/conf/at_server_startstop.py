@@ -49,7 +49,10 @@ def at_server_stop():
 
 def at_server_reload_start() -> None:
     """Recover reload-safe systems without replaying completed work."""
+    from systems.area_startup import recover_enabled_world_reload
+
     recover_server_transition(ServerTransitionMode.HOT_RELOAD)
+    recover_enabled_world_reload()
 
 
 def at_server_reload_stop() -> None:
@@ -59,7 +62,10 @@ def at_server_reload_stop() -> None:
 
 def at_server_cold_start() -> None:
     """Recover persistent world state without catching up downtime."""
+    from systems.area_startup import reconcile_enabled_world
+
     recover_server_transition(ServerTransitionMode.COLD_RESTART)
+    reconcile_enabled_world()
 
 
 def at_server_cold_stop() -> None:

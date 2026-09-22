@@ -1213,12 +1213,14 @@ class CmdAreaReset(MuxCommand):
 
     def func(self) -> None:
         """Compile before requesting a reset, preserving the source gate."""
+        from systems.area_startup import configured_enabled_area_manifests
+
         if self.switches:
             self.caller.msg("Usage: areareset <area>")
             return
         try:
             area = as_slug(self.args.strip().lower())
-            plan = compile_area_load_plan()
+            plan = compile_area_load_plan(configured_enabled_area_manifests())
             result = request_manual_reset(area, plan)
         except (AreaPlanError, AreaResetError, ValueError):
             self.caller.msg("That enabled area cannot be reset safely.")
