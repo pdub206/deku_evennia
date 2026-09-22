@@ -740,9 +740,18 @@ def _validate_manifest_mobile_placements(
                 prototype_key = _slug(
                     placement["prototype_key"], "mobile prototype key"
                 )
-                limits = (placement["desired"], placement["room_max"], placement["area_max"])
+                limits = (
+                    placement["desired"],
+                    placement["room_max"],
+                    placement["area_max"],
+                )
                 if (
-                    any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in limits)
+                    any(
+                        isinstance(value, bool)
+                        or not isinstance(value, int)
+                        or value < 0
+                        for value in limits
+                    )
                     or limits[0] > limits[1]
                     or limits[0] > limits[2]
                 ):
@@ -1543,7 +1552,9 @@ def compile_area_load_plan(
         rooms=tuple(sorted(registry.rooms.items())),
         exits_and_doors=tuple(sorted(exits)),
         service_assignments=tuple(sorted(services)),
-        mobile_placements=tuple(sorted(mobiles)),
+        mobile_placements=tuple(
+            sorted(mobiles, key=lambda item: (item[0], item[1]["placement_key"]))
+        ),
         object_placements=tuple(sorted(objects)),
     )
 
@@ -1562,7 +1573,9 @@ def _plan_prototype_reference(
         errors.append(f"{path} references unknown source prototype '{prototype_key}'")
         return
     if prototype.get("typeclass") != expected_typeclass:
-        errors.append(f"{path} references a wrong-kind source prototype '{prototype_key}'")
+        errors.append(
+            f"{path} references a wrong-kind source prototype '{prototype_key}'"
+        )
 
 
 def _plan_object_prototype_references(

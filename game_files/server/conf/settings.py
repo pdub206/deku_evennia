@@ -104,6 +104,11 @@ GAME_PULSE_CADENCES = {
     "actions": 1,
     "objects": 60,
 }
+# AREA-03A uses WORLD-01's reset lane; these settings never create per-area
+# timers. Legacy ``default`` manifests are deliberately inert until authored
+# with one of boot, if_empty, always, or never.
+GAME_AREA_RESET_DEFAULT_POLICY = "never"
+GAME_AREA_RESET_WARNING_PULSES = 1
 # ENV-01 starts at noon, year 1. Scale changes require a new version and
 # systems.world_clock.reconcile_clock() from the staff shell.
 GAME_CLOCK_EPOCH_MINUTE = 720

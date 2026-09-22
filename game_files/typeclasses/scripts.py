@@ -16,16 +16,23 @@ from typing import Any
 from django.conf import settings
 from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
-from systems.combat import (CombatActionResult, process_combat_pulse,
-                            set_combat_action_hook)
-from systems.injury import \
-    process_recovery_pulse as process_injury_recovery_pulse
+from systems.combat import (
+    CombatActionResult,
+    process_combat_pulse,
+    set_combat_action_hook,
+)
+from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
 from systems.magic_rest import process_magic_rest_pulse
 from systems.mob_combat import resolve_mob_combat_action
-from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
-                            configured_cadences, initial_pulse_state,
-                            process_effect_pulse,
-                            process_resource_recovery_pulse)
+from systems.pulses import (
+    PulseEvent,
+    PulseLane,
+    advance_pulse_state,
+    configured_cadences,
+    initial_pulse_state,
+    process_effect_pulse,
+    process_resource_recovery_pulse,
+)
 from systems.tactical_combat import resolve_combat_action
 
 
@@ -227,6 +234,9 @@ class GamePulseScript(Script):
 
     def at_resets_pulse(self, event: PulseEvent) -> None:
         """Run area resets supplied by AREA-03."""
+        from systems.area_resets import process_area_reset_pulse
+
+        process_area_reset_pulse(event)
 
     def at_actions_pulse(self, event: PulseEvent) -> None:
         """Advance durable noncombat interactions supplied by INTERACT-06."""

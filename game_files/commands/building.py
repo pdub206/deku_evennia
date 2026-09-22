@@ -35,11 +35,12 @@ from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
+from systems.area_resets import AreaResetError, request_manual_reset
 from systems.areas import (
     AreaPlanError,
-    area_plan_summary,
     area_index,
     area_of,
+    area_plan_summary,
     assign_area,
     compile_area_load_plan,
     export_area,
@@ -1023,6 +1024,37 @@ class CmdAreaCheck(MuxCommand):
             self.caller.msg("\n".join(lines))
             return
         self.caller.msg(area_plan_summary(plan))
+
+
+class CmdAreaReset(MuxCommand):
+    """Explicitly run an otherwise dormant area's reset directives.
+
+    Usage:
+      areareset <area>
+
+    This is deliberately Admin-only: builders may validate source data, but a
+    manual reset can affect the live world once AREA-03B through AREA-03D add
+    their directives.
+    """
+
+    key = "areareset"
+    locks = "cmd:perm(Admin)"
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Compile before requesting a reset, preserving the source gate."""
+        if self.switches:
+            self.caller.msg("Usage: areareset <area>")
+            return
+        try:
+            area = as_slug(self.args.strip().lower())
+            plan = compile_area_load_plan()
+            result = request_manual_reset(area, plan)
+        except (AreaPlanError, AreaResetError, ValueError):
+            self.caller.msg("That enabled area cannot be reset safely.")
+            return
+        self.caller.msg(f"Area reset {result.status}: {area}.")
 
 
 def _render_area_index() -> str:
