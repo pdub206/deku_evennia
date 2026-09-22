@@ -74,7 +74,14 @@ HELP_ENTRY_DICTS = [
         "key": "reports",
         "aliases": ["bug", "typo", "idea", "report"],
         "category": "Communication",
-        "text": """Use |wbug <text>|n, |wtypo <text>|n, or |widea <text>|n to send staff a durable report. Reports must contain 10 to 2,000 characters of plain text. Your confirmation gives a report number, but does not reveal staff notes or internal diagnostics. You may submit up to three reports in ten minutes and keep up to 20 unresolved reports. Reports work while you are OOC; when you are playing, the game saves only a safe snapshot of your current character and location to help staff investigate.""",
+        "text": """Use |wbug <text>|n, |wtypo <text>|n, or |widea <text>|n to send staff a durable report. Reports must contain 10 to 2,000 characters of plain text. Your confirmation gives a report number, but does not reveal staff notes or internal diagnostics. You may submit up to three reports in ten minutes and keep up to 20 unresolved reports. Reports work while you are OOC; when you are playing, the game saves only a safe snapshot of your current character and location to help staff investigate. Use |wreports|n to list your reports or |wreport/read <id>|n to see a report's status and any final staff response.""",
+    },
+    {
+        "key": "report moderation",
+        "aliases": ["@reports", "report claim", "report resolve"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins use |w@reports [status|kind] [page]|n to list reports and |w@reports/read <id>|n for staff detail. Claim with |w@reports/claim <id>|n; add an internal note with |w@reports/note <id> = <text>|n; finish with |w@reports/resolve <id> = <player-safe response>|n or |w@reports/reject <id> = <player-safe response>|n; and use |w@reports/reopen <id>|n when needed. |w@reports/purge|n explicitly removes final reports after their 180-day retention period. Only Admins have report internals access.""",
     },
     {
         "key": "group",

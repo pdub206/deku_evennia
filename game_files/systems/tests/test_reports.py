@@ -1,16 +1,19 @@
-"""COMM-04A persistence, privacy, and abuse-limit coverage."""
+"""COMM-04A/COMM-04B persistence, privacy, and workflow coverage."""
 
+import json
 from datetime import timedelta
 from unittest.mock import patch
 
 from django.utils import timezone
 from evennia.comms.models import Msg
+from evennia.utils import create
 from evennia.utils.test_resources import EvenniaTest
 from systems.areas import AREA_TAG_CATEGORY, ROOM_KEY_CATEGORY
 # fmt: off
 from systems.reports import (MAX_UNRESOLVED_REPORTS, REPORT_CATEGORY,
                              REPORT_TAG, metadata, normalize_body,
-                             report_messages, submit)
+                             player_report, player_reports, purge,
+                             report_messages, submit, workflow)
 
 # fmt: on
 
@@ -128,3 +131,56 @@ class TestReports(EvenniaTest):
         self.assertEqual(
             Msg.objects.latest("id").message, "The village gate is missing."
         )
+
+    def test_admin_workflow_redacts_player_views_and_queues_one_notice(self) -> None:
+        """Claim, notes, resolution, and player reads retain their strict boundary."""
+        reporter = create.create_account(
+            "Offline Reporter", "offline@example.invalid", "safe-test-password"
+        )
+        created = submit(reporter, "bug", "The village gate is missing.")
+        self.account2.permissions.add("Admin")
+        claimed = workflow(self.account2, "claim", created.report_id)
+        noted = workflow(
+            self.account2, "note", created.report_id, "Checked the door state."
+        )
+        resolved = workflow(
+            self.account2, "resolve", created.report_id, "The gate has been repaired."
+        )
+        repeated = workflow(
+            self.account2, "resolve", created.report_id, "Different response ignored."
+        )
+        self.assertTrue(
+            all(result.accepted for result in (claimed, noted, resolved, repeated))
+        )
+        data = metadata(created.message)
+        self.assertEqual(data["status"], "resolved")
+        self.assertEqual(data["final_response"], "The gate has been repaired.")
+        self.assertEqual(len(data["notes"]), 1)
+        self.assertIn("claimant", data)
+        self.assertEqual(player_reports(reporter), [created.message])
+        self.assertIs(player_report(reporter, created.report_id), created.message)
+        self.assertIsNone(player_report(self.account2, created.report_id))
+        notices = reporter.db.pending_report_notices
+        self.assertGreaterEqual(len(notices), 1)
+        self.assertNotIn("claimant", notices[0]["message"])
+
+    def test_non_admin_cannot_mutate_and_purge_respects_final_retention(self) -> None:
+        """Only Admins can alter or explicitly purge completed durable records."""
+        created = submit(self.account, "idea", "Please add more forest trails.")
+        self.assertFalse(workflow(self.account2, "claim", created.report_id).accepted)
+        self.assertIsNone(purge(self.account2))
+        self.account2.permissions.add("Admin")
+        self.assertTrue(
+            workflow(
+                self.account2, "reject", created.report_id, "Not planned now."
+            ).accepted
+        )
+        data = metadata(created.message)
+        data["final_at"] = (timezone.now() - timedelta(days=181)).isoformat()
+        tag = created.message.tags.get(
+            f"report-{created.message.id}", category=REPORT_CATEGORY, return_tagobj=True
+        )
+        tag.db_data = json.dumps(data, sort_keys=True)
+        tag.save(update_fields=["db_data"])
+        self.assertEqual(purge(self.account2), 1)
+        self.assertEqual(purge(self.account2), 0)

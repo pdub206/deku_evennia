@@ -27,8 +27,9 @@ from typing import Any
 from django.db import transaction
 from evennia.accounts.accounts import CharactersHandler, DefaultGuest
 from evennia.accounts.models import AccountDB
-from evennia.contrib.rpg.character_creator.character_creator import \
-    ContribChargenAccount
+from evennia.contrib.rpg.character_creator.character_creator import (
+    ContribChargenAccount,
+)
 from evennia.objects.models import ObjectDB
 from evennia.utils.utils import lazy_property
 
@@ -184,12 +185,14 @@ class Account(ContribChargenAccount):
         """Notify once per login of durable unread mail without revealing content."""
         super().at_post_login(session=session, **kwargs)
         from systems.mail import unread_count
+        from systems.reports import deliver_report_notices
 
         count = unread_count(self)
         if count:
             self.msg(
                 f"You have {count} unread mail message{'s' if count != 1 else ''}."
             )
+        deliver_report_notices(self)
 
     def puppet_object(self, session: Any, obj: Any) -> None:
         """Puppet only the sole owned PC and never displace its controller."""

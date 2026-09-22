@@ -51,7 +51,7 @@ from commands.position import CmdRest, CmdSit, CmdSleep, CmdStand, CmdWake
 from commands.presentation import (CmdAutoExits, CmdBrief, CmdCompact,
                                    CmdPreferences, CmdPrompt)
 from commands.relationships import CmdOrder, CmdPet
-from commands.reports import CmdReport
+from commands.reports import CmdAdminReports, CmdReport, CmdReports
 from commands.sheet import CmdSheet
 from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
@@ -220,6 +220,8 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         self.add(CmdMail)
         self.add(CmdBoard)
         self.add(CmdReport)
+        self.add(CmdReports)
+        self.add(CmdAdminReports)
         # Restrict Evennia's broad channel administration to COMM-01C's two
         # curated account channels and add the Admin-only live broadcast.
         self.add(CmdChannel)
