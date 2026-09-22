@@ -12,11 +12,19 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from systems.attacks import (AttackOutcome, AttackResult, can_attack,
-                             resolve_basic_attack)
+from systems.attacks import (
+    AttackOutcome,
+    AttackResult,
+    can_attack,
+    resolve_basic_attack,
+)
 from systems.character_stats import AttackProfile
-from systems.checks import (CheckRequest, CheckResult, resolve_opposed_check,
-                            stealth_against_passive)
+from systems.checks import (
+    CheckRequest,
+    CheckResult,
+    resolve_opposed_check,
+    stealth_against_passive,
+)
 from systems.combat import CombatActionResult, get_encounter_id, get_target
 from systems.dice import RollResult
 from systems.effects import ApplyOutcome, RemovalReason
@@ -114,6 +122,15 @@ def validate_tactical_intent(
         if arguments != {"tactical_mind": True}:
             return None
         intent["tactical_mind"] = True
+    elif action == "rescue":
+        protected = arguments.get("protected")
+        if (
+            not isinstance(protected, int)
+            or isinstance(protected, bool)
+            or protected <= 0
+        ):
+            return None
+        intent["protected"] = protected
     elif arguments:
         return None
     return intent
@@ -154,6 +171,13 @@ def execute_tactical_intent(
     target = _get_character(target_id)
     if target is None or get_encounter_id(actor) != get_encounter_id(target):
         return TacticalActionResult(acted=True, reason="invalid_target", **common)
+    if action == "rescue":
+        handler = TACTICAL_ACTIONS.get(action)
+        return (
+            handler(actor, target, event, intent)
+            if handler is not None
+            else TacticalActionResult(acted=True, reason="unknown_action", **common)
+        )
     decision = can_attack(actor, target)
     if not decision.allowed:
         return TacticalActionResult(acted=True, reason=decision.reason, **common)
@@ -359,6 +383,44 @@ def _kick(
     )
 
 
+def _rescue(
+    actor: Any, enemy: Any, event: PulseEvent, intent: Mapping[str, Any]
+) -> TacticalActionResult:
+    """Contest one enemy's focus, consuming the rescuer's ready action."""
+    from systems.combat import _get_character, rescue_retarget
+    from systems.injury import InjuryError, InjuryState, injury_record
+
+    protected = _get_character(intent.get("protected"))
+    common = {
+        "acted": True,
+        "action": "rescue",
+        "pulse": event.sequence,
+        "actor_id": actor.id,
+        "target_id": enemy.id,
+    }
+    if protected is None:
+        return TacticalActionResult(reason="invalid_protected", **common)
+    try:
+        if any(
+            injury_record(character).state is not InjuryState.CONSCIOUS
+            for character in (actor, protected, enemy)
+        ):
+            return TacticalActionResult(reason="ineligible_participant", **common)
+    except InjuryError:
+        return TacticalActionResult(reason="ineligible_participant", **common)
+    if not can_attack(actor, enemy).allowed:
+        return TacticalActionResult(reason="attack_denied", **common)
+    result = rescue_retarget(actor, protected, enemy)
+    return TacticalActionResult(
+        accepted=result.accepted,
+        reason=result.reason,
+        attacker_roll=result.attacker_roll,
+        defender_roll=result.defender_roll,
+        retargeted=result.changed,
+        **common,
+    )
+
+
 def _bash(
     actor: Any, target: Any, event: PulseEvent, intent: Mapping[str, Any]
 ) -> TacticalActionResult:
@@ -507,6 +569,7 @@ def _register_defaults() -> None:
         "bash": _bash,
         "hide": _hide,
         "kick": _kick,
+        "rescue": _rescue,
         "steady_aim": _steady_aim,
     }.items():
         if TACTICAL_ACTIONS.get(key) is None:

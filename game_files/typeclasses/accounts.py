@@ -181,6 +181,19 @@ class Account(ContribChargenAccount):
             )
         return appearance
 
+    def at_post_login(self, session: Any = None, **kwargs: Any) -> None:
+        """Notify once per login of durable unread mail without revealing content."""
+        super().at_post_login(session=session, **kwargs)
+        from systems.mail import unread_count
+        from systems.reports import deliver_report_notices
+
+        count = unread_count(self)
+        if count:
+            self.msg(
+                f"You have {count} unread mail message{'s' if count != 1 else ''}."
+            )
+        deliver_report_notices(self)
+
     def puppet_object(self, session: Any, obj: Any) -> None:
         """Puppet only the sole owned PC and never displace its controller."""
         return self._puppet_object_exclusive(session, obj, administrative=False)

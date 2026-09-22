@@ -3,8 +3,15 @@
 from django.test import override_settings
 from evennia import create_object
 from evennia.utils.test_resources import EvenniaTest
-from systems.corpses import (can_withdraw, corpse_record, create_corpse,
-                             process_corpse_pulse, withdraw)
+from systems.corpses import (
+    CORPSE_ATTRIBUTE,
+    CorpseError,
+    can_withdraw,
+    corpse_record,
+    create_corpse,
+    process_corpse_pulse,
+    withdraw,
+)
 from systems.injury import InjuryState, apply_damage
 from systems.pulses import PulseEvent, PulseLane
 from typeclasses.objects import Corpse
@@ -99,3 +106,13 @@ class TestCorpses(EvenniaTest):
         self.assertFalse(item.move_to(self.looter, quiet=True))
         self.assertFalse(withdraw(corpse, self.looter, item).moved)
         self.assertIs(item.location, corpse)
+
+    def test_malformed_reservation_fails_closed_to_looting(self):
+        """A damaged v2 reservation cannot quietly become public loot."""
+        corpse = create_corpse(self.char2, "malformed-reservation")
+        state = corpse.attributes.get(CORPSE_ATTRIBUTE)
+        state["loot_recipient_ids"] = [self.looter.id, self.looter.id]
+        corpse.attributes.add(CORPSE_ATTRIBUTE, state)
+
+        with self.assertRaises(CorpseError):
+            can_withdraw(corpse, self.looter)

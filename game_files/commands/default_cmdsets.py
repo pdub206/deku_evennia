@@ -16,6 +16,7 @@ own cmdsets by inheriting from them or directly from `evennia.CmdSet`.
 
 from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
+from commands.boards import CmdBoard
 from commands.building import (
     CmdAreas,
     CmdBuild,
@@ -30,6 +31,7 @@ from commands.change import CmdChange
 from commands.checks import CmdCheck
 from commands.combat import (
     CmdAim,
+    CmdAssist,
     CmdAttack,
     CmdBackstab,
     CmdBash,
@@ -38,15 +40,27 @@ from commands.combat import (
     CmdConsider,
     CmdHide,
     CmdKick,
+    CmdRescue,
     CmdSteadyAim,
     CmdWimpy,
 )
 from commands.combat_movement import CmdFlee
 from commands.command import CmdNoInput
-from commands.communication import CmdSay, CmdWhisper
+from commands.communication import (
+    CmdAnnounce,
+    CmdAsk,
+    CmdChannel,
+    CmdIgnore,
+    CmdMail,
+    CmdSay,
+    CmdShout,
+    CmdTell,
+    CmdWhisper,
+)
 from commands.consumables import CmdDrink, CmdEat, CmdPour, CmdSip, CmdTaste
 from commands.doors import CmdClose, CmdLock, CmdOpen, CmdPick, CmdUnlock
 from commands.effects import CmdEffects
+from commands.following import CmdFollow, CmdFollowAdmin, CmdUnfollow
 from commands.generic import (
     CmdAccess,
     CmdActionQueue,
@@ -72,6 +86,15 @@ from commands.generic import (
     CmdSetDesc,
     CmdWear,
 )
+from commands.groups import CmdGroup
+from commands.information import (
+    CmdCredits,
+    CmdInfo,
+    CmdSessions,
+    CmdWhere,
+    CmdWho,
+    CmdWizlist,
+)
 from commands.injury import CmdInjury, CmdStabilize
 from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
@@ -87,9 +110,11 @@ from commands.presentation import (
     CmdPrompt,
 )
 from commands.relationships import CmdOrder, CmdPet
+from commands.reports import CmdAdminReports, CmdReport, CmdReports
 from commands.sheet import CmdSheet
 from commands.shops import CmdBuy, CmdList, CmdSell, CmdValue
 from commands.skills import CmdSkills
+from commands.socials import CmdSocial, CmdSocials
 from commands.starting_packages import CmdStartPackages
 from commands.training import CmdPractice, CmdTrain
 from commands.weather import CmdWeather
@@ -147,6 +172,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdDrop)
         self.add(CmdGive)
         self.add(CmdWhisper)
+        self.add(CmdAsk)
+        self.add(CmdShout)
+        self.add(CmdSocial)
+        self.add(CmdSocials)
         self.add(CmdJunk)
         self.add(CmdItemPolicy)
         self.add(CmdNoteAdmin)
@@ -202,12 +231,14 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdLoadArea)
         self.add(CmdEffects)
         self.add(CmdAttack)
+        self.add(CmdAssist)
         self.add(CmdConsider)
         self.add(CmdHide)
         self.add(CmdAim)
         self.add(CmdBackstab)
         self.add(CmdBash)
         self.add(CmdKick)
+        self.add(CmdRescue)
         self.add(CmdSteadyAim)
         self.add(CmdWimpy)
         self.add(CmdCombatPrompt)
@@ -219,6 +250,10 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         self.add(CmdAdvancement)
         self.add(CmdOrder)
         self.add(CmdPet)
+        self.add(CmdFollow)
+        self.add(CmdUnfollow)
+        self.add(CmdFollowAdmin)
+        self.add(CmdGroup)
 
 
 class AccountCmdSet(default_cmds.AccountCmdSet):
@@ -239,6 +274,26 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         # Replace default charcreate/ic with the EvMenu-driven versions.
         self.add(ContribCmdIC)
         self.add(CmdCharCreate)
+        # Replace Evennia's persistent/offline page command with immediate tells.
+        self.add(CmdTell)
+        self.add(CmdIgnore)
+        self.add(CmdMail)
+        self.add(CmdBoard)
+        self.add(CmdReport)
+        self.add(CmdReports)
+        self.add(CmdAdminReports)
+        # COMM-05 replaces Evennia's broad who/session output with public-safe
+        # account rows and keeps detailed session diagnostics Admin-locked.
+        self.add(CmdWho)
+        self.add(CmdWhere)
+        self.add(CmdInfo)
+        self.add(CmdCredits)
+        self.add(CmdWizlist)
+        self.add(CmdSessions)
+        # Restrict Evennia's broad channel administration to COMM-01C's two
+        # curated account channels and add the Admin-only live broadcast.
+        self.add(CmdChannel)
+        self.add(CmdAnnounce)
         # Preserve the default command while identifying deliberate unpuppets.
         self.add(CmdOOC)
 

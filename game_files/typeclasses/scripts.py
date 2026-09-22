@@ -16,23 +16,16 @@ from typing import Any
 from django.conf import settings
 from evennia.scripts.scripts import DefaultScript
 from evennia.utils import logger
-from systems.combat import (
-    CombatActionResult,
-    process_combat_pulse,
-    set_combat_action_hook,
-)
-from systems.injury import process_recovery_pulse as process_injury_recovery_pulse
+from systems.combat import (CombatActionResult, process_combat_pulse,
+                            set_combat_action_hook)
+from systems.injury import \
+    process_recovery_pulse as process_injury_recovery_pulse
 from systems.magic_rest import process_magic_rest_pulse
 from systems.mob_combat import resolve_mob_combat_action
-from systems.pulses import (
-    PulseEvent,
-    PulseLane,
-    advance_pulse_state,
-    configured_cadences,
-    initial_pulse_state,
-    process_effect_pulse,
-    process_resource_recovery_pulse,
-)
+from systems.pulses import (PulseEvent, PulseLane, advance_pulse_state,
+                            configured_cadences, initial_pulse_state,
+                            process_effect_pulse,
+                            process_resource_recovery_pulse)
 from systems.tactical_combat import resolve_combat_action
 
 
@@ -242,13 +235,19 @@ class GamePulseScript(Script):
         process_action_pulse(event)
 
     def at_objects_pulse(self, event: PulseEvent) -> None:
-        """Consume lamp fuel (ITEM-05B), then advance item decay (ITEM-05A)."""
+        """Advance object upkeep and purge mail past its post-deletion retention."""
+        from systems.boards import purge_expired as purge_expired_boards
         from systems.item_decay import process_decay_pulse
         from systems.item_resources import process_object_pulse
+        from systems.mail import purge_expired
 
         try:
             process_object_pulse(event)
         finally:
             # Each consumer isolates its own items; one failing never starves
             # the other of this token.
-            process_decay_pulse(event)
+            try:
+                process_decay_pulse(event)
+            finally:
+                purge_expired()
+                purge_expired_boards()

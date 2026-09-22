@@ -15,12 +15,7 @@ from django.conf import settings
 from evennia.utils import logger
 from systems.combat import handle_departure, is_fighting
 from systems.corpses import CorpseError, corpse_record
-from systems.injury import (
-    InjuryError,
-    InjuryState,
-    injury_record,
-    repair_injury,
-)
+from systems.injury import InjuryError, InjuryState, injury_record, repair_injury
 from systems.lifecycle import (
     CharacterAvailability,
     CharacterLifecycleEvent,

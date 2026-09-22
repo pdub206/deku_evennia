@@ -6,7 +6,15 @@ from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.attacks import AttackOutcome, AttackResult, can_attack
-from systems.combat import COMBAT_CONFIG_KEY, get_target, is_fighting, start_fight
+from systems.combat import (
+    COMBAT_CONFIG_KEY,
+    _participant_sides,
+    _read_state,
+    get_target,
+    is_fighting,
+    start_fight,
+)
+from systems.combat_movement import FleeExitDecision
 from systems.injury import apply_damage
 from systems.mob_combat import (
     MOB_COMBAT_STATE_ATTRIBUTE,
@@ -14,10 +22,11 @@ from systems.mob_combat import (
     default_combat_profile,
     reconcile_mob_wimpy,
     resolve_mob_combat_action,
-    set_combat_profile,
     select_combat_target,
+    set_combat_profile,
     validate_combat_profile,
 )
+from systems.mobile_relationships import acquire_pet
 from systems.pulses import PulseEvent, PulseLane
 from typeclasses.characters import Character
 from typeclasses.exits import Exit
@@ -72,6 +81,44 @@ class TestMobCombat(EvenniaTest):
 
         self.assertIs(get_target(self.npc), self.target)
         self.assertIs(attack.call_args.args[1], self.target)
+
+    def test_group_ally_joins_its_member_side_and_mobile_keeps_rescue_focus(self):
+        """Group affinity affects enrollment, while current remains the only AI focus."""
+        from systems import groups
+
+        self.assertTrue(groups.invite(self.target, self.other).accepted)
+        self.assertTrue(groups.accept(self.other, self.target).accepted)
+        start_fight(self.npc, self.target)
+
+        joined = start_fight(self.other, self.npc)
+        encounter = _read_state()["encounters"][str(joined.encounter_id)]
+        sides = _participant_sides(encounter)
+
+        self.assertEqual(sides[self.target.id], sides[self.other.id])
+        self.assertIs(get_target(self.other), self.npc)
+        self.assertIs(
+            select_combat_target(self.npc, self.target, combat_profile(self.npc)),
+            self.target,
+        )
+
+    def test_controlled_creature_joins_its_owner_group_side(self):
+        """A pet inherits its responsible PC's party affinity at enrollment."""
+        from systems import groups
+
+        pet = create_object(Character, key="Hound", location=self.room1)
+        pet.db.is_player_character = False
+        pet.locks.add("pet:all()")
+        self.assertTrue(groups.invite(self.target, self.other).accepted)
+        self.assertTrue(groups.accept(self.other, self.target).accepted)
+        self.assertTrue(acquire_pet(self.other, pet).accepted)
+        start_fight(self.npc, self.target)
+
+        joined = start_fight(pet, self.npc)
+        sides = _participant_sides(
+            _read_state()["encounters"][str(joined.encounter_id)]
+        )
+
+        self.assertEqual(sides[pet.id], sides[self.target.id])
 
     def test_illegal_tactic_falls_back_to_one_basic_attack(self):
         start_fight(self.npc, self.target)
@@ -145,7 +192,10 @@ class TestMobCombat(EvenniaTest):
             self.npc.attributes.get(MOB_COMBAT_STATE_ATTRIBUTE)["wimpy_triggered"]
         )
 
-        create_object(Exit, key="north", location=self.room1, destination=self.room2)
+        escape = create_object(
+            Exit, key="north", location=self.room1, destination=self.room2
+        )
+        escape.locks.add("traverse:all()")
         reconcile_mob_wimpy(self.npc, boundary, boundary - 1)
         state = ServerConfig.objects.conf(COMBAT_CONFIG_KEY)
         self.assertIsNone(
@@ -153,7 +203,11 @@ class TestMobCombat(EvenniaTest):
         )
 
         reconcile_mob_wimpy(self.npc, boundary, boundary + 1)
-        reconcile_mob_wimpy(self.npc, boundary + 1, boundary)
+        with patch(
+            "systems.mob_combat.choose_flee_exit",
+            return_value=FleeExitDecision(True, escape),
+        ):
+            reconcile_mob_wimpy(self.npc, boundary + 1, boundary)
         state = ServerConfig.objects.conf(COMBAT_CONFIG_KEY)
         self.assertEqual(
             state["encounters"]["1"]["participants"][str(self.npc.id)][

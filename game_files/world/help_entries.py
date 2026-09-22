@@ -26,6 +26,111 @@ Each dict is on the form
 
 HELP_ENTRY_DICTS = [
     {
+        "key": "channels",
+        "aliases": ["channel", "ooc", "newbie"],
+        "category": "Communication",
+        "text": """There are two account-wide chat channels: |wOOC|n for out-of-character discussion and |wNewbie|n for questions and help. Use |wOOC <message>|n or |wNewbie <message>|n to speak, or |wchannel OOC = <message>|n. Use |wchannel|n to see your subscriptions, |wchannel/sub <channel>|n or |wchannel/unsub <channel>|n to change them, and |wchannel/mute <channel>|n or |wchannel/unmute <channel>|n to silence or restore one without unsubscribing. |wchannel/history <channel>|n shows up to 200 retained messages while you are subscribed. Your ignore list suppresses a sender's channel messages independently of muting. Channels are plain out-of-character text: they do not use languages or external chat bridges.""",
+    },
+    {
+        "key": "announce",
+        "aliases": ["announcements"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins use |wannounce <message>|n for an immediate server-wide notice. It reaches every online account once, cannot be ignored or muted, and is not stored in channel history. Use news for a durable announcement.""",
+    },
+    {
+        "key": "tell",
+        "aliases": ["page", "reply", "ignore"],
+        "category": "Communication",
+        "text": """Use |wtell <account> <message>|n to send a private message to an online account. |wpage|n is an alias for |wtell|n. Use |wtell/reply <message>|n to answer the last person you successfully told or who successfully told you. Tells are live only: they are not delivered to offline accounts, are not saved, and have no tell history, list, or read command. If a person is unavailable or ignores you, you receive the same unavailable response.\n\nUse |wignore|n to see your ignored accounts, |wignore/add <account>|n to silence an account's optional communication, and |wignore/remove <account>|n to hear them again. You may ignore up to 100 accounts. Ignoring blocks their tells and direct communication, and suppresses their ordinary speech and shouts; it does not hide required game information such as movement, combat, group, or system messages.""",
+    },
+    {
+        "key": "mail",
+        "aliases": ["mail send", "mail reply", "mail read"],
+        "category": "Communication",
+        "text": """Mail is durable account-to-account correspondence. Use |wmail|n to list received mail and |wmail/sent|n to list what you sent; lists show 20 messages per page (for example, |wmail 2|n). Use |wmail/read <number>|n to open a received message, which marks it read, and |wmail/delete <number>|n to remove only your own view.\n\nCompose with |wmail/send <account> = <subject>|n. This opens the text editor for the body; when you leave the editor, its current body is sent. Use |wmail/reply <number>|n to open an editor addressed to that received message's sender. Subjects are limited to 80 characters and bodies to 4,000 plain-text characters. Mail is delivered even when its recipient is offline. Ignore blocks new mail, and deleted mail is unavailable from your own list but remains visible to the other party until they delete it too.""",
+    },
+    {
+        "key": "mail moderation",
+        "aliases": ["mail moderate"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins may remove abusive durable mail with |wmail/moderate <number> = <reason>|n. A non-empty reason is required and the action is written to the server audit log. Builders and group leaders have no mail moderation access.""",
+    },
+    {
+        "key": "board",
+        "aliases": ["boards", "general", "news"],
+        "category": "Communication",
+        "text": """There are two public account boards: |wgeneral|n and |wnews|n. Use |wboard|n or |wboard general|n to list general posts, |wboard news|n for news, and add a page number to see another 20-post page. |wboard/read <board> <number>|n opens a post; reading advances your unread marker for that board and all older posts.\n\nUse |wboard/post general <subject>|n to start a general post. It opens the text editor; exiting the editor posts its body. Subjects are limited to 80 characters and bodies to 4,000 plain-text characters. General can be temporarily closed to new posts, but both boards always remain readable. Only Admins post news. A general-post author may use |wboard/remove general <number>|n to remove their own post. Posts are public: ignoring an author does not hide or renumber them.""",
+    },
+    {
+        "key": "board moderation",
+        "aliases": ["board remove", "board pin"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins may remove any post with |wboard/remove <board> <number> = <reason>|n, pin or unpin a news post with |wboard/pin <number> = <reason>|n or |wboard/unpin <number> = <reason>|n, and control general posting with |wboard/open = <reason>|n or |wboard/close = <reason>|n. Every moderation action requires a reason and is audit-logged. Builders and group leaders gain no board moderation access.""",
+    },
+    {
+        "key": "reports",
+        "aliases": ["bug", "typo", "idea", "report"],
+        "category": "Communication",
+        "text": """Use |wbug <text>|n, |wtypo <text>|n, or |widea <text>|n to send staff a durable report. Reports must contain 10 to 2,000 characters of plain text. Your confirmation gives a report number, but does not reveal staff notes or internal diagnostics. You may submit up to three reports in ten minutes and keep up to 20 unresolved reports. Reports work while you are OOC; when you are playing, the game saves only a safe snapshot of your current character and location to help staff investigate. Use |wreports|n to list your reports or |wreport/read <id>|n to see a report's status and any final staff response.""",
+    },
+    {
+        "key": "report moderation",
+        "aliases": ["@reports", "report claim", "report resolve"],
+        "category": "Staff",
+        "locks": "read:perm(Admin)",
+        "text": """Admins use |w@reports [status|kind] [page]|n to list reports and |w@reports/read <id>|n for staff detail. Claim with |w@reports/claim <id>|n; add an internal note with |w@reports/note <id> = <text>|n; finish with |w@reports/resolve <id> = <player-safe response>|n or |w@reports/reject <id> = <player-safe response>|n; and use |w@reports/reopen <id>|n when needed. |w@reports/purge|n explicitly removes final reports after their 180-day retention period. Only Admins have report internals access.""",
+    },
+    {
+        "key": "group",
+        "aliases": ["party", "groups"],
+        "category": "Character",
+        "text": """Use |wgroup|n to view your party. |wgroup status|n shows the ordered party roster, safe room labels, effective position, qualitative health, and connected, link-dead, OOC, or dead state. Joining consents only to this bounded sharing; it never reveals exact health/resources, effects, account details, or inaccessible locations. A leader may |wgroup invite <character>|n a visible, conscious PC in the same room; that player uses |wgroup accept <leader>|n or |wgroup decline <leader>|n. Parties hold at most eight members. Members use |wgroup leave|n; leaders may |wgroup kick <member>|n, |wgroup leader <member>|n, or |wgroup disband|n. A leader must transfer leadership before leaving. Membership survives movement, disconnects, OOC, death, and server restarts; invitations do not. Party membership persists independently of following and grants no access or automatic movement. You cannot join, leave, kick, or disband while any affected party member is fighting. Party members and their controlled creatures cannot attack one another.""",
+    },
+    {
+        "key": "who",
+        "aliases": ["users", "where", "info", "credits", "wizlist"],
+        "category": "Communication",
+        "text": """Use |wwho|n or |wusers|n to see connected accounts, up to 25 per page (for example, |wwho 2|n). The list shows an account and active character name, rough connection and idle time, and whether the account is playing or OOC; it never shows network or session details. Use |wwhere|n to see your own safe room label and the labels of current group members only. It cannot locate other players.
+
+Use |winfo|n for the game's public release, connection, rules, help, and contact information. Use |wcredits|n for game, Evennia, and SRD attribution. |wwizlist|n lists staff who have chosen to appear publicly, grouped by their public role; it does not reveal staff permissions, contact details, or whether someone is online.""",
+    },
+    {
+        "key": "following",
+        "aliases": ["follow", "unfollow", "followers"],
+        "category": "Character",
+        "text": """Following is a voluntary movement relationship, not a group.
+
+          |wfollow <character>|n asks a visible, conscious person in your room
+          for permission. They answer with |wfollow/accept <character>|n or
+          |wfollow/decline <character>|n. Use |wunfollow|n to leave, or
+          |wunfollow <character>|n to remove one direct follower. Either person
+          may end the link at any time. Requests end if either person moves,
+          disconnects, dies, or leaves the game; follow links end under the same
+          unsafe conditions. When your leader uses an ordinary exit, you follow
+          with your own travel delay if you are standing, conscious, can see the
+          departure, and are not fighting or busy. If your route becomes blocked,
+          you stay behind and the follow link ends; following never opens doors
+          or catches you up after recall, teleportation, forced movement, or
+          combat fleeing. Following does not make a group, share rewards or
+          loot, grant permissions, or control pets.""",
+    },
+    {
+        "key": "follow diagnostics",
+        "aliases": ["@follow", "follow repair"],
+        "category": "Staff",
+        "locks": "read:perm(Builder)",
+        "text": """Builders may inspect a PC's durable following record with |w@follow <character or #dbref>|n. Use |w@follow/repair <character or #dbref>|n only to clear malformed, dangling, cyclic, or over-capacity follow state. The repair is explicit: normal player commands never alter invalid records on their own.""",
+    },
+    {
+        "key": "assist",
+        "aliases": ["rescue"],
+        "category": "Combat",
+        "text": """Use |wassist <member>|n to join a conscious, visible group member's current fight on their side and target their opponent. It never makes an immediate attack; your normal combat readiness determines when you act. Use |wrescue <ally>|n, or |wrescue <ally> from <enemy>|n, while fighting to prepare an Athletics contest that may draw one enemy currently attacking that conscious ally to you. An ally need not be grouped. Rescue resolves on your next ready combat action; success changes only that enemy's target, and failure changes nothing else.""",
+    },
+    {
         "key": "lights",
         "aliases": ["light", "extinguish", "lamps", "fuel"],
         "category": "General",
@@ -1581,11 +1686,19 @@ HELP_ENTRY_DICTS = [
             base reward is adjusted by ten percent for every level it is above
             or below you, from zero at ten levels below to double at ten levels
             above. You must be alive, conscious, and in the NPC's room when it
-            dies. The most recent eligible contributor receives the whole award.
+            dies. When that contributor was in a group at the time they first
+            contributed, the group's frozen roster shares the authored base XP
+            equally; any remainder goes to earlier joiners. Each eligible
+            member then receives their own level adjustment. Members who join
+            later, leave before the death, are unconscious, sleeping, dead, or
+            elsewhere receive no share.
 
             Player-versus-player deaths never award XP. NPC loot is simply what
             the NPC was still carrying or wearing when it died; equipment or
-            items it lost while alive do not reappear.
+            items it lost while alive do not reappear. For two minutes after an
+            NPC dies, only the player or frozen eligible group roster credited
+            for that death may remove its items or coins. Anyone may inspect the
+            corpse, and remaining loot becomes public when that time expires.
         """,
     },
     {
@@ -1736,6 +1849,32 @@ HELP_ENTRY_DICTS = [
             Some hostile conditions allow a saving throw when first applied or
             on later pulses. Others can be removed by an appropriate cure or
             dispelling effect. Those details depend on the individual condition.
+        """,
+    },
+    {
+        "key": "communication",
+        "aliases": ["say", "whisper", "ask", "shout", "socials"],
+        "category": "Communication",
+        "text": """
+            Speak in your active language with |wsay <message>|n. Characters who
+            know that language understand you; others hear garbled speech.
+
+            |wwhisper <character> <message>|n is private to a visible person in
+            your room. |wask <character> <message>|n is directed but audible to
+            everyone in the room. Both use each listener's language knowledge.
+
+            |wshout <message>|n carries to your room and rooms one open exit away.
+            A closed door blocks a shout, and signed languages cannot be shouted.
+
+            Messages are limited to 500 characters. To keep conversation readable,
+            you may author up to five speech actions in ten seconds; a shout uses
+            three of those actions.
+
+            Use |wsocials|n to list the fixed nonverbal expressions. Enter one
+            directly, such as |wwave|n or |wbow <character>|n, to perform it.
+            A social can be directed only at a visible character in your room;
+            directing it at yourself has its own response. Socials do not use a
+            language and have no mechanical effect.
         """,
     },
     {

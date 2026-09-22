@@ -93,6 +93,30 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
         return AttackabilityDecision(False, "not_character")
     if attacker.id == target.id:
         return AttackabilityDecision(False, "self")
+    from systems.groups import are_allied
+    from systems.mobile_relationships import responsible_pc_id
+
+    responsible_attacker = responsible_pc_id(attacker)
+    responsible_target = responsible_pc_id(target)
+    if (
+        are_allied(attacker, target)
+        or (
+            responsible_attacker is not None
+            and responsible_target is not None
+            and are_allied(
+                _character(responsible_attacker), _character(responsible_target)
+            )
+        )
+        or (
+            responsible_attacker is not None
+            and are_allied(_character(responsible_attacker), target)
+        )
+        or (
+            responsible_target is not None
+            and are_allied(attacker, _character(responsible_target))
+        )
+    ):
+        return AttackabilityDecision(False, "group_member")
     if attacker.location is None or attacker.location != target.location:
         return AttackabilityDecision(False, "not_colocated")
     from systems.room_policy import combat_decision
@@ -120,6 +144,16 @@ def can_attack(attacker: Any, target: Any) -> AttackabilityDecision:
     if not target.access(attacker, "attack", default=True):
         return AttackabilityDecision(False, "access_denied")
     return AttackabilityDecision(True)
+
+
+def _character(identifier: int) -> Any | None:
+    """Resolve a PC only for the group-friendly-fire policy."""
+    try:
+        from typeclasses.characters import Character
+
+        return Character.objects.get(id=identifier)
+    except Exception:
+        return None
 
 
 def resolve_basic_attack(

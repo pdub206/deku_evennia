@@ -7,17 +7,32 @@ from evennia import create_object
 from evennia.server.models import ServerConfig
 from evennia.utils.test_resources import EvenniaTest
 from systems.attacks import AttackOutcome, AttackResult
-from systems.combat import (COMBAT_CONFIG_KEY, get_target,
-                            process_combat_pulse, rescue_retarget,
-                            schedule_tactical_action, set_combat_action_hook,
-                            start_fight)
+from systems.combat import (
+    COMBAT_CONFIG_KEY,
+    assist_fight,
+    get_target,
+    process_combat_pulse,
+    rescue_retarget,
+    schedule_tactical_action,
+    set_combat_action_hook,
+    start_fight,
+)
 from systems.dice import RollResult
 from systems.pulses import PulseEvent, PulseLane
-from systems.tactical_combat import (HIDDEN_EFFECT_KEY, PRONE_EFFECT_KEY,
-                                     STEADY_AIM_EFFECT_KEY, _aim, _backstab,
-                                     _bash, _hide, _kick, _steady_aim,
-                                     consume_prone_action,
-                                     resolve_combat_action)
+from systems.tactical_combat import (
+    HIDDEN_EFFECT_KEY,
+    PRONE_EFFECT_KEY,
+    STEADY_AIM_EFFECT_KEY,
+    _aim,
+    _backstab,
+    _bash,
+    _hide,
+    _kick,
+    _steady_aim,
+    consume_prone_action,
+    execute_tactical_intent,
+    resolve_combat_action,
+)
 from typeclasses.characters import Character
 
 
@@ -285,3 +300,41 @@ class TestPhysicalTactics(EvenniaTest):
         self.assertTrue(result.changed)
         self.assertIs(get_target(self.char2), self.char1)
         self.assertIsNotNone(get_target(ally))
+
+    def test_assist_joins_an_ally_side_without_an_immediate_attack(self):
+        """Assist preserves the caller's normal first-ready-action cadence."""
+        from systems import groups
+
+        ally = create_object(Character, key="Ally", location=self.room1)
+        groups.invite(self.char1, ally)
+        groups.accept(ally, self.char1)
+        start_fight(ally, self.char2)
+        before = self.char2.stats.hp_current
+
+        result = assist_fight(self.char1, ally)
+
+        self.assertTrue(result.accepted)
+        self.assertIs(get_target(self.char1), self.char2)
+        self.assertEqual(self.char2.stats.hp_current, before)
+
+    def test_rescue_intent_retargets_only_after_its_contest(self):
+        """Rescue stores both target ids and has no attack or damage result."""
+        ally = create_object(Character, key="Ally", location=self.room1)
+        start_fight(ally, self.char2)
+        assist_fight(self.char1, ally)
+        from systems.combat import change_target
+
+        change_target(self.char2, ally)
+        scheduled = schedule_tactical_action(
+            self.char1, "rescue", self.char2, protected=ally.id
+        )
+        intent = ServerConfig.objects.conf(COMBAT_CONFIG_KEY)["encounters"][
+            str(scheduled.encounter_id)
+        ]["participants"][str(self.char1.id)]["pending_intent"]
+        rolls = iter((RollResult(20, 0, 20, 0, True), RollResult(1, 0, 1, 0, True)))
+
+        with patch("systems.dice.roll_check", side_effect=lambda *_: next(rolls)):
+            result = execute_tactical_intent(self.char1, self.char2, self.event, intent)
+
+        self.assertTrue(result.retargeted)
+        self.assertIs(get_target(self.char2), self.char1)

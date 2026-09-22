@@ -115,19 +115,25 @@ def start_fight(actor: Any, target: Any) -> CombatOperationResult:
         )
     elif actor_encounter is not None:
         encounter_id = actor_encounter
+        side = _side_for_join(target, state["encounters"][str(encounter_id)], actor.id)
+        if side is None:
+            return CombatOperationResult(False, False, reason="group_side_conflict")
         _add_participant(
             state,
             encounter_id,
             target_id,
-            _opposing_side(state["encounters"][str(encounter_id)], actor_id),
+            side,
         )
     elif target_encounter is not None:
         encounter_id = target_encounter
+        side = _side_for_join(actor, state["encounters"][str(encounter_id)], target.id)
+        if side is None:
+            return CombatOperationResult(False, False, reason="group_side_conflict")
         _add_participant(
             state,
             encounter_id,
             actor_id,
-            _opposing_side(state["encounters"][str(encounter_id)], target_id),
+            side,
         )
     else:
         encounter_id = _create_encounter(state, actor.location.id, actor_id, target_id)
@@ -162,6 +168,66 @@ def _interrupt_magic_rests(*participants: Any) -> None:
 def join_fight(actor: Any, target: Any) -> CombatOperationResult:
     """Join target's encounter, using the same validation and merge policy."""
     return start_fight(actor, target)
+
+
+def assist_fight(actor: Any, member: Any) -> CombatOperationResult:
+    """Join ``member``'s side and select their current opponent.
+
+    This deliberately has no group lookup: GROUP-04 owns the consent and
+    eligibility policy, while combat owns the atomic side and cadence change.
+    """
+    if _object_id(actor) is None or _object_id(member) is None:
+        return CombatOperationResult(False, False, reason="invalid_participant")
+    if actor.location is None or actor.location != member.location:
+        return CombatOperationResult(False, False, reason="not_colocated")
+    state = _read_state()
+    _repair_state(state)
+    member_encounter = _participant_encounter(state, member.id)
+    if member_encounter is None:
+        return CombatOperationResult(False, False, reason="member_not_fighting")
+    opponent = _get_character(
+        state["encounters"][str(member_encounter)]["participants"][str(member.id)][
+            "target"
+        ]
+    )
+    if opponent is None:
+        return CombatOperationResult(False, False, reason="member_not_fighting")
+    from systems.attacks import can_attack
+
+    if not can_attack(actor, opponent).allowed:
+        return CombatOperationResult(False, False, reason="attack_denied")
+    actor_encounter = _participant_encounter(state, actor.id)
+    if actor_encounter == member_encounter:
+        encounter = state["encounters"][str(member_encounter)]
+        sides = _participant_sides(encounter)
+        if sides[actor.id] != sides[member.id]:
+            return CombatOperationResult(False, False, reason="opposite_side")
+        changed = _set_target(state, member_encounter, actor.id, opponent.id)
+    elif actor_encounter is None:
+        encounter = state["encounters"][str(member_encounter)]
+        _add_participant(
+            state, member_encounter, actor.id, _participant_sides(encounter)[member.id]
+        )
+        changed = _set_target(state, member_encounter, actor.id, opponent.id) or True
+    else:
+        first = state["encounters"][str(actor_encounter)]
+        second = state["encounters"][str(member_encounter)]
+        if first["room"] != second["room"]:
+            return CombatOperationResult(False, False, reason="not_colocated")
+        encounter_id = _merge_encounters(
+            state,
+            actor_encounter,
+            member_encounter,
+            actor.id,
+            member.id,
+            same_side=True,
+        )
+        changed = _set_target(state, encounter_id, actor.id, opponent.id) or True
+        member_encounter = encounter_id
+    _repair_state(state)
+    _write_state(state)
+    _refresh_prompts(actor, member, opponent)
+    return CombatOperationResult(True, changed, member_encounter)
 
 
 def change_target(actor: Any, target: Any) -> CombatOperationResult:
@@ -730,6 +796,11 @@ def _repair_state(state: dict[str, Any]) -> None:
             _close_reward_ledger(int(encounter_id))
             continue
         sides = _participant_sides(encounter)
+        if _has_group_side_conflict(encounter, sides):
+            _clear_encounter_conditions(encounter)
+            del state["encounters"][encounter_id]
+            _close_reward_ledger(int(encounter_id))
+            continue
         for actor_id, side in sides.items():
             participants[str(actor_id)]["side"] = side
         if len(set(sides.values())) < 2:
@@ -870,12 +941,21 @@ def _set_target(
 
 
 def _merge_encounters(
-    state: dict[str, Any], first_id: int, second_id: int, actor_id: int, target_id: int
+    state: dict[str, Any],
+    first_id: int,
+    second_id: int,
+    actor_id: int,
+    target_id: int,
+    *,
+    same_side: bool = False,
 ) -> int:
     """Merge same-room records deterministically into their lower identity."""
     first = state["encounters"][str(first_id)]
     second = state["encounters"][str(second_id)]
-    if _participant_sides(first)[actor_id] == _participant_sides(second)[target_id]:
+    sides_match = (
+        _participant_sides(first)[actor_id] == _participant_sides(second)[target_id]
+    )
+    if sides_match != same_side:
         for member_id, side in _participant_sides(second).items():
             second["participants"][str(member_id)]["side"] = 1 - side
     keep_id, remove_id = sorted((first_id, second_id))
@@ -969,6 +1049,69 @@ def _opposing_side(encounter: Mapping[str, Any], actor_id: int) -> int:
     return 1 - _participant_sides(encounter)[actor_id]
 
 
+def _side_for_join(
+    joining: Any, encounter: Mapping[str, Any], opposed_to: int
+) -> int | None:
+    """Choose an existing group ally's side, or the normal opposing side.
+
+    GROUP-02 membership is read only at enrollment.  Later membership changes
+    must never rewrite a persisted encounter side.
+    """
+    sides = _participant_sides(encounter)
+    affinities = tuple(
+        (sides[participant_id], _group_side_affinity(joining, participant))
+        for participant_id in sides
+        if (participant := _get_character(participant_id)) is not None
+    )
+    if any(affinity is None for _, affinity in affinities):
+        return None
+    allied_sides = {side for side, affinity in affinities if affinity}
+    if len(allied_sides) > 1:
+        return None
+    if allied_sides:
+        return allied_sides.pop()
+    return _opposing_side(encounter, opposed_to)
+
+
+def _group_side_affinity(first: Any, second: Any) -> bool | None:
+    """Read GROUP-02 affinity for PCs and their responsible creatures only."""
+    from systems.groups import combat_affinity
+    from systems.mobile_relationships import responsible_pc_id
+
+    def principal(character: Any) -> Any | None:
+        responsible_id = responsible_pc_id(character)
+        if responsible_id is not None:
+            return _get_character(responsible_id)
+        player = character.attributes.get("is_player_character")
+        return character if player is None or bool(player) else None
+
+    first_principal, second_principal = principal(first), principal(second)
+    if first_principal is None or second_principal is None:
+        return False
+    if first_principal.id == second_principal.id:
+        return True
+    return combat_affinity(first_principal, second_principal)
+
+
+def _has_group_side_conflict(
+    encounter: Mapping[str, Any], sides: Mapping[int, int]
+) -> bool:
+    """Fail closed when current group affinity contradicts persisted sides."""
+    participant_ids = sorted(sides)
+    return any(
+        affinity is None or (affinity and sides[first] != sides[second])
+        for index, first in enumerate(participant_ids)
+        for second in participant_ids[index + 1 :]
+        if _get_character(first) is not None and _get_character(second) is not None
+        if (
+            affinity := _group_side_affinity(
+                _get_character(first), _get_character(second)
+            )
+        )
+        is not False
+    )
+
+
 def _can_target(encounter: Mapping[str, Any], actor_id: int, target_id: int) -> bool:
     """Require distinct members assigned to opposing encounter sides."""
     participants = encounter["participants"]
@@ -979,7 +1122,14 @@ def _can_target(encounter: Mapping[str, Any], actor_id: int, target_id: int) -> 
     ):
         return False
     sides = _participant_sides(encounter)
-    return sides[actor_id] != sides[target_id]
+    if sides[actor_id] == sides[target_id]:
+        return False
+    actor, target = _get_character(actor_id), _get_character(target_id)
+    return (
+        actor is not None
+        and target is not None
+        and _group_side_affinity(actor, target) is False
+    )
 
 
 def _clear_encounter_conditions(encounter: Mapping[str, Any]) -> None:

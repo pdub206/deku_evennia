@@ -73,10 +73,14 @@ class Exit(ObjectParent, DefaultExit):
                 move_type="traverse",
                 use_destination=False,
                 travel_authorized=True,
+                mobile_navigation=True,
             )
         if kwargs.get("travel_execution"):
             return traversing_object.move_to(
-                target_location, move_type="traverse", travel_authorized=True
+                target_location,
+                move_type="traverse",
+                travel_authorized=True,
+                travel_execution=True,
             )
         from systems.travel import denial_message, schedule_travel
 
