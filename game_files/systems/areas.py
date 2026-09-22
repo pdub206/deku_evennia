@@ -87,6 +87,7 @@ MANIFEST_FIELDS = frozenset(
         "exits",
         "mobiles",
         "objects",
+        "renames",
     }
 )
 MAX_MANIFEST_TEXT_LENGTH = 2_000
@@ -238,6 +239,9 @@ def validate_area_manifest(
     # AREA-01A/B manifests predate object placements. Their empty default is
     # deliberately migration-compatible rather than an implicit live reset.
     data.setdefault("objects", {})
+    # AREA-04A keeps identity changes explicit.  An empty map is emitted by
+    # older manifests and is deliberately not inferred from display fields.
+    data.setdefault("renames", {"rooms": {}, "exits": {}})
     unknown = set(data) - MANIFEST_FIELDS
     missing = MANIFEST_FIELDS - set(data)
     if unknown:
@@ -287,6 +291,7 @@ def validate_area_manifest(
         raise AreaManifestError("Manifest mobiles has an invalid section type.")
     if not isinstance(data["objects"], dict):
         raise AreaManifestError("Manifest objects has an invalid section type.")
+    _validate_manifest_renames(data)
     _validate_area_records(
         data, validate_runtime_prototypes=validate_runtime_prototypes
     )
@@ -318,6 +323,7 @@ def build_area_manifest(area_slug: str) -> dict[str, Any]:
             "exits": exits,
             "mobiles": [],
             "objects": {},
+            "renames": {"rooms": {}, "exits": {}},
         }
     )
 
@@ -589,6 +595,41 @@ def _manifest_exit_records(area_slug: str) -> dict[str, dict[str, Any]]:
                 "door": door_area_data(exit_obj),
             }
     return dict(sorted(records.items()))
+
+
+def _validate_manifest_renames(data: dict[str, Any]) -> None:
+    """Validate AREA-04A's single-release room and exit identity map.
+
+    The map is intentionally narrow: only live managed room and exit records
+    have identities that AREA-04A can reconcile.  Its old keys must be absent
+    from this revision and its targets must be newly authored keys, preventing
+    a display-name or topology guess from becoming an implicit rename.
+    """
+    renames = data["renames"]
+    if not isinstance(renames, dict) or set(renames) != {"rooms", "exits"}:
+        raise AreaManifestError("Manifest renames must contain rooms and exits maps.")
+    for section, records in (("rooms", data["rooms"]), ("exits", data["exits"])):
+        mapping = renames[section]
+        if not isinstance(mapping, dict):
+            raise AreaManifestError(f"Manifest {section} renames must be a mapping.")
+        targets: set[str] = set()
+        for old_key, new_key in mapping.items():
+            try:
+                old_key = _slug(old_key, f"old {section} rename key")
+                new_key = _slug(new_key, f"new {section} rename key")
+            except AreaManifestError as err:
+                raise AreaManifestError(
+                    f"Manifest {section} renames are invalid."
+                ) from err
+            if old_key == new_key or old_key in records or new_key not in records:
+                raise AreaManifestError(
+                    f"Manifest {section} rename map is not one-release."
+                )
+            if new_key in targets:
+                raise AreaManifestError(
+                    f"Manifest {section} rename targets must be unique."
+                )
+            targets.add(new_key)
 
 
 def _validate_area_records(

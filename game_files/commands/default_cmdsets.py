@@ -19,6 +19,9 @@ from commands.advancement import CmdAdvancement, CmdLevels
 from commands.boards import CmdBoard
 from commands.building import (
     CmdAreaCheck,
+    CmdAreaApply,
+    CmdAreaDiff,
+    CmdAreaPrune,
     CmdAreaReset,
     CmdAreas,
     CmdBuild,
@@ -225,6 +228,9 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # verbs live in BuildModeCmdSet, added to the caller while editing.
         self.add(CmdBuild)
         self.add(CmdAreaCheck)
+        self.add(CmdAreaApply)
+        self.add(CmdAreaDiff)
+        self.add(CmdAreaPrune)
         self.add(CmdAreaReset)
         self.add(CmdAreas)
         self.add(CmdRooms)

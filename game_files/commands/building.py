@@ -35,6 +35,9 @@ from evennia.utils.eveditor import EvEditor
 from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
+from systems.area_apply import AreaApplyError, apply_areas, plan_fingerprint
+from systems.area_diff import build_area_diff, render_area_diff
+from systems.area_prune import AreaPruneError, prune_area
 from systems.area_resets import AreaResetError, request_manual_reset
 from systems.areas import (
     AreaPlanError,
@@ -1024,6 +1027,148 @@ class CmdAreaCheck(MuxCommand):
             self.caller.msg("\n".join(lines))
             return
         self.caller.msg(area_plan_summary(plan))
+
+
+class CmdAreaDiff(MuxCommand):
+    """Compare compiled area source with managed live identities without writes.
+
+    Usage:
+      area/diff <area|all> [page]
+    """
+
+    key = "area"
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Compile once, then render one bounded read-only reconciliation page."""
+        if "diff" not in self.switches:
+            self.caller.msg("Usage: area/diff <area|all> [page]")
+            return
+        parts = self.args.strip().lower().split()
+        if len(parts) not in {1, 2}:
+            self.caller.msg("Usage: area/diff <area|all> [page]")
+            return
+        target = parts[0] if parts else ""
+        try:
+            page = int(parts[1]) if len(parts) == 2 else 1
+        except ValueError:
+            self.caller.msg("Diff page must be a positive number.")
+            return
+        if page < 1:
+            self.caller.msg("Diff page must be a positive number.")
+            return
+        if target == "all":
+            selected = None
+        else:
+            try:
+                selected = [as_slug(target)]
+            except ValueError as err:
+                self.caller.msg(f"Invalid area name: {err}")
+                return
+        try:
+            plan = compile_area_load_plan(selected)
+            self.caller.msg(
+                render_area_diff(build_area_diff(plan), page)
+                + f"\nRevision {plan_fingerprint(plan)}."
+            )
+        except (AreaPlanError, ValueError):
+            self.caller.msg("That area cannot be diffed safely.")
+
+
+class CmdAreaApply(MuxCommand):
+    """Apply compiled source records to managed live rooms and exits.
+
+    Usage:
+      area/apply <area|all>
+    """
+
+    key = "area"
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Request the transactional service without ever invoking a reset."""
+        if "apply" not in self.switches:
+            self.caller.msg("Usage: area/apply <area|all>")
+            return
+        target = self.args.strip().lower()
+        if not target:
+            self.caller.msg("Usage: area/apply <area|all>")
+            return
+        if target == "all":
+            selected = None
+        else:
+            try:
+                selected = [as_slug(target)]
+            except ValueError as err:
+                self.caller.msg(f"Invalid area name: {err}")
+                return
+        try:
+            result = apply_areas(selected)
+        except AreaApplyError as err:
+            if str(err) == "busy":
+                self.caller.msg("Area apply is busy; try again shortly.")
+            else:
+                self.caller.msg("That area cannot be applied safely.")
+            return
+        self.caller.msg(
+            "Area apply complete: "
+            f"{len(result.areas)} area(s), {result.rooms_created} room(s) created, "
+            f"{result.rooms_updated} room(s) updated, {result.exits_created} exit(s) created, "
+            f"and {result.exits_updated} exit(s) updated. "
+            f"Revision {result.fingerprint[:12]}."
+        )
+
+
+class CmdAreaPrune(MuxCommand):
+    """Conservatively delete reviewed, empty stale area records.
+
+    Usage:
+      area/prune <area> = <revision fingerprint>
+    """
+
+    key = "area"
+    locks = "cmd:perm(Admin)"
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+
+    def func(self) -> None:
+        """Require exact diff revision confirmation before destructive pruning."""
+        if "prune" not in self.switches or "=" not in self.args:
+            self.caller.msg("Usage: area/prune <area> = <revision fingerprint>")
+            return
+        raw_area, fingerprint = (
+            part.strip().lower() for part in self.args.split("=", 1)
+        )
+        try:
+            area = as_slug(raw_area)
+        except ValueError as err:
+            self.caller.msg(f"Invalid area name: {err}")
+            return
+        if len(fingerprint) != 64 or any(
+            char not in "0123456789abcdef" for char in fingerprint
+        ):
+            self.caller.msg("The full revision fingerprint is required.")
+            return
+        try:
+            result = prune_area(area, fingerprint)
+        except AreaPruneError as err:
+            self.caller.msg(
+                "Area prune is busy; try again shortly."
+                if str(err) == "busy"
+                else "That area cannot be pruned safely."
+            )
+            return
+        message = (
+            f"Area prune: {result.exits_deleted} exit(s), {result.rooms_deleted} room(s), "
+            f"and {result.claims_deleted} claim(s) retired."
+        )
+        if result.blocked:
+            message += " Blocked: " + ", ".join(result.blocked[:10]) + "."
+        self.caller.msg(message)
 
 
 class CmdAreaReset(MuxCommand):

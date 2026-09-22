@@ -2348,6 +2348,12 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
 
               |warea/check <area|all>|n  validate source data without loading it
 
+              |warea/diff <area|all> [page]|n compare source with managed live records
+
+              |warea/apply <area|all>|n update managed records from source
+
+              |warea/prune <area> = <full revision>|n retire reviewed empty stale records
+
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
 
@@ -2355,6 +2361,32 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
             validates the selected area's declared dependencies (or every area
             with |wall|n), then reports a bounded list of records to repair.
             It never creates rooms, exits, NPCs, items, or reset state.
+
+            |warea/diff|n is also read-only. It reports additions, authored
+            changes, reference changes, stale managed records, and conflicts in
+            stable order; use its optional page number for long output. It never
+            shows occupants, contents, dbrefs, runtime-private state, or a
+            door's current state. Renaming a room or exit key requires the
+            manifest's explicit one-release |wrenames|n map (|wrooms|n and
+            |wexits|n maps from old key to new key); changing display text or
+            topology never implies a rename. A reported consumed rename entry
+            must be removed when the manifest schema is next revised.
+
+            |warea/apply|n recompiles and fingerprints the selected source just
+            before one transaction updates it. Existing managed rooms and exits
+            are updated in place; occupants, ordinary contents, NPC/object
+            survivors, current door state, and reset timing are preserved.
+            Removed source records remain stale until the separate retirement
+            workflow handles them. Apply never runs a reset. If another apply
+            is active, wait briefly and retry.
+
+            |warea/prune|n is Admin-only and destructive. First run
+            |warea/diff|n, copy its full Revision value, and use that exact value
+            as confirmation. Prune removes only stale managed exits and rooms
+            that are empty and have no incoming exit, configured world role, or
+            queued action endpoint. It never moves or deletes characters,
+            corpses, items, mail, reports, or other player state; blocked
+            records remain in place and are reported for repair.
 
             ## Room and Exit Records
 

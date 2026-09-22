@@ -429,6 +429,42 @@ def _reconcile_controllers(plan: AreaLoadPlan) -> dict[str, dict[str, Any]]:
         return {key: dict(value) for key, value in live.items()}
 
 
+def handoff_area_controllers(
+    plan: AreaLoadPlan, area_keys: tuple[str, ...]
+) -> dict[str, dict[str, Any]]:
+    """Commit new controller revisions only after AREA-04B's graph succeeds.
+
+    Unlike startup reconciliation, a targeted apply must not retire unrelated
+    controllers simply because its compiled closure is smaller than the world.
+    The caller already holds the same registry row inside its transaction.
+    """
+    with _locked_state() as state:
+        live = state["controllers"]
+        for area_key in area_keys:
+            manifest = plan.registry.manifests[area_key]
+            fingerprint = _fingerprint(manifest)
+            policy = _policy(manifest["reset_policy"])
+            lifespan = manifest["lifespan_pulses"]
+            old = live.get(area_key)
+            if old is None or old["manifest_fingerprint"] != fingerprint:
+                live[area_key] = _new_controller(fingerprint, policy, lifespan)
+            else:
+                old["policy"] = policy
+                old["lifespan_pulses"] = lifespan
+        _write_state(state)
+        return {key: dict(value) for key, value in live.items()}
+
+
+def retire_area_controller(area_key: str) -> bool:
+    """Remove a controller only after AREA-04C fully retires its area graph."""
+    with _locked_state() as state:
+        if area_key not in state["controllers"]:
+            return False
+        del state["controllers"][area_key]
+        _write_state(state)
+        return True
+
+
 def _new_controller(fingerprint: str, policy: str, lifespan: int) -> dict[str, Any]:
     return {
         "version": CONTROLLER_VERSION,
