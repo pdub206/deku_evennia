@@ -37,6 +37,22 @@ SERVERNAME = "game"
 # Production deployments should override it in secret_settings.py or deployment
 # configuration with a release identifier such as ``2026.09.21``.
 GAME_BUILD_ID = "development"
+# COMM-05's ``info`` and ``credits`` expose only this explicitly public,
+# source-controlled metadata. Deployments may override wording, never secrets.
+GAME_PUBLIC_INFO = {
+    "game": SERVERNAME,
+    "release": GAME_BUILD_ID,
+    "version": "Evennia",
+    "transports": "telnet and web client",
+    "rules": "SRD-inspired fantasy adventure",
+    "help": "help <topic>",
+    "contact": "Contact a staff member in game.",
+}
+GAME_CREDITS = (
+    "This game is built with Evennia.\n"
+    "Rules inspiration includes the System Reference Document (SRD).\n"
+    "See the project source and in-game staff for additional credits."
+)
 
 # Character creation: new accounts go to OOC screen; charcreate runs the EvMenu wizard.
 # Account #1 (superuser) still gets a character via initial_setup.py regardless of this flag.

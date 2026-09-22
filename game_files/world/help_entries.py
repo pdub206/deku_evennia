@@ -90,6 +90,14 @@ HELP_ENTRY_DICTS = [
         "text": """Use |wgroup|n to view your party. |wgroup status|n shows the ordered party roster, safe room labels, effective position, qualitative health, and connected, link-dead, OOC, or dead state. Joining consents only to this bounded sharing; it never reveals exact health/resources, effects, account details, or inaccessible locations. A leader may |wgroup invite <character>|n a visible, conscious PC in the same room; that player uses |wgroup accept <leader>|n or |wgroup decline <leader>|n. Parties hold at most eight members. Members use |wgroup leave|n; leaders may |wgroup kick <member>|n, |wgroup leader <member>|n, or |wgroup disband|n. A leader must transfer leadership before leaving. Membership survives movement, disconnects, OOC, death, and server restarts; invitations do not. Party membership persists independently of following and grants no access or automatic movement. You cannot join, leave, kick, or disband while any affected party member is fighting. Party members and their controlled creatures cannot attack one another.""",
     },
     {
+        "key": "who",
+        "aliases": ["users", "where", "info", "credits", "wizlist"],
+        "category": "Communication",
+        "text": """Use |wwho|n or |wusers|n to see connected accounts, up to 25 per page (for example, |wwho 2|n). The list shows an account and active character name, rough connection and idle time, and whether the account is playing or OOC; it never shows network or session details. Use |wwhere|n to see your own safe room label and the labels of current group members only. It cannot locate other players.
+
+Use |winfo|n for the game's public release, connection, rules, help, and contact information. Use |wcredits|n for game, Evennia, and SRD attribution. |wwizlist|n lists staff who have chosen to appear publicly, grouped by their public role; it does not reveal staff permissions, contact details, or whether someone is online.""",
+    },
+    {
         "key": "following",
         "aliases": ["follow", "unfollow", "followers"],
         "category": "Character",

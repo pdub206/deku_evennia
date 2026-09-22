@@ -107,6 +107,26 @@ def status_lines(character: Any) -> tuple[str, ...] | None:
     return tuple(lines)
 
 
+def location_lines(character: Any) -> tuple[str, ...]:
+    """Return the consented, view-locked locations for ``where``.
+
+    A party is the only relationship that consents to location sharing.  Keep
+    this reader separate from the richer status display so information commands
+    cannot accidentally grow a second, less restrictive location policy.
+    """
+    # Account-level commands remain available while OOC. An Account id is not
+    # a character id, so never try to resolve it through the party registry.
+    if not getattr(getattr(character, "db", None), "is_player_character", False):
+        return (f"{getattr(character, 'key', 'You')}: Location unavailable",)
+    members = group_members(character) or (_id(character),)
+    return tuple(
+        f"{_member_name(member_id, character)}: "
+        f"{_member_room(_pc_by_id(member_id), character)}"
+        for member_id in members
+        if member_id is not None
+    )
+
+
 def are_allied(first: Any, second: Any) -> bool:
     """Return whether two PCs share a current party, without mutation."""
     first_id, second_id = _id(first), _id(second)

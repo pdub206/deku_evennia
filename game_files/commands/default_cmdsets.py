@@ -42,6 +42,14 @@ from commands.generic import (CmdAccess, CmdActionQueue, CmdCoins, CmdCurrency,
                               CmdWear)
 from commands.groups import CmdGroup
 from commands.injury import CmdInjury, CmdStabilize
+from commands.information import (
+    CmdCredits,
+    CmdInfo,
+    CmdSessions,
+    CmdWhere,
+    CmdWho,
+    CmdWizlist,
+)
 from commands.item_policy import CmdItemPolicy
 from commands.item_resources import CmdExtinguish, CmdLight, CmdRefill
 from commands.magic import CmdAbilities, CmdCast, CmdSpells
@@ -222,6 +230,14 @@ class AccountCmdSet(default_cmds.AccountCmdSet):
         self.add(CmdReport)
         self.add(CmdReports)
         self.add(CmdAdminReports)
+        # COMM-05 replaces Evennia's broad who/session output with public-safe
+        # account rows and keeps detailed session diagnostics Admin-locked.
+        self.add(CmdWho)
+        self.add(CmdWhere)
+        self.add(CmdInfo)
+        self.add(CmdCredits)
+        self.add(CmdWizlist)
+        self.add(CmdSessions)
         # Restrict Evennia's broad channel administration to COMM-01C's two
         # curated account channels and add the Admin-only live broadcast.
         self.add(CmdChannel)
