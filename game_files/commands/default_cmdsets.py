@@ -18,6 +18,7 @@ from commands.account import CmdCharCreate, CmdOOC
 from commands.advancement import CmdAdvancement, CmdLevels
 from commands.boards import CmdBoard
 from commands.building import (
+    CmdAreaCheck,
     CmdAreas,
     CmdBuild,
     CmdItems,
@@ -222,6 +223,7 @@ class CharacterCmdSet(default_cmds.CharacterCmdSet):
         # Builder tools (lock-gated to Builder perm). The sticky edit-mode
         # verbs live in BuildModeCmdSet, added to the caller while editing.
         self.add(CmdBuild)
+        self.add(CmdAreaCheck)
         self.add(CmdAreas)
         self.add(CmdRooms)
         self.add(CmdItems)

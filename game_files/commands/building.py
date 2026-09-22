@@ -36,9 +36,12 @@ from evennia.utils.search import search_tag
 from evennia.utils.utils import inherits_from
 from systems.action_policy import ActionCategory
 from systems.areas import (
+    AreaPlanError,
+    area_plan_summary,
     area_index,
     area_of,
     assign_area,
+    compile_area_load_plan,
     export_area,
     load_area,
     room_key_of,
@@ -974,6 +977,52 @@ class CmdLoadArea(Command):
             )
             return
         self.caller.msg(f"Loaded |y{len(rooms)}|n room(s) for area |y{slug}|n.")
+
+
+class CmdAreaCheck(MuxCommand):
+    """Validate a tracked area dependency closure without changing the world.
+
+    Usage:
+      area/check <area|all>
+    """
+
+    key = "area"
+    locks = _BUILDER_LOCK
+    help_category = "Building"
+    action_category = ActionCategory.STATE_INDEPENDENT
+    max_errors = 10
+    max_error_length = 180
+
+    def func(self) -> None:
+        """Compile only source data and render a bounded actionable result."""
+        if "check" not in self.switches:
+            self.caller.msg("Usage: area/check <area|all>")
+            return
+        target = self.args.strip().lower()
+        if not target:
+            self.caller.msg("Usage: area/check <area|all>")
+            return
+        if target == "all":
+            selected = None
+        else:
+            try:
+                selected = [as_slug(target)]
+            except ValueError as err:
+                self.caller.msg(f"Invalid area name: {err}")
+                return
+        try:
+            plan = compile_area_load_plan(selected)
+        except AreaPlanError as err:
+            messages = str(err).split("; ")[: self.max_errors]
+            lines = ["|rArea plan invalid:|n"]
+            lines.extend(
+                f"  - {message[: self.max_error_length]}" for message in messages
+            )
+            if len(str(err).split("; ")) > self.max_errors:
+                lines.append("  - Additional errors omitted.")
+            self.caller.msg("\n".join(lines))
+            return
+        self.caller.msg(area_plan_summary(plan))
 
 
 def _render_area_index() -> str:

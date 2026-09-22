@@ -2346,8 +2346,15 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
 
               |wloadarea <area>|n        spawn an area's rooms and exits
 
+              |warea/check <area|all>|n  validate source data without loading it
+
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
+
+            |warea/check|n reads only the tracked area and prototype source. It
+            validates the selected area's declared dependencies (or every area
+            with |wall|n), then reports a bounded list of records to repair.
+            It never creates rooms, exits, NPCs, items, or reset state.
 
             ## Room and Exit Records
 

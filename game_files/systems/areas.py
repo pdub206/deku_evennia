@@ -26,9 +26,11 @@ import importlib.util
 import json
 import math
 import os
+import pkgutil
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pprint import pformat
+from types import MappingProxyType
 from typing import Any
 
 from django.conf import settings
@@ -100,6 +102,72 @@ class AreaManifestError(ValueError):
     """A tracked area manifest is malformed, unsafe, or unsupported."""
 
 
+class AreaRegistryError(AreaManifestError):
+    """The enabled area's source records cannot form one unambiguous world."""
+
+
+class AreaPlanError(AreaRegistryError):
+    """A complete source world could not be compiled into a load plan."""
+
+
+@dataclass(frozen=True)
+class AreaRegistry:
+    """Read-only, whole-world source index compiled before loader mutation.
+
+    ``manifests`` and ``prototypes`` are keyed only by their stable source
+    identities.  In particular, this registry deliberately has no dbrefs,
+    display-name index, or fuzzy lookup fallback.
+    """
+
+    manifests: Mapping[str, Mapping[str, Any]]
+    rooms: Mapping[str, Mapping[str, Any]]
+    prototypes: Mapping[str, Mapping[str, Any]]
+
+
+@dataclass(frozen=True)
+class AreaLoadPlan:
+    """Immutable, ordered source work for a future world apply transaction."""
+
+    registry: AreaRegistry
+    source_prototypes: tuple[tuple[str, Mapping[str, Any]], ...]
+    rooms: tuple[tuple[str, Mapping[str, Any]], ...]
+    exits_and_doors: tuple[tuple[str, str, Mapping[str, Any]], ...]
+    service_assignments: tuple[tuple[str, str, Mapping[str, Any]], ...]
+    mobile_placements: tuple[tuple[str, Mapping[str, Any]], ...]
+    object_placements: tuple[tuple[str, str, Mapping[str, Any]], ...]
+
+    @property
+    def stages(self) -> tuple[str, ...]:
+        """Return the mandatory materialization order for consumers."""
+        return (
+            "source_prototypes",
+            "rooms",
+            "exits_and_doors",
+            "service_assignments",
+            "mobile_placements",
+            "object_placements",
+        )
+
+
+def canonical_room_reference(area_key: object, room_key: object) -> str:
+    """Return the sole persisted spelling for a managed room reference."""
+    return f"{_slug(area_key, 'area key')}:{_slug(room_key, 'room key')}"
+
+
+def normalize_room_reference(reference: object, current_area: object) -> str:
+    """Normalize a local or ``area:room`` reference without searching live data."""
+    if not isinstance(reference, str) or not reference:
+        raise AreaManifestError("Room reference must be a room key or area:room.")
+    parts = reference.split(":")
+    if len(parts) == 1:
+        return canonical_room_reference(current_area, parts[0])
+    if len(parts) == 2 and all(parts):
+        return canonical_room_reference(parts[0], parts[1])
+    raise AreaManifestError(
+        "Room reference must contain exactly one area:room separator."
+    )
+
+
 def _normalize_data(value: Any) -> Any:
     """Return a JSON-like copy, rejecting live objects and executable values."""
     if value is None or isinstance(value, (bool, str)):
@@ -153,8 +221,14 @@ def _slug(value: object, field: str) -> str:
     return value
 
 
-def validate_area_manifest(manifest: object) -> dict[str, Any]:
-    """Validate and normalize a version-one, data-only area manifest."""
+def validate_area_manifest(
+    manifest: object, *, validate_runtime_prototypes: bool = True
+) -> dict[str, Any]:
+    """Validate and normalize a version-one, data-only area manifest.
+
+    Whole-world source planning passes ``False`` so it never reads database
+    prototypes; AREA-05A's catalog registry supplies that validation instead.
+    """
     try:
         data = _normalize_data(manifest)
     except AreaManifestError:
@@ -213,7 +287,9 @@ def validate_area_manifest(manifest: object) -> dict[str, Any]:
         raise AreaManifestError("Manifest mobiles has an invalid section type.")
     if not isinstance(data["objects"], dict):
         raise AreaManifestError("Manifest objects has an invalid section type.")
-    _validate_area_records(data)
+    _validate_area_records(
+        data, validate_runtime_prototypes=validate_runtime_prototypes
+    )
     return data
 
 
@@ -515,7 +591,9 @@ def _manifest_exit_records(area_slug: str) -> dict[str, dict[str, Any]]:
     return dict(sorted(records.items()))
 
 
-def _validate_area_records(data: dict[str, Any]) -> None:
+def _validate_area_records(
+    data: dict[str, Any], *, validate_runtime_prototypes: bool = True
+) -> None:
     """Validate AREA-01B room/exit records before any live-world mutation."""
     rooms, exits = data["rooms"], data["exits"]
     # AREA-01A's legacy-shaped sections remain loadable until re-exported.
@@ -612,28 +690,74 @@ def _validate_area_records(data: dict[str, Any]) -> None:
         validate_area_exit_doors(pair_entries)
     except DoorError as err:
         raise AreaManifestError("Manifest has invalid paired doors.") from err
-    _validate_manifest_mobile_placements(data)
-    _validate_manifest_object_placements(data)
+    _validate_manifest_mobile_placements(
+        data, validate_runtime_prototypes=validate_runtime_prototypes
+    )
+    _validate_manifest_object_placements(
+        data, validate_runtime_prototypes=validate_runtime_prototypes
+    )
 
 
-def _validate_manifest_mobile_placements(data: dict[str, Any]) -> None:
+def _validate_manifest_mobile_placements(
+    data: dict[str, Any], *, validate_runtime_prototypes: bool
+) -> None:
     """Keep AREA-01C mobile records exactly on MOB-05's placement contract."""
-    from systems.mob_spawning import MobileSpawnError, validate_mobile_placement
-
     seen: set[str] = set()
     for placement in data["mobiles"]:
-        try:
-            validated = validate_mobile_placement(placement, area_key=data["key"])
-        except MobileSpawnError as err:
-            raise AreaManifestError(
-                "Manifest has an invalid mobile placement."
-            ) from err
-        if validated.placement_key in seen or validated.room_key not in data["rooms"]:
+        if validate_runtime_prototypes:
+            from systems.mob_spawning import MobileSpawnError, validate_mobile_placement
+
+            try:
+                validated = validate_mobile_placement(placement, area_key=data["key"])
+            except MobileSpawnError as err:
+                raise AreaManifestError(
+                    "Manifest has an invalid mobile placement."
+                ) from err
+            placement_key, room_key, prototype_key = (
+                validated.placement_key,
+                validated.room_key,
+                validated.prototype_key,
+            )
+        else:
+            expected = {
+                "area_key",
+                "room_key",
+                "placement_key",
+                "prototype_key",
+                "desired",
+                "room_max",
+                "area_max",
+            }
+            if not isinstance(placement, dict) or set(placement) != expected:
+                raise AreaManifestError("Manifest has an invalid mobile placement.")
+            try:
+                if placement["area_key"] != data["key"]:
+                    raise ValueError
+                room_key = _slug(placement["room_key"], "mobile room key")
+                placement_key = _slug(
+                    placement["placement_key"], "mobile placement key"
+                )
+                prototype_key = _slug(
+                    placement["prototype_key"], "mobile prototype key"
+                )
+                limits = (placement["desired"], placement["room_max"], placement["area_max"])
+                if (
+                    any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in limits)
+                    or limits[0] > limits[1]
+                    or limits[0] > limits[2]
+                ):
+                    raise ValueError
+            except (AreaManifestError, ValueError) as err:
+                raise AreaManifestError(
+                    "Manifest has an invalid mobile placement."
+                ) from err
+        if placement_key in seen or room_key not in data["rooms"]:
             raise AreaManifestError(
                 "Manifest mobile placements need unique known rooms."
             )
-        seen.add(validated.placement_key)
-        _validate_mobile_prototype_services(validated.prototype_key)
+        seen.add(placement_key)
+        if validate_runtime_prototypes:
+            _validate_mobile_prototype_services(prototype_key)
 
 
 def _prototype_for_kind(
@@ -699,7 +823,9 @@ def _validate_mobile_prototype_services(prototype_key: str) -> None:
         raise AreaManifestError("Mobile prototype has invalid service data.") from err
 
 
-def _validate_manifest_object_placements(data: dict[str, Any]) -> None:
+def _validate_manifest_object_placements(
+    data: dict[str, Any], *, validate_runtime_prototypes: bool
+) -> None:
     """Validate bounded, rooted item trees without materializing any objects."""
     seen: set[str] = set()
     for placement_key, placement in data["objects"].items():
@@ -739,17 +865,24 @@ def _validate_manifest_object_placements(data: dict[str, Any]) -> None:
             raise AreaManifestError(
                 f"Object placement '{placement_key}' exceeds a ceiling."
             )
-        _prototype_for_kind(
-            placement["prototype_key"], settings.BASE_OBJECT_TYPECLASS, "item"
-        )
+        if validate_runtime_prototypes:
+            _prototype_for_kind(
+                placement["prototype_key"], settings.BASE_OBJECT_TYPECLASS, "item"
+            )
         contents = placement["contents"]
         if not isinstance(contents, list) or len(contents) > MAX_OBJECT_CHILDREN:
             raise AreaManifestError("Object contents must be a bounded list.")
         for child in contents:
-            _validate_object_node(child, ancestors=(placement["prototype_key"],))
+            _validate_object_node(
+                child,
+                ancestors=(placement["prototype_key"],),
+                validate_runtime_prototypes=validate_runtime_prototypes,
+            )
 
 
-def _validate_object_node(node: Any, *, ancestors: tuple[str, ...]) -> None:
+def _validate_object_node(
+    node: Any, *, ancestors: tuple[str, ...], validate_runtime_prototypes: bool
+) -> None:
     """Validate one nested authored item node and prohibit recursive prototypes."""
     if not isinstance(node, dict) or set(node) != {
         "prototype_key",
@@ -770,12 +903,17 @@ def _validate_object_node(node: Any, *, ancestors: tuple[str, ...]) -> None:
         raise AreaManifestError(
             "Object contents contain a cycle or exceed nesting depth."
         )
-    _prototype_for_kind(prototype_key, settings.BASE_OBJECT_TYPECLASS, "item")
+    if validate_runtime_prototypes:
+        _prototype_for_kind(prototype_key, settings.BASE_OBJECT_TYPECLASS, "item")
     children = node["contents"]
     if not isinstance(children, list) or len(children) > MAX_OBJECT_CHILDREN:
         raise AreaManifestError("Object contents must be a bounded list.")
     for child in children:
-        _validate_object_node(child, ancestors=(*ancestors, prototype_key))
+        _validate_object_node(
+            child,
+            ancestors=(*ancestors, prototype_key),
+            validate_runtime_prototypes=validate_runtime_prototypes,
+        )
 
 
 def _areas_dir() -> str:
@@ -959,7 +1097,9 @@ def load_area_data(
 
 def load_area_manifest_data(manifest: object) -> dict:
     """Load validated AREA-01B records, resolving external exits when available."""
-    data = validate_area_manifest(manifest)
+    raw = validate_area_manifest(manifest)
+    plan = compile_area_load_plan(manifests={raw["key"]: raw})
+    data = _thaw_source(plan.registry.manifests[raw["key"]])
     if isinstance(data["exits"], list):
         return load_area_data(
             data["key"], data["rooms"], data["exits"], data["mobiles"]
@@ -1092,6 +1232,368 @@ def _literal_manifest_from_module(module_name: str) -> dict[str, Any] | None:
         return validate_area_manifest(ast.literal_eval(assignments[0].value))
     except (ValueError, TypeError) as err:
         raise AreaManifestError("Area manifest must be a Python literal.") from err
+
+
+def _freeze_source(value: Any) -> Any:
+    """Recursively freeze normalized source data exposed by a registry."""
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _freeze_source(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_source(item) for item in value)
+    return value
+
+
+def _thaw_source(value: Any) -> Any:
+    """Detach a mutable loader view from an already validated immutable plan."""
+    if isinstance(value, Mapping):
+        return {key: _thaw_source(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_source(item) for item in value]
+    return value
+
+
+def _manifest_module_names() -> list[str]:
+    """List tracked area modules without importing their authored module bodies."""
+    spec = importlib.util.find_spec("world.areas")
+    if spec is None or not spec.submodule_search_locations:
+        return []
+    return sorted(
+        f"world.areas.{item.name}"
+        for location in spec.submodule_search_locations
+        for item in pkgutil.iter_modules([location])
+        if not item.ispkg and not item.name.startswith("_")
+    )
+
+
+def _source_prototypes(
+    catalogs: Mapping[str, Mapping[str, Mapping[str, Any]]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Validate explicit data-only catalogs and index their globally unique keys.
+
+    AREA-05A owns the on-disk catalog format.  This intentionally accepts a
+    supplied catalog index now so area planning has a single source-only
+    resolver and never falls through to database prototypes.
+    """
+    if catalogs is None:
+        return {}
+    if not isinstance(catalogs, Mapping):
+        raise AreaRegistryError("Prototype catalogs must be keyed mappings.")
+    indexed: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for catalog_key in sorted(catalogs, key=str):
+        records = catalogs[catalog_key]
+        if not isinstance(catalog_key, str) or not isinstance(records, Mapping):
+            errors.append("prototype catalog has an invalid record mapping")
+            continue
+        for record_key in sorted(records, key=str):
+            record = records[record_key]
+            path = f"catalog '{catalog_key}' prototype '{record_key}'"
+            if not isinstance(record, Mapping):
+                errors.append(f"{path} is not a mapping")
+                continue
+            key = record.get("prototype_key", record_key)
+            try:
+                key = _slug(key, "prototype key")
+            except AreaManifestError:
+                errors.append(f"{path} has an invalid prototype key")
+                continue
+            if key != record_key:
+                errors.append(f"{path} key does not match its prototype_key")
+            if key in indexed:
+                errors.append(f"duplicate prototype key '{key}'")
+                continue
+            try:
+                normalized = _normalize_data(record)
+            except AreaManifestError:
+                errors.append(f"{path} contains non-literal data")
+                continue
+            indexed[key] = normalized
+    if errors:
+        raise AreaRegistryError("; ".join(sorted(errors)))
+    return indexed
+
+
+def build_area_registry(
+    enabled_areas: Sequence[str] | None = None,
+    *,
+    manifests: Mapping[str, object] | None = None,
+    prototype_catalogs: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+) -> AreaRegistry:
+    """Compile enabled source manifests into one deterministic read-only index.
+
+    The optional ``manifests`` argument makes this side-effect-free operation
+    straightforward to use in validation and tests.  If omitted, all literal
+    modules in ``world.areas`` are read without executing their contents.
+    """
+    errors: list[str] = []
+    raw_manifests: dict[str, object] = {}
+    if manifests is not None:
+        if not isinstance(manifests, Mapping):
+            raise AreaRegistryError("Area manifests must be keyed mappings.")
+        raw_manifests = dict(manifests)
+    else:
+        for module_name in _manifest_module_names():
+            try:
+                data = _literal_manifest_from_module(module_name)
+            except AreaManifestError as err:
+                errors.append(f"{module_name.rsplit('.', 1)[-1]}: {err}")
+                continue
+            if data is not None:
+                if data["key"] in raw_manifests:
+                    errors.append(f"duplicate area key '{data['key']}'")
+                raw_manifests[data["key"]] = data
+
+    if enabled_areas is None:
+        selected = sorted(raw_manifests)
+    else:
+        selected = []
+        for key in enabled_areas:
+            try:
+                selected.append(_slug(key, "enabled area key"))
+            except AreaManifestError as err:
+                errors.append(str(err))
+        if len(set(selected)) != len(selected):
+            errors.append("enabled area keys must be unique")
+        selected = sorted(set(selected))
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for source_key in sorted(raw_manifests, key=str):
+        if not isinstance(source_key, str):
+            errors.append("area manifest source key must be text")
+            continue
+        try:
+            manifest = validate_area_manifest(
+                raw_manifests[source_key], validate_runtime_prototypes=False
+            )
+        except AreaManifestError as err:
+            errors.append(f"area '{source_key}': {err}")
+            continue
+        if source_key != manifest["key"]:
+            errors.append(
+                f"area '{source_key}' manifest key must match its source area key"
+            )
+        if manifest["key"] in normalized:
+            errors.append(f"duplicate area key '{manifest['key']}'")
+        normalized[manifest["key"]] = manifest
+
+    # A named area means its declared dependency closure, not an accidental
+    # single-file load.  This leaves undeclared external links invalid.
+    pending = list(selected)
+    while pending:
+        key = pending.pop()
+        manifest = normalized.get(key)
+        if manifest is None:
+            continue
+        for dependency in manifest["dependencies"]:
+            if dependency not in selected:
+                selected.append(dependency)
+                pending.append(dependency)
+    selected.sort()
+
+    for key in selected:
+        if key not in normalized:
+            errors.append(f"enabled area '{key}' is missing or invalid")
+
+    rooms: dict[str, dict[str, Any]] = {}
+    for area_key in selected:
+        manifest = normalized.get(area_key)
+        if manifest is None:
+            continue
+        for dependency in manifest["dependencies"]:
+            if dependency not in selected:
+                errors.append(
+                    f"area '{area_key}' has undeclared enabled dependency '{dependency}'"
+                )
+        for room_key, room in manifest["rooms"].items():
+            reference = canonical_room_reference(area_key, room_key)
+            if reference in rooms:
+                errors.append(f"duplicate room reference '{reference}'")
+            rooms[reference] = room
+
+    for area_key in selected:
+        manifest = normalized.get(area_key)
+        if manifest is None or not isinstance(manifest["exits"], dict):
+            continue
+        for exit_key, record in manifest["exits"].items():
+            destination = record["destination"]
+            if destination["kind"] != "external":
+                continue
+            target_area, target_room = destination["area_key"], destination["room_key"]
+            target = canonical_room_reference(target_area, target_room)
+            path = f"area '{area_key}' exit '{exit_key}'"
+            if target_area not in selected:
+                errors.append(
+                    f"{path} targets missing or disabled area '{target_area}'"
+                )
+            elif target not in rooms:
+                errors.append(f"{path} targets missing room '{target}'")
+            if target_area not in manifest["dependencies"]:
+                errors.append(f"{path} has undeclared dependency '{target_area}'")
+
+    try:
+        prototypes = _source_prototypes(prototype_catalogs)
+    except AreaRegistryError as err:
+        errors.append(str(err))
+        prototypes = {}
+    if errors:
+        raise AreaRegistryError("; ".join(sorted(errors)))
+    return AreaRegistry(
+        manifests=MappingProxyType(
+            {key: _freeze_source(normalized[key]) for key in selected}
+        ),
+        rooms=MappingProxyType(
+            {key: _freeze_source(rooms[key]) for key in sorted(rooms)}
+        ),
+        prototypes=MappingProxyType(
+            {key: _freeze_source(prototypes[key]) for key in sorted(prototypes)}
+        ),
+    )
+
+
+def resolve_room_reference(
+    registry: AreaRegistry, reference: object, current_area: object
+) -> Mapping[str, Any]:
+    """Resolve an exact canonical room reference from a source registry only."""
+    canonical = normalize_room_reference(reference, current_area)
+    try:
+        return registry.rooms[canonical]
+    except KeyError as err:
+        raise AreaRegistryError(
+            f"Unknown managed room reference '{canonical}'."
+        ) from err
+
+
+def resolve_prototype(
+    registry: AreaRegistry, prototype_key: object
+) -> Mapping[str, Any]:
+    """Resolve an exact source prototype key without a database/search fallback."""
+    key = _slug(prototype_key, "prototype key")
+    try:
+        return registry.prototypes[key]
+    except KeyError as err:
+        raise AreaRegistryError(f"Unknown source prototype '{key}'.") from err
+
+
+def compile_area_load_plan(
+    enabled_areas: Sequence[str] | None = None,
+    *,
+    manifests: Mapping[str, object] | None = None,
+    prototype_catalogs: Mapping[str, Mapping[str, Mapping[str, Any]]] | None = None,
+) -> AreaLoadPlan:
+    """Validate one source closure and return its complete immutable load plan.
+
+    This function deliberately creates no objects, reads no database prototypes,
+    and returns no mutable source records.  Apply/reset code must consume this
+    plan rather than re-reading area module globals between validation stages.
+    """
+    try:
+        registry = build_area_registry(
+            enabled_areas, manifests=manifests, prototype_catalogs=prototype_catalogs
+        )
+    except AreaRegistryError as err:
+        raise AreaPlanError(str(err)) from err
+
+    errors: list[str] = []
+    exits: list[tuple[str, str, Mapping[str, Any]]] = []
+    services: list[tuple[str, str, Mapping[str, Any]]] = []
+    mobiles: list[tuple[str, Mapping[str, Any]]] = []
+    objects: list[tuple[str, str, Mapping[str, Any]]] = []
+    service_fields = (
+        "mobile_policy",
+        "mobile_specials",
+        "mobile_behavior_profile",
+        "trainer_profile",
+        "shop_profile",
+    )
+    for area_key, manifest in registry.manifests.items():
+        if not isinstance(manifest["exits"], tuple | Mapping):
+            errors.append(f"area '{area_key}' exits have an invalid shape")
+        elif isinstance(manifest["exits"], Mapping):
+            for exit_key, record in manifest["exits"].items():
+                exits.append((area_key, exit_key, record))
+        for placement in manifest["mobiles"]:
+            mobiles.append((area_key, placement))
+            _plan_prototype_reference(
+                registry,
+                placement["prototype_key"],
+                "typeclasses.characters.Character",
+                f"area '{area_key}' mobile '{placement['placement_key']}'",
+                errors,
+            )
+        for placement_key, placement in manifest["objects"].items():
+            objects.append((area_key, placement_key, placement))
+            _plan_object_prototype_references(
+                registry,
+                placement,
+                f"area '{area_key}' object '{placement_key}'",
+                errors,
+            )
+
+    for prototype_key, prototype in registry.prototypes.items():
+        for field in service_fields:
+            if field in prototype:
+                services.append((prototype_key, field, prototype))
+    if errors:
+        raise AreaPlanError("; ".join(sorted(errors)))
+    return AreaLoadPlan(
+        registry=registry,
+        source_prototypes=tuple(sorted(registry.prototypes.items())),
+        rooms=tuple(sorted(registry.rooms.items())),
+        exits_and_doors=tuple(sorted(exits)),
+        service_assignments=tuple(sorted(services)),
+        mobile_placements=tuple(sorted(mobiles)),
+        object_placements=tuple(sorted(objects)),
+    )
+
+
+def _plan_prototype_reference(
+    registry: AreaRegistry,
+    prototype_key: object,
+    expected_typeclass: str,
+    path: str,
+    errors: list[str],
+) -> None:
+    """Record an exact source-catalog reference error without fail-fast search."""
+    try:
+        prototype = resolve_prototype(registry, prototype_key)
+    except AreaRegistryError:
+        errors.append(f"{path} references unknown source prototype '{prototype_key}'")
+        return
+    if prototype.get("typeclass") != expected_typeclass:
+        errors.append(f"{path} references a wrong-kind source prototype '{prototype_key}'")
+
+
+def _plan_object_prototype_references(
+    registry: AreaRegistry,
+    node: Mapping[str, Any],
+    path: str,
+    errors: list[str],
+) -> None:
+    """Check every already-schema-validated object tree node against the catalog."""
+    _plan_prototype_reference(
+        registry,
+        node["prototype_key"],
+        "typeclasses.objects.Item",
+        path,
+        errors,
+    )
+    for index, child in enumerate(node["contents"]):
+        _plan_object_prototype_references(
+            registry, child, f"{path} contents[{index}]", errors
+        )
+
+
+def area_plan_summary(plan: AreaLoadPlan) -> str:
+    """Render a bounded Builder-safe success summary with no filesystem details."""
+    return (
+        "Area plan valid: "
+        f"{len(plan.registry.manifests)} area(s), {len(plan.source_prototypes)} prototype(s), "
+        f"{len(plan.rooms)} room(s), {len(plan.exits_and_doors)} exit(s), "
+        f"{len(plan.mobile_placements)} mobile placement(s), and "
+        f"{len(plan.object_placements)} object placement(s)."
+    )
 
 
 def load_area(area_slug: str) -> dict:

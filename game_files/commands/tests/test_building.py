@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from commands.building import (
     _BUILD_PROMPT,
     CmdAreas,
+    CmdAreaCheck,
     CmdBuild,
     CmdBuildArea,
     CmdBuildDel,
@@ -32,12 +33,15 @@ from commands.command import CmdNoInput
 from commands.default_cmdsets import CharacterCmdSet
 from django.conf import settings
 from evennia import create_object
+from evennia.objects.models import ObjectDB
 from evennia.prototypes.prototypes import save_prototype, search_prototype
 from evennia.prototypes.spawner import spawn
 from evennia.utils.test_resources import EvenniaCommandTest
 from evennia.utils.utils import inherits_from
 from systems.areas import (
     AreaManifestError,
+    AreaPlanError,
+    AreaRegistryError,
     MAX_MANIFEST_COLLECTION_SIZE,
     MAX_MANIFEST_DEPTH,
     MAX_MANIFEST_TEXT_LENGTH,
@@ -45,10 +49,16 @@ from systems.areas import (
     _render_manifest,
     build_area_data,
     build_area_manifest,
+    build_area_registry,
+    compile_area_load_plan,
     export_area,
     load_area_data,
     load_area_manifest_data,
     manifest_fingerprint,
+    area_plan_summary,
+    normalize_room_reference,
+    resolve_prototype,
+    resolve_room_reference,
     validate_area_manifest,
 )
 from systems.doors import DoorError, configure_door, door_state, transition_door
@@ -367,6 +377,209 @@ class TestAreaManifest(EvenniaCommandTest):
             with patch("systems.areas.importlib.util.find_spec", return_value=spec):
                 with self.assertRaises(AreaManifestError):
                     _literal_manifest_from_module("world.areas.unsafe")
+
+
+class TestAreaRegistry(EvenniaCommandTest):
+    """AREA-02A resolves one enabled world without live-object search fallbacks."""
+
+    @staticmethod
+    def _manifest(key, *, dependencies=None, exits=None):
+        return {
+            "key": key,
+            "display_name": key.replace("_", " ").title(),
+            "schema_version": 1,
+            "dependencies": dependencies or [],
+            "credits": [],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 0,
+            "rooms": {
+                "entry": {
+                    "name": "Entry",
+                    "description": "",
+                    "extra_descriptions": [],
+                    "sector": "inside",
+                    "policy": {},
+                    "environment": {},
+                    "weather_profile": None,
+                }
+            },
+            "exits": exits or {},
+            "mobiles": [],
+            "objects": {},
+        }
+
+    def test_forward_cross_area_cycle_is_deterministic_and_read_only(self):
+        alpha_exit = {
+            "to_beta": {
+                "source_room": "entry",
+                "name": "east",
+                "description": "",
+                "aliases": [],
+                "destination": {
+                    "kind": "external",
+                    "area_key": "beta",
+                    "room_key": "entry",
+                },
+                "door": None,
+            }
+        }
+        beta_exit = {
+            "to_alpha": {
+                "source_room": "entry",
+                "name": "west",
+                "description": "",
+                "aliases": [],
+                "destination": {
+                    "kind": "external",
+                    "area_key": "alpha",
+                    "room_key": "entry",
+                },
+                "door": None,
+            }
+        }
+        manifests = {
+            "beta": self._manifest("beta", dependencies=["alpha"], exits=beta_exit),
+            "alpha": self._manifest("alpha", dependencies=["beta"], exits=alpha_exit),
+        }
+        registry = build_area_registry(["beta", "alpha"], manifests=manifests)
+
+        self.assertEqual(list(registry.manifests), ["alpha", "beta"])
+        self.assertEqual(normalize_room_reference("entry", "alpha"), "alpha:entry")
+        self.assertEqual(normalize_room_reference("beta:entry", "alpha"), "beta:entry")
+        self.assertEqual(
+            resolve_room_reference(registry, "beta:entry", "alpha")["name"], "Entry"
+        )
+        with self.assertRaises(TypeError):
+            registry.rooms["alpha:entry"] = {}  # type: ignore[index]
+
+    def test_rejects_disabled_targets_and_undeclared_dependencies(self):
+        exits = {
+            "to_beta": {
+                "source_room": "entry",
+                "name": "east",
+                "description": "",
+                "aliases": [],
+                "destination": {
+                    "kind": "external",
+                    "area_key": "beta",
+                    "room_key": "entry",
+                },
+                "door": None,
+            }
+        }
+        manifests = {
+            "alpha": self._manifest("alpha", exits=exits),
+            "beta": self._manifest("beta"),
+        }
+        with self.assertRaisesRegex(AreaRegistryError, "undeclared dependency"):
+            build_area_registry(["alpha", "beta"], manifests=manifests)
+        with self.assertRaisesRegex(AreaRegistryError, "missing or disabled"):
+            build_area_registry(["alpha"], manifests=manifests)
+
+    def test_catalog_keys_are_global_and_never_resolve_by_search(self):
+        manifests = {"alpha": self._manifest("alpha")}
+        registry = build_area_registry(
+            manifests=manifests,
+            prototype_catalogs={
+                "items": {"sword": {"prototype_key": "sword", "type": "item"}}
+            },
+        )
+        self.assertEqual(resolve_prototype(registry, "sword")["type"], "item")
+        with self.assertRaises(AreaRegistryError):
+            resolve_prototype(registry, "missing")
+        with self.assertRaisesRegex(AreaRegistryError, "duplicate prototype key"):
+            build_area_registry(
+                manifests=manifests,
+                prototype_catalogs={
+                    "items": {"sword": {"prototype_key": "sword"}},
+                    "mobiles": {"sword": {"prototype_key": "sword"}},
+                },
+            )
+
+
+class TestAreaLoadPlan(EvenniaCommandTest):
+    """AREA-02B compiles all source work before a loader may mutate objects."""
+
+    @staticmethod
+    def _manifest():
+        return {
+            "key": "plan_area",
+            "display_name": "Plan Area",
+            "schema_version": 1,
+            "dependencies": [],
+            "credits": [],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 0,
+            "rooms": {
+                "entry": {
+                    "name": "Entry",
+                    "description": "",
+                    "extra_descriptions": [],
+                    "sector": "inside",
+                    "policy": {},
+                    "environment": {},
+                    "weather_profile": None,
+                }
+            },
+            "exits": {},
+            "mobiles": [],
+            "objects": {},
+        }
+
+    def test_plan_is_immutable_and_has_the_required_pass_order(self):
+        plan = compile_area_load_plan(
+            manifests={"plan_area": self._manifest()},
+            prototype_catalogs={
+                "items": {
+                    "plan_item": {
+                        "prototype_key": "plan_item",
+                        "typeclass": "typeclasses.objects.Item",
+                    }
+                }
+            },
+        )
+        self.assertEqual(
+            plan.stages,
+            (
+                "source_prototypes",
+                "rooms",
+                "exits_and_doors",
+                "service_assignments",
+                "mobile_placements",
+                "object_placements",
+            ),
+        )
+        self.assertIn("1 area(s)", area_plan_summary(plan))
+        with self.assertRaises(TypeError):
+            plan.registry.manifests["other"] = {}  # type: ignore[index]
+
+    def test_invalid_source_rejects_before_any_world_write(self):
+        manifest = self._manifest()
+        manifest["mobiles"] = [
+            {
+                "area_key": "plan_area",
+                "room_key": "entry",
+                "placement_key": "missing_npc",
+                "prototype_key": "not_in_catalog",
+                "desired": 1,
+                "room_max": 1,
+                "area_max": 1,
+            }
+        ]
+        before = ObjectDB.objects.count()
+        with self.assertRaisesRegex(AreaPlanError, "unknown source prototype"):
+            compile_area_load_plan(manifests={"plan_area": manifest})
+        self.assertEqual(ObjectDB.objects.count(), before)
+
+    def test_area_check_is_builder_locked_and_has_no_write_side_effect(self):
+        self.char2.permissions.clear()
+        self.assertFalse(CmdAreaCheck().access(self.char2, "cmd"))
+        self.assertTrue(CmdAreaCheck().access(self.char1, "cmd"))
+        before = ObjectDB.objects.count()
+        self.call(CmdAreaCheck(), "/check all", "Area plan valid:")
+        self.assertEqual(ObjectDB.objects.count(), before)
 
 
 class TestAreaManifestRecords(EvenniaCommandTest):
