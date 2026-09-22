@@ -2348,6 +2348,22 @@ Use |winfo|n for the game's public release, connection, rules, help, and contact
 
             Loading is idempotent: existing rooms and exits are reused, not
             duplicated, so you can safely re-run it after edits.
+
+            ## Room and Exit Records
+
+            New manifests keep room keys and exit keys stable even if you rename
+            their displayed names. They explicitly save room descriptions, extra
+            descriptions, sector, room policy, environment, and weather profile;
+            they save exit names, descriptions, aliases, destination references,
+            and authored door defaults. They never save occupants, contents,
+            combat, weather state, or a door's current open/locked state.
+
+            An exit leaving this area needs an explicit Builder reference before
+            export: while editing the exit, set |wexternal_destination
+            other_area:room_key|n. Use |wexternal_destination none|n to clear a
+            stale reference. An external target must be managed by its own area;
+            it is not a dbref. A door with no |wpair_key|n is a legal one-way
+            door. A paired local door needs matching reciprocal sides.
         """,
     },
     {

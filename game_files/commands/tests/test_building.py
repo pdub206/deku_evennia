@@ -44,8 +44,10 @@ from systems.areas import (
     _literal_manifest_from_module,
     _render_manifest,
     build_area_data,
+    build_area_manifest,
     export_area,
     load_area_data,
+    load_area_manifest_data,
     manifest_fingerprint,
     validate_area_manifest,
 )
@@ -282,8 +284,13 @@ class TestAreaExportFile(EvenniaCommandTest):
             self.assertIn("room", module.MANIFEST["rooms"])
             self.assertIn("cellar", module.MANIFEST["rooms"])
             edges = {
-                (frm, direction, to)
-                for (frm, direction, to, _a) in module.MANIFEST["exits"]
+                (
+                    record["source_room"],
+                    record["name"],
+                    record["destination"]["room_key"],
+                )
+                for record in module.MANIFEST["exits"].values()
+                if record["destination"]["kind"] == "local"
             }
             self.assertIn(("room", "east", "cellar"), edges)
             self.assertIn(("cellar", "west", "room"), edges)
@@ -362,6 +369,145 @@ class TestAreaManifest(EvenniaCommandTest):
                     _literal_manifest_from_module("world.areas.unsafe")
 
 
+class TestAreaManifestRecords(EvenniaCommandTest):
+    """AREA-01B records preserve authored room and exit state explicitly."""
+
+    def test_full_local_round_trip_preserves_records_and_stable_keys(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "recordarea")
+        self.call(CmdBuildSet(), "name Renamed Hall")
+        self.call(CmdBuildSet(), "desc A carefully authored hall.")
+        self.room1.attributes.add(
+            "extra_descs",
+            [{"keywords": ["mural"], "description": "A painted map."}],
+        )
+        self.call(CmdBuildSet(), "sector forest")
+        self.call(CmdBuildSet(), "no_combat on")
+        self.call(CmdBuildSet(), "indoors on")
+        self.call(CmdBuildSet(), "weather_profile temperate")
+        self.call(CmdBuildDig(), "north = Archive")
+        north = next(
+            exit_obj for exit_obj in self.room1.exits if exit_obj.key == "north"
+        )
+        north.attributes.add("desc", "A carved archway.")
+        manifest = build_area_manifest("recordarea")
+
+        room = manifest["rooms"]["room"]
+        self.assertEqual(room["name"], "Renamed Hall")
+        self.assertEqual(room["extra_descriptions"][0]["keywords"], ["mural"])
+        self.assertEqual(room["sector"], "forest")
+        self.assertTrue(room["policy"]["no_combat"])
+        self.assertTrue(room["environment"]["indoors"])
+        self.assertEqual(room["weather_profile"], "temperate")
+        exit_key = next(
+            key
+            for key, record in manifest["exits"].items()
+            if record["name"] == "north"
+        )
+        self.assertEqual(
+            manifest["exits"][exit_key]["description"], "A carved archway."
+        )
+
+        loaded = load_area_manifest_data({**manifest, "key": "recordimport"})
+        self.assertEqual(loaded["room"].key, "Renamed Hall")
+        self.assertEqual(loaded["room"].db.extra_descs[0]["keywords"], ["mural"])
+        loaded_north = next(
+            exit_obj for exit_obj in loaded["room"].exits if exit_obj.key == "north"
+        )
+        self.assertEqual(loaded_north.db.desc, "A carved archway.")
+
+    def test_external_reference_and_impossible_records_are_rejected(self):
+        manifest = {
+            "key": "external_area",
+            "display_name": "External Area",
+            "schema_version": 1,
+            "dependencies": ["other_area"],
+            "credits": [],
+            "srd_references": [],
+            "reset_policy": "default",
+            "lifespan_pulses": 0,
+            "rooms": {
+                "entry": {
+                    "name": "Entry",
+                    "description": "",
+                    "extra_descriptions": [],
+                    "sector": "inside",
+                    "policy": {},
+                    "environment": {},
+                    "weather_profile": None,
+                }
+            },
+            "exits": {
+                "entry_gate": {
+                    "source_room": "entry",
+                    "name": "gate",
+                    "description": "",
+                    "aliases": [],
+                    "destination": {
+                        "kind": "external",
+                        "area_key": "other_area",
+                        "room_key": "entry",
+                    },
+                    "door": None,
+                }
+            },
+            "mobiles": [],
+        }
+        self.assertEqual(
+            validate_area_manifest(manifest)["exits"]["entry_gate"]["destination"][
+                "kind"
+            ],
+            "external",
+        )
+        manifest["exits"]["entry_gate"]["destination"] = {
+            "kind": "local",
+            "room_key": "missing",
+        }
+        with self.assertRaises(AreaManifestError):
+            validate_area_manifest(manifest)
+
+    def test_manifest_distinguishes_paired_and_one_way_doors(self):
+        self.char1.permissions.add("Builder")
+        self.call(CmdBuild(), "here")
+        self.call(CmdBuildArea(), "doorrecords")
+        self.call(CmdBuildDig(), "north = Gatehouse")
+        north = next(
+            exit_obj for exit_obj in self.room1.exits if exit_obj.key == "north"
+        )
+        south = next(
+            exit_obj for exit_obj in north.destination.exits if exit_obj.key == "south"
+        )
+        paired = {
+            "initial_state": "locked",
+            "key_kind": "gate_key",
+            "pickable": True,
+            "pick_dc": 12,
+            "hidden": False,
+            "discovery_dc": None,
+            "pair_key": "gate_pair",
+        }
+        configure_door(north, **paired)
+        configure_door(south, **paired)
+        manifest = build_area_manifest("doorrecords")
+        paired_records = [
+            record["door"]
+            for record in manifest["exits"].values()
+            if record["door"] and record["door"]["pair_key"] == "gate_pair"
+        ]
+        self.assertEqual(len(paired_records), 2)
+        self.assertTrue(
+            all(record["initial_state"] == "locked" for record in paired_records)
+        )
+
+        configure_door(north, pair_key=None)
+        manifest = build_area_manifest("doorrecords")
+        north_record = next(
+            record for record in manifest["exits"].values() if record["name"] == "north"
+        )
+        self.assertIsNone(north_record["door"]["pair_key"])
+
+
 class TestEditExitRedirect(EvenniaCommandTest):
     """'edit <direction>' binds the room the exit leads to, not the exit."""
 
@@ -386,6 +532,7 @@ class TestEditExitRedirect(EvenniaCommandTest):
         fields = self.call(CmdBuildFields(), "")
         for name in (
             "door",
+            "external_destination",
             "initial_state",
             "key_kind",
             "pickable",

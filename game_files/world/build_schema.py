@@ -86,6 +86,16 @@ def as_extra_descriptions(raw: str) -> list[dict[str, Any]]:
     return validate_extra_descriptions(value)
 
 
+def as_external_destination(raw: str) -> dict[str, str] | None:
+    """Parse an explicit cross-area ``area:room_key`` reference or ``none``."""
+    if raw.strip().lower() == "none":
+        return None
+    if raw.count(":") != 1:
+        raise ValueError("expected area:room_key or none.")
+    area_key, room_key = (as_slug(part) for part in raw.split(":"))
+    return {"area_key": area_key, "room_key": room_key}
+
+
 def as_item_resource(raw: str) -> dict[str, Any]:
     """Parse a bounded primitive finite-resource profile for items/prototypes."""
     from systems.item_resources import validate_resource_profile
@@ -490,6 +500,11 @@ EXIT_FIELDS: dict[str, Field] = {
         as_text,
         "the exit's description (type 'desc' with no value for the editor)",
         target="desc",
+    ),
+    "external_destination": Field(
+        "external_destination",
+        as_external_destination,
+        "cross-area destination as area:room_key, or none",
     ),
     "door": Field("door", as_choice("on", "off"), "door state: on or off"),
     "initial_state": Field(

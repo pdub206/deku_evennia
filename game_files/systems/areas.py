@@ -26,6 +26,7 @@ import importlib.util
 import json
 import math
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pprint import pformat
 from typing import Any
@@ -35,7 +36,13 @@ from evennia import create_object
 from evennia.prototypes.spawner import prototype_from_object, spawn
 from evennia.utils import logger
 from evennia.utils.search import search_tag
-from systems.doors import apply_door_area_data, door_area_data, validate_area_exit_doors
+from systems.doors import (
+    DoorError,
+    apply_door_area_data,
+    door_area_data,
+    validate_area_exit_doors,
+    validate_door_area_data,
+)
 from systems.room_environment import (
     ROOM_ENVIRONMENT_ATTRIBUTE,
     ROOM_ENVIRONMENT_VERSION,
@@ -51,10 +58,13 @@ from systems.room_policy import (
     validate_room_policy,
 )
 from systems.travel import SECTOR_ATTRIBUTE, SECTORS, sector_key
+from systems.visibility import validate_extra_descriptions
 from world.build_schema import as_slug
 
 AREA_TAG_CATEGORY = "area"
 ROOM_KEY_CATEGORY = "room_key"
+EXIT_KEY_CATEGORY = "exit_key"
+EXTERNAL_DESTINATION_ATTRIBUTE = "external_destination"
 
 # AREA-01A is deliberately a small envelope around the legacy room graph.  The
 # later AREA-01 packages own the detailed records, but every tracked area now
@@ -95,13 +105,15 @@ def _normalize_data(value: Any) -> Any:
         if not math.isfinite(value):
             raise AreaManifestError("Manifest numbers must be finite.")
         return value
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return [_normalize_data(item) for item in value]
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         if not all(isinstance(key, str) for key in value):
             raise AreaManifestError("Manifest mapping keys must be strings.")
         return {key: _normalize_data(item) for key, item in value.items()}
-    raise AreaManifestError("Manifest data may contain only primitive values.")
+    raise AreaManifestError(
+        f"Manifest data may contain only primitive values, not {type(value).__name__}."
+    )
 
 
 def _check_bounds(value: Any, depth: int = 0) -> None:
@@ -185,10 +197,13 @@ def validate_area_manifest(manifest: object) -> dict[str, Any]:
         raise AreaManifestError(
             "Manifest lifespan_pulses is outside its supported range."
         )
-    if not isinstance(data["rooms"], dict) or not isinstance(data["exits"], list):
+    if not isinstance(data["rooms"], dict) or not isinstance(
+        data["exits"], (list, dict)
+    ):
         raise AreaManifestError("Manifest rooms and exits have invalid section types.")
     if not isinstance(data["mobiles"], list):
         raise AreaManifestError("Manifest mobiles has an invalid section type.")
+    _validate_area_records(data)
     return data
 
 
@@ -202,7 +217,7 @@ def manifest_fingerprint(manifest: object) -> str:
 def build_area_manifest(area_slug: str) -> dict[str, Any]:
     """Snapshot a live area in AREA-01A's versioned envelope."""
     area_slug = _slug(area_slug, "key")
-    rooms, exits = build_area_data(area_slug)
+    rooms, exits = _manifest_room_records(area_slug), _manifest_exit_records(area_slug)
     return validate_area_manifest(
         {
             "key": area_slug,
@@ -243,6 +258,12 @@ def room_key_of(room) -> str | None:
     return keys[0] if keys else None
 
 
+def exit_key_of(exit_obj) -> str | None:
+    """Return an exit's stable manifest-record key, or ``None`` if unset."""
+    keys = exit_obj.tags.get(category=EXIT_KEY_CATEGORY, return_list=True)
+    return keys[0] if keys else None
+
+
 def area_of(room) -> str | None:
     """Return the room's area slug tag, or ``None`` if it has no area."""
     areas = room.tags.get(category=AREA_TAG_CATEGORY, return_list=True)
@@ -272,6 +293,45 @@ def ensure_room_key(room, area_slug: str) -> str:
         key, suffix = f"{base}_{suffix}", suffix + 1
     room.tags.add(key, category=ROOM_KEY_CATEGORY)
     return key
+
+
+def ensure_exit_key(exit_obj, area_slug: str, source_key: str) -> str:
+    """Return a stable per-area exit key without deriving it from mutable text."""
+    existing = exit_key_of(exit_obj)
+    if existing:
+        return existing
+    base = f"{source_key}_{as_slug(exit_obj.key)}"
+    key, suffix = base, 2
+    while any(
+        other != exit_obj for other in search_tag(key, category=EXIT_KEY_CATEGORY)
+    ):
+        key, suffix = f"{base}_{suffix}", suffix + 1
+    exit_obj.tags.add(key, category=EXIT_KEY_CATEGORY)
+    return key
+
+
+def external_destination_data(exit_obj) -> dict[str, str] | None:
+    """Read a validated explicit external destination without leaking dbrefs."""
+    raw = exit_obj.attributes.get(EXTERNAL_DESTINATION_ATTRIBUTE)
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or set(raw) != {"area_key", "room_key"}:
+        raise AreaManifestError("External destination has an invalid schema.")
+    return {
+        "area_key": _slug(raw["area_key"], "external destination area_key"),
+        "room_key": _slug(raw["room_key"], "external destination room_key"),
+    }
+
+
+def set_external_destination(exit_obj, area_key: str, room_key: str) -> None:
+    """Persist the only supported cross-area reference for one live exit."""
+    exit_obj.attributes.add(
+        EXTERNAL_DESTINATION_ATTRIBUTE,
+        {
+            "area_key": _slug(area_key, "external destination area_key"),
+            "room_key": _slug(room_key, "external destination room_key"),
+        },
+    )
 
 
 def assign_area(room, area_slug: str) -> None:
@@ -386,6 +446,161 @@ def build_area_data(area_slug: str) -> tuple[dict, list]:
             exits.append((from_key, ex.key, key_by_id[dest.id], attrs))
 
     return rooms, sorted(exits)
+
+
+def _manifest_room_records(area_slug: str) -> dict[str, dict[str, Any]]:
+    """Export explicit AREA-01B room records, excluding all runtime state."""
+    records: dict[str, dict[str, Any]] = {}
+    for room in search_tag(area_slug, category=AREA_TAG_CATEGORY):
+        key = room_key_of(room) or ensure_room_key(room, area_slug)
+        profiles = room.tags.get(category="weather_profile", return_list=True)
+        if len(profiles) > 1 or any(profile != "temperate" for profile in profiles):
+            raise AreaManifestError(f"Room '{key}' has an invalid weather profile.")
+        records[key] = {
+            "name": room.key,
+            "description": room.attributes.get("desc") or "",
+            "extra_descriptions": room.attributes.get("extra_descs") or [],
+            "sector": sector_key(room),
+            "policy": room_policy_data(room),
+            "environment": room_environment_data(room),
+            "weather_profile": profiles[0] if profiles else None,
+        }
+    return dict(sorted(records.items()))
+
+
+def _manifest_exit_records(area_slug: str) -> dict[str, dict[str, Any]]:
+    """Export explicit exit records and only explicit cross-area references."""
+    rooms = list(search_tag(area_slug, category=AREA_TAG_CATEGORY))
+    key_by_id = {
+        room.id: room_key_of(room) or ensure_room_key(room, area_slug) for room in rooms
+    }
+    records: dict[str, dict[str, Any]] = {}
+    for room in rooms:
+        source_key = key_by_id[room.id]
+        for exit_obj in room.exits:
+            destination = None
+            if (
+                exit_obj.destination is not None
+                and exit_obj.destination.id in key_by_id
+            ):
+                destination = {
+                    "kind": "local",
+                    "room_key": key_by_id[exit_obj.destination.id],
+                }
+            else:
+                external = external_destination_data(exit_obj)
+                if external is None:
+                    continue
+                destination = {"kind": "external", **external}
+            record_key = ensure_exit_key(exit_obj, area_slug, source_key)
+            records[record_key] = {
+                "source_room": source_key,
+                "name": exit_obj.key,
+                "description": exit_obj.attributes.get("desc") or "",
+                "aliases": sorted(exit_obj.aliases.all()),
+                "destination": destination,
+                "door": door_area_data(exit_obj),
+            }
+    return dict(sorted(records.items()))
+
+
+def _validate_area_records(data: dict[str, Any]) -> None:
+    """Validate AREA-01B room/exit records before any live-world mutation."""
+    rooms, exits = data["rooms"], data["exits"]
+    # AREA-01A's legacy-shaped sections remain loadable until re-exported.
+    if isinstance(exits, list):
+        return
+    if not isinstance(exits, dict):
+        raise AreaManifestError("Manifest exits must be a mapping or legacy list.")
+    for key, room in rooms.items():
+        _slug(key, "room key")
+        if not isinstance(room, dict) or set(room) != {
+            "name",
+            "description",
+            "extra_descriptions",
+            "sector",
+            "policy",
+            "environment",
+            "weather_profile",
+        }:
+            raise AreaManifestError(f"Room '{key}' has an invalid record schema.")
+        if not isinstance(room["name"], str) or not room["name"].strip():
+            raise AreaManifestError(f"Room '{key}' needs a name.")
+        if not isinstance(room["description"], str):
+            raise AreaManifestError(f"Room '{key}' description must be text.")
+        try:
+            validate_extra_descriptions(room["extra_descriptions"])
+            if room["sector"] not in SECTORS:
+                raise ValueError("invalid sector")
+            validate_room_policy(room["policy"])
+            validate_room_environment(room["environment"])
+        except (ValueError, RoomPolicyError, RoomEnvironmentError) as err:
+            raise AreaManifestError(f"Room '{key}' has invalid authored data.") from err
+        if room["weather_profile"] not in (None, "temperate"):
+            raise AreaManifestError(f"Room '{key}' has an invalid weather profile.")
+    pair_entries = []
+    for key, exit_record in exits.items():
+        _slug(key, "exit key")
+        if not isinstance(exit_record, dict) or set(exit_record) != {
+            "source_room",
+            "name",
+            "description",
+            "aliases",
+            "destination",
+            "door",
+        }:
+            raise AreaManifestError(f"Exit '{key}' has an invalid record schema.")
+        if exit_record["source_room"] not in rooms:
+            raise AreaManifestError(f"Exit '{key}' has an unknown source room.")
+        if not isinstance(exit_record["name"], str) or not exit_record["name"].strip():
+            raise AreaManifestError(f"Exit '{key}' needs a name.")
+        if (
+            not isinstance(exit_record["description"], str)
+            or not isinstance(exit_record["aliases"], list)
+            or not all(
+                isinstance(alias, str) and alias for alias in exit_record["aliases"]
+            )
+        ):
+            raise AreaManifestError(f"Exit '{key}' has invalid display data.")
+        destination = exit_record["destination"]
+        if not isinstance(destination, dict) or destination.get("kind") not in {
+            "local",
+            "external",
+        }:
+            raise AreaManifestError(f"Exit '{key}' has an invalid destination.")
+        if destination["kind"] == "local":
+            if (
+                set(destination) != {"kind", "room_key"}
+                or destination["room_key"] not in rooms
+            ):
+                raise AreaManifestError(
+                    f"Exit '{key}' has an unknown local destination."
+                )
+        elif set(destination) != {"kind", "area_key", "room_key"}:
+            raise AreaManifestError(
+                f"Exit '{key}' has an invalid external destination."
+            )
+        else:
+            _slug(destination["area_key"], "external area key")
+            _slug(destination["room_key"], "external room key")
+        if exit_record["door"] is not None:
+            try:
+                validate_door_area_data(exit_record["door"])
+            except DoorError as err:
+                raise AreaManifestError(f"Exit '{key}' has invalid door data.") from err
+            if destination["kind"] == "local":
+                pair_entries.append(
+                    (
+                        exit_record["source_room"],
+                        exit_record["name"],
+                        destination["room_key"],
+                        {"door_state": exit_record["door"]},
+                    )
+                )
+    try:
+        validate_area_exit_doors(pair_entries)
+    except DoorError as err:
+        raise AreaManifestError("Manifest has invalid paired doors.") from err
 
 
 def _areas_dir() -> str:
@@ -541,11 +756,9 @@ def load_area_data(
         # create an NPC, then uses a stable load token to keep repeated loads
         # from duplicating successful copies. AREA-03 later supplies reset
         # tokens for recurring reconciliation.
-        from systems.mob_spawning import (
-            MobileSpawnError,
-            reconcile_mobile_placement,
-            validate_mobile_placements,
-        )
+        from systems.mob_spawning import (MobileSpawnError,
+                                          reconcile_mobile_placement,
+                                          validate_mobile_placements)
 
         try:
             placements = validate_mobile_placements(area_slug, mobiles, key_to_room)
@@ -565,6 +778,103 @@ def load_area_data(
                     )
 
     return key_to_room
+
+
+def load_area_manifest_data(manifest: object) -> dict:
+    """Load validated AREA-01B records, resolving external exits when available."""
+    data = validate_area_manifest(manifest)
+    if isinstance(data["exits"], list):
+        return load_area_data(
+            data["key"], data["rooms"], data["exits"], data["mobiles"]
+        )
+
+    legacy_rooms = {
+        key: {
+            "prototype_key": f"{data['key']}_{key}",
+            "typeclass": settings.BASE_ROOM_TYPECLASS,
+            "key": room["name"],
+            "attrs": [
+                ("desc", room["description"], None, ""),
+                ("extra_descs", room["extra_descriptions"], None, ""),
+                (ROOM_POLICY_ATTRIBUTE, room["policy"], None, ""),
+                (ROOM_ENVIRONMENT_ATTRIBUTE, room["environment"], None, ""),
+                (SECTOR_ATTRIBUTE, room["sector"], None, ""),
+            ],
+        }
+        for key, room in data["rooms"].items()
+    }
+    local_exits = [
+        (
+            record["source_room"],
+            record["name"],
+            record["destination"]["room_key"],
+            {"aliases": record["aliases"], "door_state": record["door"]},
+        )
+        for record in data["exits"].values()
+        if record["destination"]["kind"] == "local"
+    ]
+    rooms = load_area_data(data["key"], legacy_rooms, local_exits, data["mobiles"])
+
+    for room_key, record in data["rooms"].items():
+        room = rooms[room_key]
+        room.key = record["name"]
+        room.attributes.add("desc", record["description"])
+        room.attributes.add("extra_descs", record["extra_descriptions"])
+        profiles = room.tags.get(category="weather_profile", return_list=True)
+        for profile in profiles:
+            room.tags.remove(profile, category="weather_profile")
+        if record["weather_profile"]:
+            room.tags.add(record["weather_profile"], category="weather_profile")
+
+    for record_key, record in data["exits"].items():
+        source = rooms[record["source_room"]]
+        destination_data = record["destination"]
+        destination = (
+            rooms[destination_data["room_key"]]
+            if destination_data["kind"] == "local"
+            else _find_room(destination_data["area_key"], destination_data["room_key"])
+        )
+        if destination is None:
+            continue
+        exit_obj = next(
+            (
+                candidate
+                for candidate in source.exits
+                if candidate.tags.has(record_key, category=EXIT_KEY_CATEGORY)
+            ),
+            None,
+        )
+        if exit_obj is None:
+            exit_obj = next(
+                (
+                    candidate
+                    for candidate in source.exits
+                    if candidate.key == record["name"]
+                    and candidate.destination == destination
+                ),
+                None,
+            )
+        if exit_obj is None:
+            exit_obj = create_object(
+                settings.BASE_EXIT_TYPECLASS,
+                key=record["name"],
+                aliases=record["aliases"] or None,
+                location=source,
+                destination=destination,
+            )
+        exit_obj.tags.add(record_key, category=EXIT_KEY_CATEGORY)
+        exit_obj.key = record["name"]
+        exit_obj.aliases.clear()
+        if record["aliases"]:
+            exit_obj.aliases.add(record["aliases"])
+        exit_obj.attributes.add("desc", record["description"])
+        if destination_data["kind"] == "external":
+            set_external_destination(
+                exit_obj, destination_data["area_key"], destination_data["room_key"]
+            )
+        if door_area_data(exit_obj) != record["door"]:
+            apply_door_area_data(exit_obj, record["door"])
+    return rooms
 
 
 def _literal_manifest_from_module(module_name: str) -> dict[str, Any] | None:
@@ -619,12 +929,7 @@ def load_area(area_slug: str) -> dict:
                 raise AreaManifestError(
                     "Manifest key does not match its requested area."
                 )
-            return load_area_data(
-                area_slug,
-                manifest["rooms"],
-                manifest["exits"],
-                manifest["mobiles"],
-            )
+            return load_area_manifest_data(manifest)
     except AreaManifestError as err:
         logger.log_err(f"load_area: invalid manifest for {area_slug}: {err}")
         return {}

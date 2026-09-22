@@ -239,6 +239,15 @@ def _field_value(target, name: str, field) -> str:
     if field.kind == "weather_profile":
         values = target.tags.get(category="weather_profile", return_list=True)
         return _crop(values[0]) if len(values) == 1 else "|x(unset)|n"
+    if field.kind == "external_destination":
+        from systems.areas import external_destination_data
+
+        value = external_destination_data(target)
+        return (
+            _crop(f"{value['area_key']}:{value['room_key']}" if value else None)
+            if value
+            else "|x(unset)|n"
+        )
     if field.kind in {"attr", "trainer"}:
         value = target.attributes.get(field.target or name)
         return _crop(value) if value is not None else "|x(unset)|n"
@@ -513,6 +522,16 @@ def _apply_field(target, name: str, field, value) -> None:
         from systems.weather import set_weather_profile
 
         set_weather_profile(target, value)
+    elif field.kind == "external_destination":
+        from systems.areas import (
+            EXTERNAL_DESTINATION_ATTRIBUTE,
+            set_external_destination,
+        )
+
+        if value is None:
+            target.attributes.remove(EXTERNAL_DESTINATION_ATTRIBUTE)
+        else:
+            set_external_destination(target, value["area_key"], value["room_key"])
     elif field.kind == "policy":
         from systems.mobile_policy import set_mobile_policy_value
 
